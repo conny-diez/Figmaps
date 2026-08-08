@@ -133,6 +133,77 @@ export function buildDiagnoseReport(result: DiagnoseResult, generatedAt: string,
     lines.push('')
   }
 
+  // --- Versuch 3 -----------------------------------------------------------
+  lines.push('## Versuch 3 — wie grob darf die ausgelieferte Prior-Map sein?')
+  lines.push('')
+  lines.push(
+    'Dieselbe Mean Map, auf ein Raster reduziert und wieder hochskaliert. Misst den Verlust durch ein kleines ' +
+      'Asset, statt ihn zu schätzen.',
+  )
+  lines.push('')
+  lines.push(`| Raster | Roh-Bytes | ${METRIC_IDS.map((id) => METRIC_LABELS[id]).join(' | ')} |`)
+  lines.push(`|---:|---:|${METRIC_IDS.map(() => '---:').join('|')}|`)
+  for (const entry of result.priorSizes) {
+    const raw = entry.size * entry.size
+    lines.push(
+      `| ${entry.size}×${entry.size} | ${(raw / 1024).toFixed(1)} kB | ${cells(entry.mean)} |`,
+    )
+  }
+  lines.push('')
+  const finest = result.priorSizes[result.priorSizes.length - 1]
+  const acceptable = result.priorSizes.filter((entry) => Math.abs(entry.mean.cc - finest.mean.cc) < 0.002)
+  if (acceptable.length > 0) {
+    lines.push(
+      `Ab **${acceptable[0].size}×${acceptable[0].size}** liegt CC innerhalb von 0,002 des feinsten Rasters — ` +
+        'ein Ortsprior ist glatt, feinere Raster kodieren nur noch Rauschen.',
+    )
+    lines.push('')
+  }
+
+  // --- Deviation score -----------------------------------------------------
+  const { deviation } = result
+  lines.push('## Abweichungs-Score als Vertrauensindikator')
+  lines.push('')
+  lines.push(
+    'Der Score ist `1 − CC(Bildanalyse, Prior)`, auf `[0,1]` abgebildet — **ohne Ground Truth berechenbar**, also ' +
+      'zur Laufzeit im Plugin verfügbar. Die Frage ist, ob er vorhersagt, wo die Bildanalyse tatsächlich hilft.',
+  )
+  lines.push('')
+  lines.push(
+    `Korrelation mit dem tatsächlichen Gewinn (ΔCC): **${fmt(deviation.correlationWithGain)}**, ` +
+      `mit „hat überhaupt geholfen": **${fmt(deviation.correlationWithHelped)}**. ` +
+      `Insgesamt half die Bildanalyse auf ${fmt(deviation.helpedShare * 100, 1)} % der Screens.`,
+  )
+  lines.push('')
+  lines.push('Nach Quintilen des Scores (gleich große Gruppen, damit die Verteilung nichts verdeckt):')
+  lines.push('')
+  lines.push('| Abweichungs-Score | Screens | davon geholfen | Ø Gewinn (ΔCC) |')
+  lines.push('|---|---:|---:|---:|')
+  for (const bucket of deviation.buckets) {
+    if (bucket.count === 0) continue
+    lines.push(
+      `| ${bucket.label} | ${bucket.count} | ${fmt(bucket.helpedShare * 100, 1)} % | ${bucket.meanGain >= 0 ? '+' : ''}${fmt(bucket.meanGain)} |`,
+    )
+  }
+  lines.push('')
+
+  const usable = Math.abs(deviation.correlationWithGain) >= 0.2
+  const rising = deviation.buckets.filter((bucket) => bucket.count > 0)
+  const monotone =
+    rising.length > 1 && rising.every((bucket, index) => index === 0 || bucket.helpedShare >= rising[index - 1].helpedShare - 0.05)
+  lines.push(
+    usable && monotone
+      ? '**Der Score taugt als Vertrauensindikator.** Der Anteil der Screens, auf denen die Bildanalyse hilft, ' +
+          'steigt mit dem Score, und der Zusammenhang mit dem tatsächlichen Gewinn ist deutlich genug, um ihn im ' +
+          'Panel anzuzeigen — als Aussage über die Vorhersage, nicht über den Screen.'
+      : usable
+        ? '**Der Score trägt Information, aber nicht monoton.** Als grober Hinweis brauchbar, als Zahl im Panel ' +
+            'noch nicht — die Schwellwerte müssten erst sauber gesetzt werden.'
+        : '**Der Score taugt nicht als Vertrauensindikator.** Der Zusammenhang mit dem tatsächlichen Gewinn ist zu ' +
+            'schwach; ihn anzuzeigen würde Sicherheit suggerieren, die die Zahl nicht hat.',
+  )
+  lines.push('')
+
   // --- Winners -------------------------------------------------------------
   lines.push('## Die Screens, auf denen FigMaps die Mean Map schlägt')
   lines.push('')

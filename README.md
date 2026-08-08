@@ -20,6 +20,11 @@ rechts neben dem Original auf dem Canvas ab:
 Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 `["none"]`, das Design verlässt die Maschine nicht.
 
+> **Namensnennung:** Das Plugin liefert einen Ortsprior mit, der aus dem
+> UEyes-Datensatz abgeleitet ist (Jiang et al., CHI 2023), lizenziert unter
+> CC BY 4.0. Details und die Stellen, an denen die Nennung stehen muss:
+> **[`NOTICE.md`](NOTICE.md)**.
+
 ### Was 1.1 hinzufügt
 
 | | |
@@ -30,8 +35,10 @@ Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 | **Betrachtungsdauer** | Drei Profile (`glance` 1 s, `scan` 3 s, `read` 7 s). Ausgeliefert wird nur, was der Harness belegt hat; aktuell ist das `scan`. |
 
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
-FigMaps 1.0 schlägt den Center-Bias deutlich, verliert aber gegen die Mean Map —
-**S-2 ist nicht erfüllt**. Siehe [Messungen](#messungen-ueyes-3s).
+`hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt
+jede bildunabhängige Baseline in AUC, CC und NSS, liegt bei KL gleichauf.
+**S-2 ist damit knapp nicht erfüllt**, der Abstand zu 1.0 ist aber groß.
+Siehe [Messungen](#messungen-ueyes-3s).
 
 ---
 
@@ -137,6 +144,10 @@ src/
 │  ├─ config.ts            ENGINE_CONFIG — jede Konstante des Systems
 │  ├─ params.ts            A-6  benannte Konfigurationen + Profile (Epic D)
 │  ├─ tuned.ts             generiert von `npm run tune`, nicht von Hand ändern
+│  ├─ deviation.ts         Abweichungs-Score (gemessen, nicht ausgeliefert)
+│  ├─ priors/              datengeschätzter Ortsprior für hybrid-v1
+│  │  ├─ index.ts          Decoder + Resampling, CC-BY-Attribution
+│  │  └─ generated.ts      generiert von `npm run build-prior`
 │  ├─ types.ts             AttentionEngine-Interface
 │  ├─ ops.ts               A-1  Bitmap + ImageOps-Port
 │  ├─ ops-pure.ts          A-1  geteilter Resampler, Crop, Blur
@@ -336,7 +347,88 @@ Je 27 Bilder (Test-Split des Datensatzes), Betrachtungsdauer 3 s:
 | Center-Bias (bester σ je Metrik) | 0,545 | 0,090 | 0,157 | 1,456 |
 | Uniform | 0,500 | 0,000 | 0,000 | 1,349 |
 
-### Befund: S-2 ist nicht erfüllt
+### hybrid-v1 — der datengeschätzte Ortsprior
+
+Aus der [Diagnose](#diagnose-woher-kommt-die-vorhersagekraft) folgte die
+Konsequenz: den analytischen F-Pattern-Prior durch einen aus Daten geschätzten
+ersetzen und die Bildanalyse additiv darüberlegen. Genau das ist `hybrid-v1`.
+`heuristic-v1` bleibt unverändert erhalten.
+
+```
+Vorhersage = norm(Ortsprior)  +  0,3 · norm(Bildanalyse)
+```
+
+- **Ortsprior:** je eine 32 × 32-Graustufen-Map für Webpage und Mobile UI,
+  gemittelt über die 468 Bilder des **Tuning**-Splits. Base64 im Bundle,
+  **1,3 kB pro Map** (Budget: 50 kB). Kein PNG-Decoder, kein Asset-Loader, kein
+  `atob` — die Figma-Main-Thread-Umgebung garantiert keines davon.
+- **Rastergröße:** gemessen, nicht geschätzt. Ein Ortsprior ist glatt; schon
+  16 × 16 erreicht denselben CC wie 128 × 128. 32 × 32 ist mit Reserve gewählt.
+- **α = 0,3**, nicht 0,5: 0,5 maximiert zwar CC (0,448 statt 0,444), **verliert
+  aber KL gegen die Mean Map** — und S-2 verlangt alle vier Metriken. Bei 0,3
+  gewinnen auf dem Tuning-Split alle vier, in beiden Kategorien.
+- **Kategorie-Wahl:** im Plugin über die Frame-Breite (dieselbe Schwelle wie die
+  Viewport-Ableitung). Im Harness wird die Kategorie explizit gesetzt — UEyes
+  speichert Handy-Screenshots mit 1080 px Gerätebreite, was die Breitenregel als
+  Desktop lesen würde.
+
+`hybrid-v1` ist **nicht die aktive Konfiguration.** Das Umschalten ist eine
+Zeile (`ENGINE_CONFIG.activeConfigId`) und bleibt nach der A-6-Regel eine
+menschliche Entscheidung.
+
+### Messung: hybrid-v1 gegen den Test-Split
+
+Einmalig gemessen, nachdem alles auf dem Tuning-Split entwickelt war:
+
+| Webpage | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
+|---|---:|---:|---:|---:|
+| **hybrid-v1** | **0,801** | **0,472** | **1,175** | 1,124 |
+| Mean Map | 0,787 | 0,450 | 1,116 | **1,111** |
+| FigMaps 1.0 | 0,718 | 0,298 | 0,760 | 1,401 |
+
+| Mobile UI | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
+|---|---:|---:|---:|---:|
+| **hybrid-v1** | **0,794** | **0,547** | **1,171** | 0,834 |
+| Mean Map | 0,782 | 0,518 | 1,096 | **0,833** |
+| FigMaps 1.0 | 0,746 | 0,404 | 0,900 | 1,059 |
+
+**S-2 bleibt formal nicht erfüllt** — in AUC, CC und NSS schlägt `hybrid-v1` die
+Mean Map deutlich, bei KL liegt es gleichauf (Mobile: 0,001 schlechter) bzw.
+leicht darunter (Webpage). Die Schwelle verlangt alle vier.
+
+Gegenüber der ausgelieferten 1.0 ist der Sprung erheblich:
+
+| | Webpage | Mobile UI |
+|---|---|---|
+| Δ AUC | +0,083 | +0,048 |
+| Δ CC | +0,174 | +0,143 |
+| Δ NSS | +0,415 | +0,271 |
+| Δ KL | −0,277 (besser) | −0,225 (besser) |
+
+Die S-3-Schwelle von +0,040 AUC ist damit in beiden Kategorien überschritten —
+ohne dass Gewichte getunt wurden.
+
+### Abweichungs-Score: nicht ausgeliefert
+
+Der Score ist `1 − CC(Bildanalyse, Prior)`, ohne Ground Truth berechenbar. Auf
+dem Tuning-Split geprüft, ob er vorhersagt, wo die Bildanalyse hilft:
+
+| | Korrelation mit ΔCC | Verlauf über die Quintile |
+|---|---:|---|
+| Mobile UI | 0,24 | monoton steigend, 71 % → 84 % |
+| Webpage | 0,08 | **umgekehrtes U**: 54 / 71 / 77 / 42 / 45 % |
+
+**Ergebnis: taugt so nicht als Vertrauensindikator.** Auf Mobile trägt er, auf
+Webpage führt er in die Irre — und der Nutzer kann nicht erkennen, in welchem
+Fall er ist. Ein Indikator, der auf der Hälfte der Screens falsch liegt, ist
+schlechter als keiner. Der Score bleibt als gemessene Größe im Code
+(`src/engine/deviation.ts`), wird aber nicht ins Panel gehoben.
+
+Bemerkenswert bleibt die Form: auf Webpage ist **mittlere** Abweichung am
+nützlichsten. Sehr hohe Abweichung heißt meist, dass die Bildanalyse schlicht
+danebenliegt. Das ist eine Hypothese für später, kein Feature.
+
+### Befund zu FigMaps 1.0: S-2 ist nicht erfüllt
 
 FigMaps 1.0 schlägt den Center-Bias **deutlich** — in beiden Kategorien, in
 allen vier Metriken, auch gegen dessen beste Breite. Gegen die **Mean Map**
@@ -730,36 +822,40 @@ Zusätzlich für 1.1 (M4, M5):
 
 - **S-1** (ein Befehl liefert AUC/CC/NSS) — **erfüllt.** Reproduzierbar,
   versioniert, Referenz-Set und Metrik-Zuordnung im Report dokumentiert.
-- **S-2** (Engine schlägt die Baseline) — **nicht erfüllt.** Center-Bias ja,
-  Mean Map nein, in beiden UI-Kategorien. Siehe
-  [Messungen](#messungen-ueyes-3s). Laut PRD §8 ist genau das ein zulässiges
-  und wertvolles Iterationsergebnis: „Unangenehm, aber deutlich billiger als es
-  nicht zu wissen."
-- **S-3** (+0,04 AUC nach Tuning) — **offen.** In dieser Iteration wurde nicht
-  getunt, `src/engine/tuned.ts` ist leer. Angesichts des S-2-Befunds ist Tuning
-  der Gewichte auch nicht der naheliegende nächste Schritt.
+- **S-2** (Engine schlägt die Baseline) — **knapp nicht erfüllt.** `hybrid-v1`
+  schlägt jede bildunabhängige Baseline in AUC, CC und NSS deutlich, liegt bei
+  KL gleichauf; die Schwelle verlangt alle vier. `heuristic-v1` verliert klar.
+  Siehe [Messungen](#messungen-ueyes-3s).
+- **S-3** (+0,04 AUC gegenüber 1.0) — **erreicht, aber nicht durch Tuning.**
+  `hybrid-v1` liegt +0,083 (Webpage) bzw. +0,048 (Mobile) über 1.0.
+  `src/engine/tuned.ts` ist weiterhin leer; die Verbesserung kommt aus dem
+  Ortsprior, nicht aus einer Gewichtssuche.
 - **S-4** (abschnittsweise Analyse) — erfüllt, siehe Epic B.
 - **S-5** (3–6 Befunde in verständlichem Deutsch) — erfüllt bis auf die
   Textabnahme durch einen Menschen.
 
 ### Offen
 
-1. **Entscheidung zum S-2-Befund.** Die [Diagnose](#diagnose-woher-kommt-die-vorhersagekraft)
-   hat die Ursache eingegrenzt: der analytische Positions-Prior ist der
-   Hauptanteil des Rückstands, die Bildanalyse trägt echtes, aber schwaches
-   Signal (+0,03 bis +0,04 CC). Optionen: den Prior durch einen
-   datengeschätzten ersetzen (billig, aber die Engine wird damit
-   datensatzabhängig) oder direkt auf ein trainiertes Modell in 1.2 (ONNX
-   Runtime Web im iframe; UMSI auf UEyes nachtrainiert erreicht laut Literatur
-   0,878 AUC gegen 0,778 ohne UI-Training). Beides ist jetzt messbar.
-2. **Eigenes Validierungsset** aus First-Click-Tests. Der einzige Weg,
+1. **`hybrid-v1` scharfschalten — oder nicht.** Der Code steht, die Zahl steht,
+   das Umschalten ist eine Zeile. Zwei Dinge sprechen dagegen und gehören auf
+   den Tisch: die Engine wird damit **datensatzabhängig** (der Prior stammt aus
+   UEyes und passt auf meinestadt-Screens nur, soweit die dem Durchschnitt
+   ähneln), und mit dem Asset kommt die **CC-BY-Pflicht** ins Produkt
+   ([`NOTICE.md`](NOTICE.md)). Dafür spricht der gemessene Sprung.
+2. **Vorab prüfen, ob der Prior auf meinestadt-Screens trägt.** Der billigste
+   Test ist das eigene First-Click-Set — es beantwortet gleichzeitig die
+   Teilmessungs-Frage.
+3. **Trainiertes Modell (1.2)** bleibt der sauberere Weg: ONNX Runtime Web im
+   iframe, UMSI auf UEyes nachtrainiert erreicht laut Literatur 0,878 AUC gegen
+   0,778 ohne UI-Training. `hybrid-v1` ist jetzt die Messlatte dafür.
+4. **Eigenes Validierungsset** aus First-Click-Tests. Der einzige Weg,
    `textSalience`, `interactiveSalience` und `imageSalience` überhaupt zu
    bewerten — auf Screenshots sind sie konstant null. Ohne das bleibt jede
    Messung eine Teilmessung über 60 % der Gewichtung.
-3. **Textabnahme der Findings (M5)** — C-1 verlangt ausdrücklich, dass keine
+5. **Textabnahme der Findings (M5)** — C-1 verlangt ausdrücklich, dass keine
    Regel feuert, deren Text nicht von einem Menschen bestätigt wurde.
-4. **Epic D belegen** — 1 s und 7 s sind importiert, aber noch nicht ausgewertet.
-5. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
+6. **Epic D belegen** — 1 s und 7 s sind importiert, aber noch nicht ausgewertet.
+7. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
    für FigMaps nicht die relevanten UI-Typen.
 
 ## Nicht in 1.1

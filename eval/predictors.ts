@@ -12,6 +12,7 @@ import type { ImageOps } from '../src/engine/ops'
 import { ENGINE_CONFIGS, PROFILE_IDS, type EngineParams, type ProfileId } from '../src/engine/params'
 import type { ScalarMap } from '../src/engine/types'
 import { resizeScalarMap, type EvalSample } from './dataset'
+import type { PriorAssetId } from '../src/engine/priors'
 import type { MeanMap } from './mean-map'
 
 export type Predictor = {
@@ -94,11 +95,16 @@ export const uniform: Predictor = {
 export function heuristicPredictor(
   configId: string,
   profile: ProfileId,
-  options: { label?: string; baseline?: boolean; params?: EngineParams } = {},
+  options: { label?: string; baseline?: boolean; params?: EngineParams; priorAsset?: PriorAssetId } = {},
 ): Predictor {
-  const engine = new HeuristicAttentionEngine(
-    options.params ? { params: options.params, configId, profile } : { configId, profile },
-  )
+  const engine = new HeuristicAttentionEngine({
+    configId,
+    profile,
+    ...(options.params ? { params: options.params } : {}),
+    // Stated rather than inferred: UEyes stores phone captures at device
+    // resolution, where the plugin's width heuristic would say "desktop".
+    ...(options.priorAsset ? { priorAsset: options.priorAsset } : {}),
+  })
 
   return {
     id: `${configId}:${profile}`,
@@ -145,7 +151,7 @@ export function allPredictors(): Predictor[] {
   return out
 }
 
-export function resolvePredictors(engine: string): Predictor[] {
+export function resolvePredictors(engine: string, priorAsset?: PriorAssetId): Predictor[] {
   if (engine === 'all') return allPredictors()
 
   const [configId, profile] = engine.includes(':') ? engine.split(':') : [engine, 'scan']
@@ -162,7 +168,7 @@ export function resolvePredictors(engine: string): Predictor[] {
   const predictors = baselinePredictors()
   const id = `${resolvedConfig}:${profile}`
   if (!predictors.some((predictor) => predictor.id === id)) {
-    predictors.push(heuristicPredictor(resolvedConfig, profile as ProfileId))
+    predictors.push(heuristicPredictor(resolvedConfig, profile as ProfileId, priorAsset ? { priorAsset } : {}))
   }
   return predictors
 }

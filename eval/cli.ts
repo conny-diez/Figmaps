@@ -16,6 +16,8 @@ import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { renderContactSheet, type Triptych } from './contact-sheet'
 import { iterateSamples, loadSamples, readIndex, type SplitName } from './dataset'
+import type { PriorAssetId } from '../src/engine/priors'
+import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
 import { diagnose } from './diagnose'
 import { buildDiagnoseReport } from './diagnose-report'
 import { METRIC_IDS, METRIC_LABELS } from './metrics/types'
@@ -116,7 +118,16 @@ async function runEval(args: Args): Promise<number> {
 
   const index = readIndex(setName)
   const samples = loadSamples(setName, split, { duration, ...(limit ? { limit } : {}) })
-  const predictors = resolvePredictors(engine)
+  // The prior category is stated, not inferred: raw screenshots carry device
+  // pixels, where the plugin's width heuristic would misread a phone capture.
+  const priorAsset: PriorAssetId | undefined = args['prior-asset']
+    ? (str(args, 'prior-asset', 'web') as PriorAssetId)
+    : setName.includes('mobile')
+      ? 'mobile'
+      : setName.includes('web')
+        ? 'web'
+        : undefined
+  const predictors = resolvePredictors(engine, priorAsset)
 
   // A-4, third baseline: the averaged ground truth of the *tuning* split.
   // Computed from tuning even when a different split is being scored, so the
@@ -254,6 +265,44 @@ async function runEval(args: Args): Promise<number> {
     }
   }
 
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// build-prior — the data-estimated location priors of hybrid-v1
+// ---------------------------------------------------------------------------
+
+const PRIOR_SIZE_BUDGET_BYTES = 50 * 1024
+
+function runBuildPrior(args: Args): number {
+  const duration = num(args, 'duration', 3)
+  const size = num(args, 'size', 64)
+  const sets: Array<{ id: PriorAssetId; setName: string }> = [
+    { id: 'web', setName: str(args, 'web-set', 'ueyes-web') },
+    { id: 'mobile', setName: str(args, 'mobile-set', 'ueyes-mobile') },
+  ]
+
+  console.log(`Ortsprioren aus dem **Tuning**-Split, ${size}x${size}, ${duration}s`)
+  const builds: PriorBuild[] = []
+  for (const set of sets) {
+    const build = buildPrior(set.id, set.setName, duration, size, (bytes) => Buffer.from(bytes).toString('base64'))
+    const kilobytes = build.bytes / 1024
+    console.log(
+      `  ${set.id.padEnd(7)} ${build.count} Bilder aus ${set.setName}  →  ${kilobytes.toFixed(1)} kB` +
+        (build.bytes > PRIOR_SIZE_BUDGET_BYTES ? '  ÜBER BUDGET' : ''),
+    )
+    if (build.bytes > PRIOR_SIZE_BUDGET_BYTES) {
+      console.error(`Budget von ${PRIOR_SIZE_BUDGET_BYTES / 1024} kB pro Map überschritten — kleineres --size wählen.`)
+      return 2
+    }
+    builds.push(build)
+  }
+
+  const target = join('src', 'engine', 'priors', 'generated.ts')
+  writeFile(target, renderPriorModule(builds))
+  console.log('')
+  console.log(`Geschrieben: ${target}`)
+  console.log('Attribution (CC BY 4.0) steht im Kopf der Datei, in NOTICE.md und im Plugin-Panel.')
   return 0
 }
 
@@ -442,6 +491,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   try {
+    if (args['build-prior']) return runBuildPrior(args)
     if (args.diagnose) return await runDiagnose(args)
     return args.tune ? await runTune(args) : await runEval(args)
   } catch (error) {

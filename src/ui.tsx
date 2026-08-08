@@ -8,6 +8,7 @@ import { render } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ENGINE_CONFIG, ENGINE_VERSION } from './engine/config'
 import { PROFILE_LABELS, shippedProfiles, type ProfileId } from './engine/params'
+import { shipsPriorAsset } from './engine/priors'
 import { SEVERITY_LABELS } from './findings/types'
 import {
   DEFAULT_SETTINGS,
@@ -41,6 +42,14 @@ type FrameOutcome = {
  * one profile, so the control disappears entirely while only `scan` is proven.
  */
 const AVAILABLE_PROFILES: ProfileId[] = shippedProfiles()
+
+/**
+ * CC BY 4.0 requires naming the authors wherever the derived asset is
+ * distributed. The maps are in the bundle as soon as the plugin is built —
+ * independent of which engine configuration is active — so the notice is shown
+ * whenever the bundle carries them. See NOTICE.md.
+ */
+const PRIOR_ATTRIBUTION = shipsPriorAsset()
 
 function send(message: UiToMain): void {
   parent.postMessage({ pluginMessage: message }, '*')
@@ -486,10 +495,18 @@ function App(): preact.JSX.Element {
         <span class="disclaimer__icon" aria-hidden="true">
           ⓘ
         </span>
-        <span>
-          Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
-          Nutzerverhalten.
-        </span>
+        <div>
+          <span>
+            Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
+            Nutzerverhalten.
+          </span>
+          {PRIOR_ATTRIBUTION && (
+            <p class="attribution">
+              Ortsprior abgeleitet aus dem UEyes-Datensatz (Jiang et al., CHI 2023), CC BY 4.0, gemittelt und
+              verkleinert.
+            </p>
+          )}
+        </div>
       </footer>
     </div>
   )

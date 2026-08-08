@@ -29,11 +29,29 @@ export type PostParams = {
   gamma: number
 }
 
+/**
+ * How the position prior is obtained.
+ *
+ * `analytic` is the F-pattern bell of `features/prior.ts` (FigMaps 1.0).
+ * `data` is a small greyscale map averaged over a reference set — measurably
+ * better, but it makes the prediction dependent on that reference set and
+ * carries its licence (see `NOTICE.md`).
+ */
+export type PriorSource = 'analytic' | 'data'
+
 /** Everything the tuner is allowed to move. */
 export type EngineParams = {
   weights: FeatureWeights
   prior: PriorConfig
   post: PostParams
+  priorSource?: PriorSource
+  /**
+   * When set, the prediction is `norm(prior) + blendAlpha * norm(imageFeatures)`
+   * instead of one weighted sum over all seven maps. The diagnosis showed the
+   * two roles are additive rather than interchangeable: the prior says where
+   * attention usually goes, the image analysis says how this screen deviates.
+   */
+  blendAlpha?: number
 }
 
 /** Epic D — viewing duration the prediction is calibrated for. */
@@ -69,6 +87,8 @@ function cloneParams(params: EngineParams): EngineParams {
     weights: { ...params.weights },
     prior: { ...params.prior },
     post: { ...params.post },
+    ...(params.priorSource ? { priorSource: params.priorSource } : {}),
+    ...(params.blendAlpha !== undefined ? { blendAlpha: params.blendAlpha } : {}),
   }
 }
 
@@ -133,9 +153,57 @@ const BASE_CONFIG: EngineConfigEntry = {
   shipped: { glance: false, scan: true, read: false },
 }
 
+/**
+ * The share the image analysis is mixed in with, on top of the data prior.
+ *
+ * Read off the diagnosis sweep on the tuning split — not a tuned parameter in
+ * the S-3 sense.
+ *
+ * 0,5 maximises CC (web 0,448 vs 0,444 here) but **loses KL against the mean
+ * map on the webpage set** (1,092 vs 1,088), and S-2 requires beating the
+ * baseline in all four metrics. At 0,3 all four win in both UI categories, and
+ * the CC given up is 0,004. The stricter criterion wins over the single
+ * headline number.
+ */
+export const HYBRID_BLEND_ALPHA = 0.3
+
+/**
+ * `hybrid-v1` — data-estimated prior plus additive image analysis.
+ *
+ * The weights are the 1.0 weights with the position prior removed and the rest
+ * renormalised: the prior no longer competes inside the weighted sum, it is the
+ * base the rest is added to.
+ */
+function imageOnlyWeights(base: FeatureWeights): FeatureWeights {
+  const withoutPrior = { ...base, positionPrior: 0 }
+  const total = Object.values(withoutPrior).reduce((sum, value) => sum + value, 0)
+  const out = {} as FeatureWeights
+  for (const key of Object.keys(withoutPrior) as Array<keyof FeatureWeights>) {
+    out[key] = total > 0 ? withoutPrior[key] / total : 0
+  }
+  return out
+}
+
+const HYBRID_PARAMS: EngineParams = {
+  ...cloneParams(HEURISTIC_V1),
+  weights: imageOnlyWeights(HEURISTIC_V1.weights),
+  priorSource: 'data',
+  blendAlpha: HYBRID_BLEND_ALPHA,
+}
+
+const HYBRID_CONFIG: EngineConfigEntry = {
+  id: 'hybrid-v1',
+  label: 'FigMaps 1.1 (datengeschätzter Ortsprior + Bildanalyse)',
+  profiles: { glance: HYBRID_PARAMS, scan: HYBRID_PARAMS, read: HYBRID_PARAMS },
+  // Epic D is untouched by this: the three profiles are identical until the
+  // harness has something to say about 1 s and 7 s.
+  shipped: { glance: false, scan: true, read: false },
+}
+
 /** All configurations the harness and the plugin know about, by id. */
 export const ENGINE_CONFIGS: Record<string, EngineConfigEntry> = {
   [BASE_CONFIG.id]: BASE_CONFIG,
+  [HYBRID_CONFIG.id]: HYBRID_CONFIG,
   ...Object.fromEntries(TUNED_CONFIGS.map((entry) => [entry.id, entry])),
 }
 
