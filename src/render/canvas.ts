@@ -2,9 +2,12 @@
  * Canvas helpers — iframe only. Never import this from `src/main.ts`:
  * the Figma main thread has no DOM (PRD §6.3).
  */
-import type { ImageLike } from '../engine/types'
+import { fitWithin } from '../engine/ops-pure'
 
 export type Size = { width: number; height: number }
+
+/** Re-exported so renderers keep one source of truth for output sizing (A-1). */
+export { fitWithin }
 
 export function createCanvas(width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
@@ -23,34 +26,6 @@ export function context2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 export async function decodePng(bytes: Uint8Array): Promise<ImageBitmap> {
   const blob = new Blob([bytes as unknown as BlobPart], { type: 'image/png' })
   return createImageBitmap(blob)
-}
-
-/** Scales `width`/`height` down so the longer edge fits `maxEdge`. */
-export function fitWithin(width: number, height: number, maxEdge: number): Size {
-  const longer = Math.max(width, height)
-  if (longer <= maxEdge) return { width: Math.round(width), height: Math.round(height) }
-  const factor = maxEdge / longer
-  return {
-    width: Math.max(1, Math.round(width * factor)),
-    height: Math.max(1, Math.round(height * factor)),
-  }
-}
-
-/** Draws a bitmap into a new canvas of the given size (high-quality scaling). */
-export function drawScaled(source: CanvasImageSource, width: number, height: number): HTMLCanvasElement {
-  const canvas = createCanvas(width, height)
-  const ctx = context2d(canvas)
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
-  return canvas
-}
-
-/** Reads a canvas back as engine input. */
-export function readPixels(canvas: HTMLCanvasElement): ImageLike {
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) throw new Error('2D-Kontext nicht verfügbar')
-  return ctx.getImageData(0, 0, canvas.width, canvas.height)
 }
 
 /** Encodes a canvas as PNG bytes for the trip back to the main thread (FR-8). */

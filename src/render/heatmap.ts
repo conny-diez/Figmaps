@@ -6,11 +6,26 @@ import { ENGINE_CONFIG } from '../engine/config'
 import type { ScalarMap } from '../engine/types'
 import { context2d, createCanvas, drawScalarLayer } from './canvas'
 import { turbo } from './colormap'
+import { drawFoldLines } from './folds'
 import { drawFooter, drawLegend } from './legend'
 
 export type HeatmapOptions = {
+  /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
+  priorLabel?: string
   /** Overlay opacity, `0..1`. */
   opacity: number
+  /** Title of the legend box — differs for the above-the-fold map (B-2). */
+  title?: string
+  /** B-2 — fold positions in frame pixels, drawn as dashed markers. */
+  folds?: readonly number[]
+  /** Frame height in frame pixels, required when `folds` is given. */
+  frameHeight?: number
+  /**
+   * B-2 — region of `base` to draw, in source pixels. The above-the-fold map
+   * covers only the first section, so the screenshot must be *cropped*, not
+   * squashed into the shorter canvas.
+   */
+  sourceRect?: { x: number; y: number; width: number; height: number }
 }
 
 /** Colour-maps a scalar field into RGBA, with cold regions fully transparent. */
@@ -39,12 +54,21 @@ export function renderHeatmap(
 ): HTMLCanvasElement {
   const canvas = createCanvas(width, height)
   const ctx = context2d(canvas)
-  ctx.drawImage(base, 0, 0, canvas.width, canvas.height)
+  if (options.sourceRect) {
+    const { x, y, width: sw, height: sh } = options.sourceRect
+    ctx.drawImage(base, x, y, sw, sh, 0, 0, canvas.width, canvas.height)
+  } else {
+    ctx.drawImage(base, 0, 0, canvas.width, canvas.height)
+  }
 
   const rgba = heatmapToRgba(map, options.opacity)
   drawScalarLayer(ctx, map.width, map.height, rgba, canvas.width, canvas.height)
 
-  drawLegend(ctx, canvas.width, canvas.height, 'Heatmap — vorhergesagte Aufmerksamkeit')
-  drawFooter(ctx, canvas.width, canvas.height)
+  if (options.folds && options.folds.length > 0 && options.frameHeight) {
+    drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
+  }
+
+  drawLegend(ctx, canvas.width, canvas.height, options.title ?? 'Heatmap — vorhergesagte Aufmerksamkeit')
+  drawFooter(ctx, canvas.width, canvas.height, { priorLabel: options.priorLabel })
   return canvas
 }

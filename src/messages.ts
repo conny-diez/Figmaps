@@ -3,15 +3,34 @@
  * and the iframe (`src/ui.tsx`). This module must stay free of any `figma.*`
  * access and free of any DOM access so that both bundles can import it.
  */
+import { DEFAULT_PROFILE, type ProfileId } from './engine/params'
+import type { PriorAssetId } from './engine/priors'
 
-export type MapKind = 'heat' | 'click' | 'focus'
+export type { ProfileId, PriorAssetId }
 
-export const MAP_KINDS: readonly MapKind[] = ['heat', 'click', 'focus']
+/**
+ * Which reference population the location prior is taken from.
+ *
+ * `auto` derives it from the frame geometry. That reliably separates web pages
+ * from mobile apps, but cannot recognise desktop-app UIs or posters — they are
+ * geometrically indistinguishable from web pages (see `priors/index.ts`). The
+ * person who drew the frame can say instead.
+ */
+export type UiTypeSetting = PriorAssetId | 'auto'
+
+/** `fold` is derived, not selectable — see `SELECTABLE_MAP_KINDS`. */
+export type MapKind = 'heat' | 'click' | 'focus' | 'fold'
+
+/** The maps the user can switch on and off. */
+export const SELECTABLE_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = ['heat', 'click', 'focus']
+
+export const MAP_KINDS: readonly MapKind[] = ['heat', 'click', 'focus', 'fold']
 
 export const MAP_LABELS: Record<MapKind, string> = {
   heat: 'Heatmap',
   click: 'Clickmap',
   focus: 'Focusmap',
+  fold: 'Above the Fold',
 }
 
 /**
@@ -59,12 +78,21 @@ export type FrameSummary = {
 }
 
 export type Settings = {
-  maps: Record<MapKind, boolean>
+  maps: Record<Exclude<MapKind, 'fold'>, boolean>
   /** Heatmap overlay opacity in percent, 0–100. */
   overlayOpacity: number
   /** Focusmap percentile threshold, 60–95. */
   focusThreshold: number
   exportScale: 1 | 2
+  /** Epic D — viewing-duration profile. Only shipped profiles are offered. */
+  profile: ProfileId
+  /** Which location prior to use; `auto` derives it from the frame geometry. */
+  uiType: UiTypeSetting
+  /**
+   * Epic B — viewport height in frame px, or `null` for the derived default.
+   * Overridable because "900 px desktop" is an assumption, not a measurement.
+   */
+  viewportHeight: number | null
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -72,6 +100,9 @@ export const DEFAULT_SETTINGS: Settings = {
   overlayOpacity: 65,
   focusThreshold: 80,
   exportScale: 2,
+  profile: DEFAULT_PROFILE,
+  uiType: 'auto',
+  viewportHeight: null,
 }
 
 export type GenerateConfig = {
@@ -90,6 +121,27 @@ export type RenderedMap = {
   kind: MapKind
   png: Uint8Array
   meta?: ClickRanking[]
+}
+
+/**
+ * Epic C — one finding as it travels to the main thread. Mirrors
+ * `src/findings/types.ts`; declared here so `main.ts` does not have to import
+ * the rule engine just to render a text frame.
+ */
+export type FindingPayload = {
+  id: string
+  severity: 'info' | 'attention' | 'problem'
+  text: string
+  nodeIds?: string[]
+}
+
+/** Epic B — what the analysis did with the frame, for labels and text frames. */
+export type SegmentInfo = {
+  segmented: boolean
+  sectionCount: number
+  viewportHeight: number
+  /** Fold positions in frame pixels. */
+  folds: number[]
 }
 
 export type ErrorCode =
@@ -130,8 +182,12 @@ export type UiToMain =
       maps: RenderedMap[]
       /** Non-fatal, user-facing notes produced while rendering. */
       warnings: string[]
+      findings: FindingPayload[]
+      segments?: SegmentInfo
     }
   | { type: 'SAVE_SETTINGS'; settings: Settings }
+  /** C-3 — "Im Canvas zeigen": select the nodes and scroll them into view. */
+  | { type: 'REVEAL_NODES'; nodeIds: string[] }
 
 // ---------------------------------------------------------------------------
 // Main -> UI
@@ -155,7 +211,15 @@ export type MainToUi =
       notices: string[]
     }
   | { type: 'BATCH_PROGRESS'; current: number; total: number; frameName: string }
-  | { type: 'FRAME_DONE'; frameId: string; frameName: string; maps: MapKind[]; warnings: string[] }
+  | {
+      type: 'FRAME_DONE'
+      frameId: string
+      frameName: string
+      maps: MapKind[]
+      warnings: string[]
+      findings: FindingPayload[]
+      segments?: SegmentInfo
+    }
   | { type: 'DONE'; created: number; failed: number }
   | { type: 'ERROR'; code: ErrorCode; message: string; frameName?: string }
 

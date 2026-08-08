@@ -9,8 +9,18 @@
  * (`ENGINE_CONFIG.analysisEdge`, longer edge = 512 px), not to frame pixels.
  */
 
-/** Bumped whenever the prediction changes. Appears in layer names and labels. */
-export const ENGINE_VERSION = 'heuristic-v1'
+/**
+ * Bumped whenever the prediction changes. Appears in layer names and labels.
+ * Must match `ENGINE_CONFIG.activeConfigId` — see `params.ts` for the list of
+ * named configurations the eval harness can compare.
+ *
+ * `hybrid-v1` since 2026-08-08: data-estimated location prior plus additive
+ * image analysis. Beats every image-independent baseline in all four metrics
+ * across a 5-fold cross-validation over 495 images per UI category
+ * (see README, „Kreuzvalidierung"). `heuristic-v1` remains available for
+ * comparison and is what the harness reports as the frozen 1.0 reference.
+ */
+export const ENGINE_VERSION = 'hybrid-v1'
 
 /** Name tokens that mark a node as probably interactive (FR-3). */
 export const INTERACTIVE_KEYWORDS: readonly string[] = [
@@ -33,8 +43,85 @@ export const INTERACTIVE_KEYWORDS: readonly string[] = [
 ]
 
 export const ENGINE_CONFIG = {
+  /** Named configuration the plugin ships (see `params.ts`). */
+  activeConfigId: ENGINE_VERSION,
+
   /** Longer edge of the map the engine computes on. Not negotiable (PRD §10). */
   analysisEdge: 512,
+
+  /**
+   * Bounds for the decoded source bitmap that sections are cropped out of
+   * (Epic B). Capped on *width*, not on the longer edge: a 6.000 px tall frame
+   * still needs enough horizontal resolution for every section to be sampled
+   * down to `analysisEdge` rather than up. `maxPixels` is the memory guard.
+   */
+  analysisSource: {
+    maxWidth: 1024,
+    maxPixels: 12_000_000,
+  },
+
+  /** Epic B — viewport derivation and segmentation. */
+  viewport: {
+    /** Frames at least this wide are treated as desktop. */
+    desktopMinWidth: 1024,
+    /**
+     * Prior-Auswahl (`priors/index.ts`): mobil ist ein Frame nur, wenn er
+     * schmaler als das hier ist **und** hochkant. Beides zusammen, weil jedes
+     * Kriterium für sich einen Alltagsfall falsch macht — siehe dort.
+     *
+     * 600 px trennt Telefone (360–430) von Tablets (768+) in Design-Pixeln.
+     * Diese Zahl ist an UEyes **nicht** überprüfbar, weil der Datensatz
+     * Geräte-Pixel speichert.
+     */
+    mobileMaxWidth: 600,
+    /**
+     * Ab diesem Höhen-zu-Breiten-Verhältnis gilt ein schmaler Frame als
+     * hochkant. 1,5 trennt auf den 1.980 gelabelten UEyes-Bildern Webseite und
+     * Mobile fehlerfrei (je 495/495); Telefone liegen bei 1,78–2,17,
+     * Webseiten bei höchstens 1,11.
+     */
+    mobileMinAspect: 1.5,
+    /** Assumed visible height of a desktop viewport, in frame px. */
+    desktopHeight: 900,
+    /** Mobile approximation: viewport height = frame width x this factor. */
+    mobileHeightFactor: 2.0,
+    /** Below this many viewport heights a frame is analysed as a whole. */
+    segmentThreshold: 1.5,
+    /** Overlap between neighbouring sections, as a share of a viewport height. */
+    overlap: 0.2,
+    /** Refuse to cut a frame into more than this many sections. */
+    maxSections: 24,
+
+    /**
+     * Scroll-depth attenuation of a section's contribution to the composed map.
+     * Section `i` is scaled by `max(sectionAttenuationFloor, factor^i)`.
+     *
+     * WARUM: Jeder Abschnitt wird für sich normiert und bekommt seinen eigenen
+     * top-lastigen Ortsprior. Ohne Dämpfung erzeugt das auf inhaltsarmen
+     * Flächen ein Band am Kopf *jedes* Abschnitts, im Abstand eines
+     * Abschnittsschritts — sichtbar gemessen auf einem grauen 1440x4000-Frame.
+     *
+     * ANNAHME, KEINE MESSUNG: Dass Aufmerksamkeit mit der Scrolltiefe abnimmt,
+     * ist aus Analytics gut belegt, aber **wir haben es nicht gemessen**. UEyes
+     * enthält ausschließlich einzelne Viewport-Ausschnitte, keine gescrollten
+     * Seiten; mit diesem Datensatz ist weder der Verlauf noch der Startwert
+     * überprüfbar. Der Faktor ist so gewählt, dass die Bänder auf dem
+     * Testframe verschwinden — ein Kriterium für die Darstellung, nicht für
+     * die Vorhersagegüte. Siehe NOTICE.md, „Nicht gemessene Annahmen".
+     */
+    sectionAttenuation: 0.5,
+    /**
+     * Untergrenze der Dämpfung.
+     *
+     * Bewusst knapp unter der Transparenzschwelle des Renderers gewählt: auf
+     * inhaltsfreien Flächen fallen tiefe Abschnitte damit unter die Schwelle
+     * und werden gar nicht gezeichnet, während ein echter Blickfang dort noch
+     * schwach sichtbar bleibt. Eine höhere Untergrenze erzeugt wieder ein
+     * Plateau gleich heller Bänder — genau das Artefakt, das die Dämpfung
+     * beseitigen soll.
+     */
+    sectionAttenuationFloor: 0.12,
+  },
 
   /** Feature weights of the weighted sum. Should add up to 1. */
   weights: {
@@ -161,6 +248,15 @@ export const ENGINE_CONFIG = {
       minFontSize: 11,
       maxFontSize: 40,
     },
+    /** Epic B — dashed fold markers drawn into every segmented output. */
+    fold: {
+      lineWidthRatio: 0.0016,
+      minLineWidth: 2,
+      dashRatio: 0.012,
+      gapRatio: 0.008,
+      labelFontSizeRatio: 0.014,
+      minLabelFontSize: 11,
+    },
     clickBlob: {
       /** Blob radius as a share of the longer output edge. */
       minRadiusRatio: 0.035,
@@ -194,11 +290,102 @@ export const ENGINE_CONFIG = {
     minFrameEdge: 200,
   },
 
+  /** Epic C — thresholds of the findings rules. Every rule reads from here. */
+  findings: {
+    /** Never show more than this many findings (C-1). */
+    maxShown: 6,
+    /**
+     * `competition`: Anteil des Maximums, den eine Region erreichen muss, um
+     * als zweiter Hotspot zu zählen.
+     *
+     * Das PRD nannte 80 %. Unter `hybrid-v1` ist die Karte prior-dominiert:
+     * eine weit entfernte Region kann höchstens `Prior dort + 0,3` erreichen
+     * und kommt damit strukturell kaum über 0,66. Gemessen auf UEyes liegt das
+     * zweite Maximum im Median bei 0,75 (p25 0,59, p75 0,81). Bei 0,8 feuerte
+     * die Regel auf 2 % der Bilder und war auf konstruierten Frames überhaupt
+     * nicht auslösbar — also nicht testbar.
+     *
+     * 0,65 liegt beim ~20. Perzentil; bindend wird damit der Tal-Test, der
+     * die eigentliche Aussage trägt („zwei getrennte Regionen").
+     */
+    competitionIntensity: 0.65,
+    /** `competition`: minimum distance between the two peaks, share of width. */
+    competitionMinDistance: 0.3,
+    /**
+     * `competition`: the path between the two peaks must dip below
+     * `zweites Maximum x this`. Without the valley test a single wide bright
+     * band reads as two competing regions just because it is wider than the
+     * threshold.
+     *
+     * **Relativ zum zweiten Maximum, nicht absolut.** Absolut (gegen
+     * `competitionIntensity x 0,7 = 0,56`) feuerte die Regel auf 0 von 495
+     * UEyes-Bildern: die beiden Bedingungen stehen sich im Weg, weil eine
+     * glatte, prior-dominierte Karte mit zwei starken Maxima auch dazwischen
+     * hell bleibt. Gemessen liegt das Tal im Median bei 0,74 bei einem zweiten
+     * Maximum um 0,75–0,85 — der Quotient ist die aussagekräftige Größe.
+     */
+    competitionValleyRatio: 0.9,
+    /**
+     * `flat`: Konzentration der Aufmerksamkeit (Anteil der Masse in den
+     * stärksten 5 % der Pixel) unterhalb dieses Werts heißt „keine Hierarchie".
+     *
+     * **Pro UI-Typ**, weil sich die Verteilung zwischen ihnen kaum überlappt:
+     * gemessener Median 0,163 (web), 0,258 (mobile), 0,139 (desktop),
+     * 0,187 (poster). Jeder Wert ist ungefähr das 10. Perzentil seiner
+     * Kategorie, die Regel meldet also die flachsten rund 10 % — „flach" heißt
+     * flach *für diese Art Screen*.
+     *
+     * Zwei Vorgänger sind an genau dieser Stelle gescheitert. `p90 − p50` mit
+     * 0,25 (aus `heuristic-v1`) feuerte nie; mit 0,41 feuerte es auf 11 % der
+     * Webseiten und auf **90 %** der Mobile-Screens. Die Konzentration ist
+     * skalenfrei, aber nicht kategorieübergreifend vergleichbar.
+     *
+     * Wer die Engine oder die Prioren ändert, muss diese Werte nachmessen —
+     * `npm run findings-audit`.
+     */
+    flatConcentrationThreshold: {
+      web: 0.148,
+      mobile: 0.2,
+      desktop: 0.128,
+      poster: 0.135,
+    } as Record<string, number>,
+    /**
+     * `dead-cta`: ein Kandidat gilt als „ruhig", wenn seine mittlere
+     * Aufmerksamkeit unter diesem Anteil des **stärksten Kandidaten** liegt.
+     *
+     * Verglichen wird gegen die anderen interaktiven Elemente, nicht gegen das
+     * unterste Perzentil der ganzen Karte. Letzteres besteht bei einem
+     * prior-dominierten Modell aus Rändern und Weißraum; jedes echte
+     * Bedienelement liegt darüber, und die Regel feuerte nie (gemessen:
+     * ruhigster Kandidat lag beim 3,5- bis 8-fachen des 25. Perzentils).
+     * „Visuell ruhig" heißt sinnvoll: ruhig **im Vergleich zu den anderen
+     * Schaltflächen desselben Screens".
+     */
+    deadCtaRelativeToBest: 0.45,
+    /**
+     * `cold-fold`: **relative** margin by which a later section's attention
+     * concentration must exceed the first section's — 0,08 means 8 % more.
+     *
+     * Relative, not absolute, because the measure is a concentration share
+     * (see `segments.ts` → `sectionSalience`) whose useful range is narrow:
+     * a featureless page sits at 0,163 and a page with a strong eye-catcher
+     * deep down at 0,182. An absolute margin on the old 0..1 peak scale could
+     * never be reached — which is why this rule was silently inert.
+     */
+    coldFoldMargin: 0.08,
+    /** `cta-rank`: a primary candidate below this rank is worth reporting. */
+    ctaRankThreshold: 1,
+    /** Name tokens that mark a candidate as the *primary* call to action. */
+    primaryKeywords: ['primary', 'primär', 'cta', 'submit', 'anfragen', 'kaufen', 'jetzt'],
+  },
+
   /** Canvas placement (FR-8). */
   placement: {
     gap: 64,
     padding: 64,
     titleFontSize: 24,
+    findingsWidth: 520,
+    findingsFontSize: 16,
   },
 } as const
 

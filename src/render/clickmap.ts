@@ -6,14 +6,19 @@ import type { ClickCandidate } from '../engine/clickmap'
 import { ENGINE_CONFIG } from '../engine/config'
 import { context2d, createCanvas } from './canvas'
 import { turbo } from './colormap'
+import { drawFoldLines } from './folds'
 import { drawFooter, FONT_STACK, uiScale } from './legend'
 
 export type ClickmapOptions = {
+  /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
+  priorLabel?: string
   /** Blob opacity, `0..1`. */
   opacity: number
   /** Frame size in frame pixels — candidates carry frame-pixel geometry. */
   frameWidth: number
   frameHeight: number
+  /** B-2 — fold positions in frame pixels. */
+  folds?: readonly number[]
 }
 
 export function renderClickmap(
@@ -77,8 +82,12 @@ export function renderClickmap(
     ctx.fillText(label, cx, cy)
   }
 
+  if (options.folds && options.folds.length > 0) {
+    drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
+  }
+
   drawTitle(ctx, canvas.width, canvas.height, 'Clickmap — vorhergesagte Klickwahrscheinlichkeit')
-  drawFooter(ctx, canvas.width, canvas.height)
+  drawFooter(ctx, canvas.width, canvas.height, { priorLabel: options.priorLabel })
   return canvas
 }
 

@@ -1,0 +1,692 @@
+/**
+ * A-5 / A-6 / A-7 — the harness entry point.
+ *
+ *   npm run eval  -- --engine heuristic --set test --report out/eval-2026-08.md
+ *   npm run eval  -- --set quick --gate --baseline out/gate-main.json
+ *   npm run tune  -- --set tuning --iterations 300
+ *
+ * Runs offline in Node. It never imports anything from the iframe or the Figma
+ * main thread — only the engine, which is platform free since A-1.
+ */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative } from 'node:path'
+import { PROFILE_DURATIONS, PROFILE_IDS, type ProfileId } from '../src/engine/params'
+import { analyzeFrame } from '../src/engine/analyze'
+import { HeuristicAttentionEngine } from '../src/engine/heuristic'
+import { nodeImageOps } from '../src/platform/imageops-node'
+import { renderContactSheet, type Triptych } from './contact-sheet'
+import { iterateSamples, loadSamples, readIndex, type SplitName } from './dataset'
+import { PRIOR_ASSET_IDS, PRIOR_DURATIONS, type PriorAssetId } from '../src/engine/priors'
+import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
+import { crossValidate, ENGINE_LABELS, FOLDS } from './crossval'
+import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
+import { auditFindings, quantiles } from './findings-audit'
+import { buildCrossvalReport } from './crossval-report'
+import { buildEpicDReport } from './epic-d-report'
+import { diagnose } from './diagnose'
+import { buildDiagnoseReport } from './diagnose-report'
+import { METRIC_IDS, METRIC_LABELS } from './metrics/types'
+import { computeMeanMap, type MeanMap } from './mean-map'
+import { CENTER_BIAS_SIGMAS, meanMapPredictor, resolvePredictors } from './predictors'
+import { buildReport, type UniformCheck } from './report'
+import { meanProfile, runEvaluation, spatialProfile, sweepCenterBias, worstCases, type PredictorResult } from './runner'
+import { renderTunedModule, tuneProfile, type TuneOutcome } from './tune'
+
+const CONTACT_SHEET_CASES = 12
+
+/**
+ * A constant map cannot discriminate and cannot correlate. If these three are
+ * not exact on real data, the import is wrong — not the engine. Abort rather
+ * than publish numbers that look plausible.
+ */
+function checkUniform(results: readonly PredictorResult[]): UniformCheck {
+  const uniform = results.find((entry) => entry.predictor.id === 'uniform')
+  if (!uniform) return { ran: false, passed: false, problems: [] }
+
+  const expectations: Array<[keyof typeof uniform.mean, number]> = [
+    ['aucJudd', 0.5],
+    ['cc', 0],
+    ['nss', 0],
+  ]
+  const problems: string[] = []
+  for (const [metric, expected] of expectations) {
+    const actual = uniform.mean[metric]
+    if (!Number.isFinite(actual) || Math.abs(actual - expected) > 1e-9) {
+      problems.push(`${METRIC_LABELS[metric]}: erwartet ${expected}, gemessen ${actual}`)
+    }
+  }
+  return { ran: true, passed: problems.length === 0, scores: uniform.mean, problems }
+}
+
+type Args = Record<string, string | boolean>
+
+export function parseArgs(argv: readonly string[]): Args {
+  const args: Args = {}
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]
+    if (!token.startsWith('--')) continue
+    const key = token.slice(2)
+    const next = argv[i + 1]
+    if (next === undefined || next.startsWith('--')) {
+      args[key] = true
+    } else {
+      args[key] = next
+      i++
+    }
+  }
+  return args
+}
+
+function str(args: Args, key: string, fallback: string): string {
+  const value = args[key]
+  return typeof value === 'string' ? value : fallback
+}
+
+function num(args: Args, key: string, fallback: number): number {
+  const value = args[key]
+  const parsed = typeof value === 'string' ? Number(value) : Number.NaN
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function writeFile(path: string, content: string | Uint8Array): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, content)
+}
+
+function timestamp(): string {
+  return new Date().toISOString().replace('T', ' ').slice(0, 16)
+}
+
+function logTable(results: readonly PredictorResult[]): void {
+  const width = Math.max(...results.map((entry) => entry.predictor.label.length), 8)
+  console.log('')
+  console.log(`${'Engine'.padEnd(width)}  ${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(9)).join('  ')}`)
+  for (const entry of results) {
+    const cells = METRIC_IDS.map((id) =>
+      (Number.isFinite(entry.mean[id]) ? entry.mean[id].toFixed(3) : '—').padStart(9),
+    ).join('  ')
+    console.log(`${entry.predictor.label.padEnd(width)}  ${cells}`)
+  }
+  console.log('')
+}
+
+// ---------------------------------------------------------------------------
+// eval
+// ---------------------------------------------------------------------------
+
+async function runEval(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  const split = str(args, 'set', 'test') as SplitName
+  const engine = str(args, 'engine', 'heuristic')
+  const duration = num(args, 'duration', 3)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  const index = readIndex(setName)
+  const samples = loadSamples(setName, split, { duration, ...(limit ? { limit } : {}) })
+  // The prior category is stated, not inferred: raw screenshots carry device
+  // pixels, where the plugin's width heuristic would misread a phone capture.
+  const priorAsset: PriorAssetId | undefined = args['prior-asset']
+    ? (str(args, 'prior-asset', 'web') as PriorAssetId)
+    : setName.includes('mobile')
+      ? 'mobile'
+      : setName.includes('web')
+        ? 'web'
+        : undefined
+  const predictors = resolvePredictors(engine, priorAsset)
+
+  // A-4, third baseline: the averaged ground truth of the *tuning* split.
+  // Computed from tuning even when a different split is being scored, so the
+  // baseline never contains the answer it is competing against.
+  let meanMap: MeanMap | undefined
+  if (args['mean-map'] !== false && !args['no-mean-map']) {
+    try {
+      process.stdout.write('Mean Map wird gebildet … ')
+      meanMap = computeMeanMap(setName, 'tuning', duration)
+      console.log(`${meanMap.count} Bilder`)
+      predictors.unshift(meanMapPredictor(meanMap))
+    } catch (error) {
+      console.log('')
+      console.warn(`  Mean-Map-Baseline übersprungen: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  const primary = predictors.find((predictor) => !predictor.baseline) ?? predictors[predictors.length - 1]
+
+  console.log(
+    `Referenz-Set "${setName}" / Split "${split}" / ${duration}s: ${samples.length} Bilder, ${predictors.length} Engines`,
+  )
+
+  let lastPercent = -1
+  const run = await runEvaluation(samples, predictors, {
+    keepPredictionsFor: primary.id,
+    onProgress: (done, total) => {
+      const percent = Math.floor((done / total) * 100)
+      if (percent !== lastPercent && percent % 10 === 0) {
+        lastPercent = percent
+        process.stdout.write(`\r  ${percent} %   `)
+      }
+    },
+  })
+  process.stdout.write('\r            \r')
+
+  logTable(run.results)
+
+  const uniformCheck = checkUniform(run.results)
+  if (uniformCheck.ran && !uniformCheck.passed) {
+    console.error('Sanity-Check fehlgeschlagen — eine konstante Map muss exakt AUC 0,5 / CC 0 / NSS 0 liefern:')
+    for (const problem of uniformCheck.problems) console.error(`  ${problem}`)
+    console.error('')
+    console.error('Das ist ein Befund über den Import, nicht über die Engine. Kein Report geschrieben.')
+    console.error(`Prüfen: eval/fixtures/${setName}/ — Ground-Truth-Maps, Zuordnung Bild ↔ Map, Auflösungen.`)
+    return 2
+  }
+
+  const centerBiasSweep = sweepCenterBias(run.samples, CENTER_BIAS_SIGMAS)
+
+  const predictionProfiles = run.samples
+    .map((sample) => run.primaryPredictions.get(sample.id))
+    .filter((map): map is NonNullable<typeof map> => map !== undefined)
+    .map(spatialProfile)
+  const positionBias = {
+    truth: meanProfile(run.samples.map((sample) => spatialProfile(sample.truth.salience))),
+    ...(predictionProfiles.length > 0 ? { prediction: meanProfile(predictionProfiles) } : {}),
+  }
+
+  const primaryResult = run.results.find((entry) => entry.predictor.id === primary.id)
+  const worst = primaryResult ? worstCases(primaryResult, CONTACT_SHEET_CASES) : []
+
+  const reportPath = str(args, 'report', `out/eval-${new Date().toISOString().slice(0, 7)}.md`)
+  let contactSheetPath: string | undefined
+
+  if (worst.length > 0) {
+    const byId = new Map(run.samples.map((sample) => [sample.id, sample]))
+    const rows: Triptych[] = []
+    for (const entry of worst) {
+      const sample = byId.get(entry.sampleId)
+      const prediction = run.primaryPredictions.get(entry.sampleId)
+      if (!sample || !prediction) continue
+      rows.push({ original: sample.image, truth: sample.truth.salience, prediction })
+    }
+    if (rows.length > 0) {
+      const sheetPath = reportPath.replace(/\.md$/, '') + '-kontaktbogen.png'
+      writeFile(sheetPath, renderContactSheet(rows))
+      contactSheetPath = relative(dirname(reportPath), sheetPath) || sheetPath
+      console.log(`Kontaktbogen: ${sheetPath}`)
+    }
+  }
+
+  const notes: string[] = []
+  if (limit) notes.push(`Lauf auf ${limit} Bildern begrenzt (\`--limit\`) — nicht als Abnahmezahl verwenden.`)
+  if (meanMap && split === 'tuning') {
+    notes.push(
+      'Die Mean-Map-Baseline wurde auf demselben Split gebildet, der hier bewertet wird. Ihre Werte sind ' +
+        'deshalb optimistisch (in-sample) — für einen belastbaren Vergleich `--set test` verwenden.',
+    )
+  }
+  if (worst.length < CONTACT_SHEET_CASES) {
+    notes.push(`Kontaktbogen zeigt ${worst.length} statt ${CONTACT_SHEET_CASES} Fälle — das Set ist kleiner.`)
+  }
+
+  const markdown = buildReport({
+    setName,
+    split,
+    duration,
+    generatedAt: timestamp(),
+    samples: run.samples,
+    results: run.results,
+    worst,
+    index,
+    uniformCheck,
+    centerBiasSweep,
+    positionBias,
+    contactSheetPath,
+    notes,
+  })
+  writeFile(reportPath, markdown)
+  console.log(`Report: ${reportPath}`)
+
+  // --- A-7 regression gate -------------------------------------------------
+  if (args.gate) {
+    const baselinePath = str(args, 'baseline', '')
+    const maxDrop = num(args, 'max-cc-drop', 0.02)
+    const current = primaryResult?.mean.cc ?? Number.NaN
+
+    if (args.write) {
+      writeFile(baselinePath || 'out/gate.json', JSON.stringify({ engine: primary.id, cc: current }, null, 2))
+      console.log(`Gate-Referenz geschrieben: ${baselinePath || 'out/gate.json'}`)
+      return 0
+    }
+
+    if (!baselinePath) {
+      console.error('--gate benötigt --baseline <datei> (oder --write, um sie zu erzeugen)')
+      return 2
+    }
+    const reference = JSON.parse(readFileSync(baselinePath, 'utf8')) as { cc: number }
+    const drop = reference.cc - current
+    console.log(`Gate: CC ${current.toFixed(4)} vs main ${reference.cc.toFixed(4)} (Δ ${(-drop).toFixed(4)})`)
+    if (drop > maxDrop) {
+      console.error(`CC ist um ${drop.toFixed(4)} gefallen — erlaubt sind ${maxDrop}.`)
+      return 1
+    }
+  }
+
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// findings-audit — does every rule actually fire on real images?
+// ---------------------------------------------------------------------------
+
+async function runFindingsAudit(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  const viewportOverride = args.viewport ? num(args, 'viewport', 0) : undefined
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log(
+    `Findings-Audit auf "${setName}"` +
+      (viewportOverride ? `, Viewport erzwungen auf ${viewportOverride} px (sonst wäre nichts segmentiert)` : ''),
+  )
+  let last = 0
+  const result = await auditFindings({
+    setName,
+    ...(viewportOverride ? { viewportOverride } : {}),
+    ...(limit ? { limit } : {}),
+    onProgress: (done, total) => {
+      if (done - last >= 25 || done === total) {
+        last = done
+        process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+      }
+    },
+  })
+  process.stdout.write(`\r  ${result.imageCount} Bilder, davon ${result.withSignals} mit Layer-Signalen     \n\n`)
+
+  console.log('Regel              feuert   stumm  blockiert   Anteil (von bewertbaren)')
+  for (const rule of result.rules) {
+    const evaluated = rule.fired + rule.silent
+    const share = evaluated > 0 ? `${((rule.fired / evaluated) * 100).toFixed(1)} %` : '—'
+    const flag = evaluated === 0 ? '  (nicht bewertbar)' : rule.fired === 0 ? '  ← feuert NIE' : rule.fired === evaluated ? '  ← feuert IMMER' : ''
+    console.log(
+      `  ${rule.id.padEnd(16)} ${String(rule.fired).padStart(5)} ${String(rule.silent).padStart(7)} ${String(rule.blocked).padStart(10)}   ${share.padStart(7)}${flag}`,
+    )
+  }
+  console.log('')
+  for (const rule of result.rules) {
+    if (rule.blocked > 0) console.log(`  ${rule.id}: ${rule.blocked}x blockiert — ${rule.blockedReason}`)
+  }
+  console.log('')
+  console.log('Verteilung der Entscheidungsgröße (p5 / p25 / Median / p75 / p95):')
+  for (const rule of result.rules) {
+    if (rule.samples.length === 0) continue
+    const q = quantiles(rule.samples).map((value) => value.toFixed(3))
+    console.log(`  ${rule.id.padEnd(16)} ${q.join('  ')}   [${rule.variable}]`)
+  }
+
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// epic-d — is viewing duration a prior effect?
+// ---------------------------------------------------------------------------
+
+async function runEpicD(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  console.log(`Epic D auf "${setName}" — Prior je Dauer, ${FOLDS} Folds, out-of-sample.`)
+
+  let last = 0
+  const result = await measureEpicD({
+    setName,
+    onProgress: (done, total) => {
+      if (done - last >= 25 || done === total) {
+        last = done
+        process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+      }
+    },
+  })
+  process.stdout.write(`\r  ${result.imageCount} Bilder bewertet          \n\n`)
+
+  console.log('Ähnlichkeit der drei Prioren untereinander (CC):')
+  for (const entry of result.priorSimilarity) {
+    console.log(`  ${entry.a}s ↔ ${entry.b}s   ${entry.cc.toFixed(4)}`)
+  }
+  console.log('')
+
+  console.log('CC — Zeile = Ground-Truth-Dauer, Spalte = verwendeter Prior:')
+  console.log('          ' + DURATIONS.map((d) => `${d}s-Prior`.padStart(11)).join(''))
+  for (const truth of DURATIONS) {
+    const cells = DURATIONS.map((prior) => {
+      const cell = result.cells.find((entry) => entry.truth === truth && entry.prior === prior)!
+      const best = truth === prior ? '*' : ' '
+      return `${cell.mean.cc.toFixed(4)}${best}`.padStart(11)
+    }).join('')
+    console.log(`  GT ${truth}s  ` + cells)
+  }
+  console.log('  (* = Prior passt zur Ground-Truth-Dauer)')
+  console.log('')
+
+  console.log(`Gepaart gegen den ${REFERENCE_DURATION}s-Prior, CC (+ = besser):`)
+  for (const entry of result.comparisons.filter((c) => c.metric === 'cc')) {
+    const flag = entry.ci95[0] > 0 ? 'belastbar besser' : entry.ci95[1] < 0 ? 'belastbar schlechter' : 'nicht unterscheidbar'
+    console.log(
+      `  GT ${entry.truth}s mit ${entry.prior}s-Prior: ${entry.mean >= 0 ? '+' : ''}${entry.mean.toFixed(4)} ` +
+        `[${entry.ci95[0].toFixed(4)}, ${entry.ci95[1].toFixed(4)}]  t=${entry.tStatistic.toFixed(1)}  → ${flag}`,
+    )
+  }
+  console.log('')
+  console.log(
+    result.durationMatters
+      ? 'BEFUND: Ein dauerspezifischer Prior schlägt den 3s-Prior auf der eigenen Dauer. Drei Profile sind gerechtfertigt.'
+      : 'BEFUND: Kein dauerspezifischer Prior schlägt den 3s-Prior auf der eigenen Dauer. Epic D ist zu streichen.',
+  )
+
+  const reportPath = str(args, 'report', `out/epic-d-${setName}.md`)
+  writeFile(reportPath, buildEpicDReport(result, timestamp()))
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// crossval — k-fold over the whole category, both data-dependent parts refit
+// ---------------------------------------------------------------------------
+
+async function runCrossval(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  const duration = num(args, 'duration', 3)
+  const folds = num(args, 'folds', 5)
+
+  console.log(`Kreuzvalidierung "${setName}", ${folds} Folds, ${duration}s — Tuning und Test zusammen.`)
+  let last = 0
+  const result = await crossValidate({
+    setName,
+    duration,
+    folds,
+    onProgress: (done, total) => {
+      if (done - last >= 25 || done === total) {
+        last = done
+        process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+      }
+    },
+  })
+  process.stdout.write(`\r  ${result.imageCount} Bilder out-of-sample bewertet     \n\n`)
+
+  const width = 14
+  console.log(`${'Engine'.padEnd(width)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(18)).join('')}`)
+  for (const engine of ['hybrid-v1', 'mean-map', 'heuristic-v1', 'center-bias', 'uniform'] as const) {
+    const cells = METRIC_IDS.map((id) => {
+      const summary = result.summaries[engine][id]
+      return `${summary.mean.toFixed(3)} ± ${summary.sd.toFixed(3)}`.padStart(18)
+    }).join('')
+    console.log(`${ENGINE_LABELS[engine].padEnd(width)}${cells}`)
+  }
+  console.log('')
+  console.log('hybrid-v1 − Mean Map, gepaart je Bild (+ ist besser):')
+  for (const comparison of result.hybridVsMeanMap) {
+    const significant = comparison.ci95[0] > 0
+    console.log(
+      `  ${METRIC_LABELS[comparison.metric].padEnd(9)} ` +
+        `${comparison.mean >= 0 ? '+' : ''}${comparison.mean.toFixed(4)}  ` +
+        `95%-KI [${comparison.ci95[0].toFixed(4)}, ${comparison.ci95[1].toFixed(4)}]  ` +
+        `t=${comparison.tStatistic.toFixed(1)}  ` +
+        `besser auf ${(comparison.winRate * 100).toFixed(1)} %  ` +
+        `${significant ? '→ belastbar' : '→ nicht von Rauschen zu trennen'}`,
+    )
+  }
+  console.log('')
+
+  const reportPath = str(args, 'report', `out/crossval-${setName}.md`)
+  writeFile(reportPath, buildCrossvalReport(result, timestamp()))
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// build-prior — the data-estimated location priors of hybrid-v1
+// ---------------------------------------------------------------------------
+
+const PRIOR_SIZE_BUDGET_BYTES = 50 * 1024
+
+function runBuildPrior(args: Args): number {
+  const size = num(args, 'size', 64)
+  // One prior per UI type. `desktop` and `poster` ship too, even though the
+  // geometric rule never picks them — they are reachable by explicit choice.
+  const sets: Array<{ id: PriorAssetId; setName: string }> = PRIOR_ASSET_IDS.map((id) => ({
+    id,
+    setName: str(args, `${id}-set`, `ueyes-${id}`),
+  }))
+
+  // Epic D: one prior per category *and* viewing duration. Measured to be a
+  // real effect, so all three durations ship.
+  console.log(`Ortsprioren aus dem **Tuning**-Split, ${size}x${size}, Dauern ${PRIOR_DURATIONS.join('/')}s`)
+  const builds: PriorBuild[] = []
+  let totalBytes = 0
+  for (const set of sets) {
+    if (!existsSync(join('eval', 'fixtures', set.setName, 'index.json'))) {
+      console.log(`  ${set.id.padEnd(7)} übersprungen — ${set.setName} nicht importiert`)
+      continue
+    }
+    const sizes: string[] = []
+    for (const duration of PRIOR_DURATIONS) {
+      const build = buildPrior(set.id, set.setName, duration, size, (bytes) => Buffer.from(bytes).toString('base64'))
+      if (build.bytes > PRIOR_SIZE_BUDGET_BYTES) {
+        console.error(`Budget von ${PRIOR_SIZE_BUDGET_BYTES / 1024} kB pro Map überschritten — kleineres --size wählen.`)
+        return 2
+      }
+      sizes.push(`${duration}s ${(build.bytes / 1024).toFixed(1)} kB`)
+      totalBytes += build.bytes
+      builds.push(build)
+    }
+    console.log(`  ${set.id.padEnd(7)} ${sizes.join(' · ')}`)
+  }
+  console.log(`  Summe: ${(totalBytes / 1024).toFixed(1)} kB über ${builds.length} Maps`)
+
+  const target = join('src', 'engine', 'priors', 'generated.ts')
+  writeFile(target, renderPriorModule(builds))
+  console.log('')
+  console.log(`Geschrieben: ${target}`)
+  console.log('Attribution (CC BY 4.0) steht im Kopf der Datei, in NOTICE.md und im Plugin-Panel.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// diagnose — two experiments on the tuning split, no tuning
+// ---------------------------------------------------------------------------
+
+async function runDiagnose(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  const duration = num(args, 'duration', 3)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log(`Diagnose auf "${setName}" / tuning / ${duration}s — Test-Split wird nicht angefasst.`)
+  process.stdout.write('Mean-Map-Akkumulator … ')
+
+  let lastLogged = 0
+  const result = await diagnose({
+    setName,
+    duration,
+    ...(limit ? { limit } : {}),
+    onProgress: (done) => {
+      if (done === 1) process.stdout.write('fertig\n')
+      if (done - lastLogged >= 25) {
+        lastLogged = done
+        process.stdout.write(`\r  ${done} Bilder …   `)
+      }
+    },
+  })
+  process.stdout.write(`\r  ${result.sampleCount} Bilder ausgewertet\n\n`)
+
+  const width = 14
+  console.log('Versuch 1 — Prior-Gewichtung')
+  console.log(`${'Prior'.padEnd(width)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}`)
+  console.log(`${'FigMaps 1.0'.padEnd(width)}${METRIC_IDS.map((id) => result.engineV1[id].toFixed(3).padStart(10)).join('')}`)
+  for (const entry of result.priorSweep) {
+    console.log(
+      `${entry.weight.toFixed(1).padEnd(width)}${METRIC_IDS.map((id) => entry.mean[id].toFixed(3).padStart(10)).join('')}`,
+    )
+  }
+  console.log(`${'Mean Map (LOO)'.padEnd(width)}${METRIC_IDS.map((id) => result.meanMapAlone[id].toFixed(3).padStart(10)).join('')}`)
+  console.log('')
+
+  console.log('Versuch 2 — Mean Map + Bildanalyse')
+  console.log(`${'α'.padEnd(width)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}`)
+  console.log(`${'0 (Mean Map)'.padEnd(width)}${METRIC_IDS.map((id) => result.meanMapAlone[id].toFixed(3).padStart(10)).join('')}`)
+  for (const entry of result.hybridPixel) {
+    console.log(
+      `${`+Pixel ${entry.alpha}`.padEnd(width)}${METRIC_IDS.map((id) => entry.mean[id].toFixed(3).padStart(10)).join('')}`,
+    )
+  }
+  for (const entry of result.hybridEngine) {
+    console.log(
+      `${`+Engine ${entry.alpha}`.padEnd(width)}${METRIC_IDS.map((id) => entry.mean[id].toFixed(3).padStart(10)).join('')}`,
+    )
+  }
+  console.log('')
+  console.log(`FigMaps schlägt die Mean Map auf ${result.winCount} von ${result.sampleCount} Bildern.`)
+
+  // Contact sheet of the winners — what do these screens have in common?
+  const reportPath = str(args, 'report', `out/diagnose-${setName}.md`)
+  let contactSheet: string | undefined
+  const shown = result.winners.slice(0, num(args, 'sheet', 12))
+  if (shown.length > 0) {
+    const wanted = new Set(shown.map((entry) => entry.id))
+    const byId = new Map<string, Triptych>()
+    const engine = new HeuristicAttentionEngine()
+    for (const sample of iterateSamples(setName, 'tuning', { duration })) {
+      if (!wanted.has(sample.id)) continue
+      const analysis = await analyzeFrame(engine, nodeImageOps, {
+        source: sample.image,
+        signals: sample.signals,
+        frameWidth: sample.frameWidth,
+        frameHeight: sample.frameHeight,
+        segment: false,
+      })
+      if (analysis) byId.set(sample.id, { original: sample.image, truth: sample.truth.salience, prediction: analysis.attention })
+    }
+    const rows = shown.map((entry) => byId.get(entry.id)).filter((row): row is Triptych => row !== undefined)
+    if (rows.length > 0) {
+      const sheetPath = reportPath.replace(/\.md$/, '') + '-gewinner.png'
+      writeFile(sheetPath, renderContactSheet(rows))
+      contactSheet = relative(dirname(reportPath), sheetPath) || sheetPath
+      console.log(`Kontaktbogen der Gewinner: ${sheetPath}`)
+    }
+  }
+
+  writeFile(reportPath, buildDiagnoseReport(result, timestamp(), contactSheet))
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// tune
+// ---------------------------------------------------------------------------
+
+async function runTune(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  const split = str(args, 'set', 'tuning') as SplitName
+  if (split === 'test') {
+    console.error('Getunt wird nie auf dem Test-Split — das ist der Punkt der Trennung (A-2).')
+    return 2
+  }
+
+  const iterations = num(args, 'iterations', 300)
+  const seed = num(args, 'seed', 20260808)
+  const configId = str(args, 'config-id', 'heuristic-v2')
+  const tunePrior = args.wide === true
+
+  const index = readIndex(setName)
+  console.log(`Tuning auf "${setName}" / "${split}": ${iterations} Iterationen, Seed ${seed}`)
+
+  const outcomes = {} as Record<ProfileId, TuneOutcome>
+  const withoutOwnData: ProfileId[] = []
+
+  for (const [position, profile] of PROFILE_IDS.entries()) {
+    // Epic D: each profile is tuned against its own viewing duration.
+    const wanted = PROFILE_DURATIONS[profile]
+    const available = index.durations.includes(wanted)
+    if (!available) withoutOwnData.push(profile)
+    const samples = loadSamples(setName, split, { duration: available ? wanted : index.durations[0] })
+
+    // The seed is offset per profile: with identical data and an identical seed
+    // all three searches would walk the same path and return the same weights,
+    // which would look like a calibration result and be none.
+    process.stdout.write(`  ${profile} (${samples.length} Bilder, ${available ? `${wanted}s` : `Ersatz ${index.durations[0]}s`}) … `)
+    outcomes[profile] = await tuneProfile(samples, profile, { iterations, seed: seed + position * 1000, tunePrior })
+    console.log(`CC ${outcomes[profile].baselineCc.toFixed(4)} → ${outcomes[profile].bestCc.toFixed(4)}`)
+  }
+
+  if (withoutOwnData.length > 0) {
+    console.log('')
+    console.log(`Warnung: für ${withoutOwnData.join(', ')} enthält das Set keine passende Betrachtungsdauer.`)
+    console.log('Diese Profile wurden auf einer Ersatzdauer getunt und sind damit nicht kalibriert,')
+    console.log('sondern nur angepasst. Ohne Ground Truth für 1 s / 3 s / 7 s ist Epic D nicht belegbar.')
+  }
+
+  // Epic D gate — a profile only ships once it has been shown to beat
+  // center-bias. That check runs in `npm run eval`; until it has, the flag
+  // stays false and the UI keeps offering a single profile.
+  const shipped: Record<ProfileId, boolean> = { glance: false, scan: false, read: false }
+  const target = join('src', 'engine', 'tuned.ts')
+  writeFile(target, renderTunedModule(configId, `Getunt auf ${setName}/${split}, Seed ${seed}`, outcomes, shipped))
+
+  console.log('')
+  console.log(`Geschrieben: ${target}`)
+  console.log('Kein Auto-Deploy. Nächste Schritte:')
+  console.log(`  1. npm run eval -- --engine ${configId} --set test`)
+  console.log('  2. Kontaktbogen ansehen')
+  console.log(`  3. bei Bedarf ENGINE_CONFIG.activeConfigId auf '${configId}' setzen`)
+  console.log('  4. Profile, die Center-Bias schlagen, in tuned.ts auf shipped: true setzen')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+
+export async function main(argv: readonly string[]): Promise<number> {
+  const args = parseArgs(argv)
+  if (args.help) {
+    console.log(
+      [
+        'npm run eval -- [options]',
+        '  --engine <id>       heuristic | heuristic-v1 | <config>[:glance|scan|read] | all   (default: heuristic)',
+        '  --set <split>       tuning | test | quick                                          (default: test)',
+        '  --fixtures <name>   Referenz-Set unter eval/fixtures/                              (default: ueyes-web)',
+        '  --duration <s>      Betrachtungsdauer der Ground Truth: 1 | 3 | 7                  (default: 3)',
+        '  --no-mean-map       Mean-Map-Baseline weglassen (sie liest den Tuning-Split)',
+        '  --report <path>     Zielpfad des Markdown-Reports',
+        '  --limit <n>         nur die ersten n Bilder (Rauchtest)',
+        '  --gate --baseline <file> [--max-cc-drop 0.02] [--write]   Regressions-Gate (A-7)',
+        '',
+        'npm run diagnose -- [options]     nur Diagnose, kein Tuning, nur Tuning-Split',
+        '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
+        '  --duration <s>      Betrachtungsdauer                                             (default: 3)',
+        '  --sheet <n>         Anzahl Gewinner im Kontaktbogen                               (default: 12)',
+        '  --report <path>     Zielpfad des Markdown-Reports',
+        '',
+        'npm run epic-d -- [options]      misst, ob Betrachtungsdauer ein Prior-Effekt ist',
+        '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
+        '',
+        'npm run crossval -- [options]    k-fache Kreuzvalidierung über Tuning + Test',
+        '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
+        '  --folds <k>         Anzahl Folds                                                  (default: 5)',
+        '  --duration <s>      Betrachtungsdauer                                             (default: 3)',
+        '',
+        'npm run tune -- [options]',
+        '  --set <split>       tuning | quick   (test ist gesperrt)',
+        '  --iterations <n>    Random-Search-Iterationen                                       (default: 300)',
+        '  --seed <n>          Seed der Suche                                                  (default: 20260808)',
+        '  --config-id <id>    Name der erzeugten Konfiguration                                (default: heuristic-v2)',
+        '  --wide              zusätzlich Positions-Prior und Gamma durchsuchen',
+      ].join('\n'),
+    )
+    return 0
+  }
+
+  try {
+    if (args['findings-audit']) return await runFindingsAudit(args)
+    if (args['epic-d']) return await runEpicD(args)
+    if (args.crossval) return await runCrossval(args)
+    if (args['build-prior']) return runBuildPrior(args)
+    if (args.diagnose) return await runDiagnose(args)
+    return args.tune ? await runTune(args) : await runEval(args)
+  } catch (error) {
+    console.error(`\n${error instanceof Error ? error.message : String(error)}`)
+    return 1
+  }
+}

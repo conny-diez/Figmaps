@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Typecheck, Tests, Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run verify
+
+  eval-gate:
+    # A-7 — regression gate: evaluate the 40-image quick set and fail the check
+    # if CC drops by more than 0.02 against main.
+    #
+    # Skipped automatically when the reference data is not available. The
+    # fixtures are not in the repo (size + licence, see eval/fixtures/README.md);
+    # wire up a cache or an artifact store once the licence question of A-2 is
+    # settled, then remove the `if:` guard below.
+    name: Eval regression gate
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+
+      - name: Restore reference data
+        id: fixtures
+        uses: actions/cache/restore@v4
+        with:
+          path: eval/fixtures
+          key: figmaps-fixtures-v1
+
+      - name: Report missing fixtures
+        if: steps.fixtures.outputs.cache-hit != 'true'
+        run: |
+          echo "::notice title=Eval-Gate übersprungen::Kein Referenz-Set im Cache." >> "$GITHUB_STEP_SUMMARY"
+          echo "Das Gate ist erst scharf, wenn eval/fixtures unter dem Key figmaps-fixtures-v1 liegt." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Baseline on main
+        if: steps.fixtures.outputs.cache-hit == 'true'
+        run: |
+          git worktree add ../main-ref origin/main
+          cp -R eval/fixtures ../main-ref/eval/fixtures
+          cd ../main-ref
+          npm ci
+          npm run eval -- --set quick --report /tmp/gate-main.md --gate --baseline "$GITHUB_WORKSPACE/gate-main.json" --write
+
+      - name: Gate on this PR
+        if: steps.fixtures.outputs.cache-hit == 'true'
+        run: npm run eval -- --set quick --report gate-pr.md --gate --baseline gate-main.json --max-cc-drop 0.02
+
+      - name: Publish report
+        if: always() && steps.fixtures.outputs.cache-hit == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-gate
+          path: |
+            gate-pr.md
+            gate-pr-kontaktbogen.png
+          if-no-files-found: ignore

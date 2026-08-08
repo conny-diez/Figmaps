@@ -1,14 +1,11 @@
 import type { NodeSignal } from '../messages'
+import type { Bitmap } from './ops'
 
 /**
  * Structurally compatible with the DOM `ImageData`, but usable in a plain
- * Node/vitest environment — the engine must be testable without a canvas.
+ * Node/vitest environment — the engine must be testable without a canvas (A-1).
  */
-export type ImageLike = {
-  readonly width: number
-  readonly height: number
-  readonly data: Uint8ClampedArray
-}
+export type ImageLike = Bitmap
 
 /** A scalar field over the analysis grid; values are in `[0,1]`. */
 export type ScalarMap = {

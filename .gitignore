@@ -1,5 +1,9 @@
 node_modules/
 build/
+out/
+# Reference data stays out of the repo — size and licence (PRD A-2).
+eval/fixtures/*
+!eval/fixtures/README.md
 .DS_Store
 *.log
 .context/

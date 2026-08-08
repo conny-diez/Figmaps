@@ -7,14 +7,19 @@
 import { render } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ENGINE_CONFIG, ENGINE_VERSION } from './engine/config'
+import { PROFILE_LABELS, shippedProfiles, type ProfileId } from './engine/params'
+import { availablePriorCategories, PRIOR_ASSET_LABELS, shipsPriorAsset } from './engine/priors'
+import { SEVERITY_LABELS } from './findings/types'
 import {
   DEFAULT_SETTINGS,
   isMainToUi,
-  MAP_KINDS,
   MAP_LABELS,
+  SELECTABLE_MAP_KINDS,
   type ClickRanking,
+  type FindingPayload,
   type FrameSummary,
   type MapKind,
+  type SegmentInfo,
   type Settings,
   type UiToMain,
 } from './messages'
@@ -27,7 +32,31 @@ type FrameOutcome = {
   frameName: string
   maps: MapKind[]
   warnings: string[]
+  findings: FindingPayload[]
+  segments?: SegmentInfo
 }
+
+/**
+ * Epic D — only profiles the harness has shown to beat the center-bias
+ * baseline are offered. Three profiles of which one is noise are worse than
+ * one profile, so the control disappears entirely while only `scan` is proven.
+ */
+const AVAILABLE_PROFILES: ProfileId[] = shippedProfiles()
+
+/**
+ * CC BY 4.0 requires naming the authors wherever the derived asset is
+ * distributed. The maps are in the bundle as soon as the plugin is built —
+ * independent of which engine configuration is active — so the notice is shown
+ * whenever the bundle carries them. See NOTICE.md.
+ */
+const PRIOR_ATTRIBUTION = shipsPriorAsset()
+
+/**
+ * UI types with a prior in this build. The geometry rule only ever picks
+ * `web` or `mobile`; desktop-app UIs and posters are geometrically
+ * indistinguishable from web pages, so they need to be stated.
+ */
+const AVAILABLE_UI_TYPES = availablePriorCategories()
 
 function send(message: UiToMain): void {
   parent.postMessage({ pluginMessage: message }, '*')
@@ -41,6 +70,8 @@ function App(): preact.JSX.Element {
   const [outcomes, setOutcomes] = useState<FrameOutcome[]>([])
   const [ranking, setRanking] = useState<ClickRanking[]>([])
   const [errors, setErrors] = useState<string[]>([])
+  const [findings, setFindings] = useState<FindingPayload[]>([])
+  const [segments, setSegments] = useState<SegmentInfo | null>(null)
 
   // Refs, because the message handler is installed once and must not close over
   // stale state.
@@ -65,11 +96,20 @@ function App(): preact.JSX.Element {
         onStep: (label, fraction) => setProgress((prev) => ({ ...prev, label, fraction })),
       })
       if (result.ranking.length > 0) setRanking(result.ranking)
-      send({ type: 'PLACE_RESULT', frameId: data.frameId, maps: result.maps, warnings: result.warnings })
+      setFindings(result.findings)
+      setSegments(result.segments)
+      send({
+        type: 'PLACE_RESULT',
+        frameId: data.frameId,
+        maps: result.maps,
+        warnings: result.warnings,
+        findings: result.findings,
+        segments: result.segments,
+      })
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
       pushError(`${data.frameName}: Maps konnten nicht berechnet werden (${detail}).`)
-      send({ type: 'PLACE_RESULT', frameId: data.frameId, maps: [], warnings: [] })
+      send({ type: 'PLACE_RESULT', frameId: data.frameId, maps: [], warnings: [], findings: [] })
     }
   }, [pushError])
 
@@ -103,7 +143,13 @@ function App(): preact.JSX.Element {
         case 'FRAME_DONE':
           setOutcomes((prev) => [
             ...prev,
-            { frameName: typed.frameName, maps: typed.maps, warnings: typed.warnings },
+            {
+              frameName: typed.frameName,
+              maps: typed.maps,
+              warnings: typed.warnings,
+              findings: typed.findings,
+              segments: typed.segments,
+            },
           ])
           break
 
@@ -148,6 +194,8 @@ function App(): preact.JSX.Element {
     cancelledRef.current = false
     setOutcomes([])
     setRanking([])
+    setFindings([])
+    setSegments(null)
     errorsRef.current = []
     setErrors([])
     setPhase('working')
@@ -161,6 +209,10 @@ function App(): preact.JSX.Element {
   const cancel = useCallback(() => {
     cancelledRef.current = true
     send({ type: 'CANCEL' })
+  }, [])
+
+  const reveal = useCallback((nodeIds: string[]) => {
+    send({ type: 'REVEAL_NODES', nodeIds })
   }, [])
 
   const isFinished = phase === 'done' || phase === 'error'
@@ -212,9 +264,52 @@ function App(): preact.JSX.Element {
           )}
         </section>
 
+        {AVAILABLE_PROFILES.length > 1 && (
+          <section class="section">
+            <p class="section__label">Betrachtungsdauer</p>
+            <div class="segmented">
+              {AVAILABLE_PROFILES.map((profile) => (
+                <button
+                  key={profile}
+                  type="button"
+                  aria-pressed={settings.profile === profile}
+                  disabled={phase === 'working'}
+                  onClick={() => patchSettings({ profile })}
+                >
+                  {PROFILE_LABELS[profile]}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {PRIOR_ATTRIBUTION && AVAILABLE_UI_TYPES.length > 0 && (
+          <section class="section">
+            <p class="section__label">Art des Screens</p>
+            <select
+              class="select"
+              value={settings.uiType}
+              disabled={phase === 'working'}
+              onChange={(event) => patchSettings({ uiType: event.currentTarget.value as Settings['uiType'] })}
+            >
+              <option value="auto">Automatisch erkennen</option>
+              {AVAILABLE_UI_TYPES.map((id) => (
+                <option key={id} value={id}>
+                  {PRIOR_ASSET_LABELS[id]}
+                </option>
+              ))}
+            </select>
+            <p class="hint">
+              {settings.uiType === 'auto'
+                ? 'Aus der Frame-Geometrie abgeleitet — unterscheidet Webseite und Mobile App zuverlässig, Desktop-Anwendung und Poster nicht.'
+                : 'Bestimmt, welcher Ortsprior verwendet wird.'}
+            </p>
+          </section>
+        )}
+
         <section class="section">
           <p class="section__label">Maps</p>
-          {MAP_KINDS.map((kind) => (
+          {SELECTABLE_MAP_KINDS.map((kind) => (
             <label class="checkbox" key={kind}>
               <input
                 type="checkbox"
@@ -263,6 +358,33 @@ function App(): preact.JSX.Element {
                 patchSettings({ focusThreshold: Number(event.currentTarget.value) })
               }
             />
+          </div>
+
+          <div class="slider">
+            <div class="slider__head">
+              <span>Viewport-Höhe</span>
+              <span class="slider__value">
+                {settings.viewportHeight === null ? 'automatisch' : `${settings.viewportHeight} px`}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={ENGINE_CONFIG.viewport.desktopHeight - 500}
+              max={ENGINE_CONFIG.viewport.desktopHeight + 700}
+              step={50}
+              value={settings.viewportHeight ?? ENGINE_CONFIG.viewport.desktopHeight}
+              disabled={phase === 'working'}
+              onInput={(event) => patchSettings({ viewportHeight: Number(event.currentTarget.value) })}
+            />
+            <p class="hint">
+              Ab {ENGINE_CONFIG.viewport.segmentThreshold} Viewport-Höhen wird der Frame abschnittsweise
+              analysiert.{' '}
+              {settings.viewportHeight !== null && (
+                <button type="button" class="linkbutton" onClick={() => patchSettings({ viewportHeight: null })}>
+                  zurücksetzen
+                </button>
+              )}
+            </p>
           </div>
 
           <div class="slider">
@@ -322,8 +444,39 @@ function App(): preact.JSX.Element {
                   {createdCount} {createdCount === 1 ? 'Map' : 'Maps'} für{' '}
                   {outcomes.length === 1 ? '1 Frame' : `${outcomes.length} Frames`} erstellt
                 </li>
+                {segments?.segmented && (
+                  <li>
+                    In {segments.sectionCount} Abschnitten à {segments.viewportHeight} px analysiert, mit
+                    Above-the-fold-Map
+                  </li>
+                )}
                 {errors.length > 0 && <li>{errors.length} Frame(s) mit Fehlern</li>}
               </ul>
+
+              {findings.length > 0 && (
+                <>
+                  <p class="section__label" style={{ margin: '10px 0 0' }}>
+                    Befunde
+                  </p>
+                  <ul class="findings">
+                    {findings.map((finding) => (
+                      <li key={finding.id} class={`findings__item findings__item--${finding.severity}`}>
+                        <span class="findings__severity">{SEVERITY_LABELS[finding.severity]}</span>
+                        <span class="findings__text">{finding.text}</span>
+                        {finding.nodeIds && finding.nodeIds.length > 0 && (
+                          <button
+                            type="button"
+                            class="linkbutton"
+                            onClick={() => reveal(finding.nodeIds ?? [])}
+                          >
+                            Im Canvas zeigen
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
 
               {ranking.length > 0 && (
                 <>
@@ -373,10 +526,18 @@ function App(): preact.JSX.Element {
         <span class="disclaimer__icon" aria-hidden="true">
           ⓘ
         </span>
-        <span>
-          Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
-          Nutzerverhalten.
-        </span>
+        <div>
+          <span>
+            Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
+            Nutzerverhalten.
+          </span>
+          {PRIOR_ATTRIBUTION && (
+            <p class="attribution">
+              Ortsprior abgeleitet aus dem UEyes-Datensatz (Jiang et al., CHI 2023), CC BY 4.0, gemittelt und
+              verkleinert.
+            </p>
+          )}
+        </div>
       </footer>
     </div>
   )
