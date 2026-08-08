@@ -18,6 +18,7 @@ import {
   type Settings,
   type UiToMain,
 } from './messages'
+import { Logo } from './ui/logo'
 import { generateMaps, type FrameData } from './ui/pipeline'
 
 type Phase = 'empty' | 'ready' | 'working' | 'done' | 'error'
@@ -171,8 +172,11 @@ function App(): preact.JSX.Element {
   return (
     <div class="app">
       <header class="app__header">
-        <h1 class="app__title">Attention Maps</h1>
-        <p class="app__subtitle">Engine {ENGINE_VERSION}</p>
+        <Logo />
+        <div>
+          <h1 class="app__title">FigMaps</h1>
+          <p class="app__subtitle">Engine {ENGINE_VERSION}</p>
+        </div>
       </header>
 
       <div class="app__body">

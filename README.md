@@ -1,4 +1,6 @@
-# Attention Maps — Figma Plugin
+<img src="assets/logo.svg" width="72" height="72" alt="FigMaps">
+
+# FigMaps — Figma Plugin
 
 Erzeugt für einen ausgewählten Frame drei Visualisierungen und legt sie als Bild
 rechts neben dem Original auf dem Canvas ab:
@@ -44,7 +46,7 @@ Community vergibt Figma eine echte ID, die dann eingetragen wird.
 1. Frame, Component, Instance, Section oder Group auswählen (Mehrfachauswahl = Batch)
 2. Maps an-/abwählen, Overlay-Deckkraft und Focus-Schwelle einstellen
 3. **Maps erstellen** — Ergebnis landet in einem neuen Wrapper-Frame
-   `[AM] {Frame-Name} — {Zeitstempel}` rechts daneben
+   `[FigMaps] {Frame-Name} — {Zeitstempel}` rechts daneben
 
 Wiederholte Läufe erzeugen immer einen **neuen** Wrapper und überschreiben nichts.
 Frames mit einer Kante unter 200 px werden abgelehnt.
@@ -95,7 +97,11 @@ src/
 │  └─ legend.ts            Legende + Disclaimer-Fußzeile
 └─ ui/
    ├─ pipeline.ts          iframe-Pipeline: PNG rein, Map-PNGs raus
+   ├─ logo.tsx             FigMaps-Wortmarke als Inline-SVG
    └─ styles.css
+
+assets/
+└─ logo.svg                Produkt-Logo (Quelle für Panel-Mark und Store-Icon)
 ```
 
 ### Ablauf eines Laufs
@@ -189,7 +195,7 @@ App durchzugehen:
 | 2 | Frame auswählen | Name + Dimensionen erscheinen, Button aktiv |
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |
-| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[AM] … — …` rechts daneben, Viewport springt darauf, `3 Maps erstellt` |
+| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[FigMaps] … — …` rechts daneben, Viewport springt darauf, `3 Maps erstellt` |
 | 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt, Legende + Fußzeile mit `heuristic-v1` vorhanden |
 | 7 | Clickmap begutachten | Ranking im Panel; primärer CTA auf Platz 1 (mind. 2 von 3 Referenz-Screens) |
 | 8 | Focus-Schwelle 60 → 95, neu erzeugen | Sichtbare klare Fläche wird monoton kleiner |
@@ -205,7 +211,9 @@ App durchzugehen:
 
 ## Offene Entscheidungen (PRD §11)
 
-1. **Plugin-Name** — aktuell `Attention Maps`.
+1. ~~**Plugin-Name**~~ — entschieden: `FigMaps`. Das Logo liegt als
+   `assets/logo.svg` und wird beim Community-Publishing als Plugin-Icon
+   hochgeladen (die `manifest.json` hat kein Icon-Feld).
 2. **`positionPrior` für RTL** — implementiert als Schalter
    `ENGINE_CONFIG.prior.mirrorHorizontally` (Default `false` = westliche
    Leserichtung). Noch nicht im UI exponiert, weil die Selection allein die

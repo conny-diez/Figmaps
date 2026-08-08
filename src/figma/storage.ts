@@ -4,7 +4,7 @@
 import { DEFAULT_SETTINGS, type MapKind, type Settings } from '../messages'
 import { ENGINE_CONFIG } from '../engine/config'
 
-const STORAGE_KEY = 'attention-maps.settings.v1'
+const STORAGE_KEY = 'figmaps.settings.v1'
 
 function clamp(value: number, min: number, max: number, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback

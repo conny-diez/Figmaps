@@ -38,7 +38,7 @@ function postError(code: ErrorCode, error?: unknown, frameName?: string): void {
   post({ type: 'ERROR', code, message: `${ERROR_TEXT[code]}${detail}`, frameName })
 }
 
-figma.showUI(__html__, { width: UI_WIDTH, height: UI_HEIGHT, themeColors: true, title: 'Attention Maps' })
+figma.showUI(__html__, { width: UI_WIDTH, height: UI_HEIGHT, themeColors: true, title: 'FigMaps' })
 
 figma.on('selectionchange', () => {
   post({ type: 'SELECTION', frames: currentSelection() })
