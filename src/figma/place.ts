@@ -29,6 +29,10 @@ const SEVERITY_MARKERS: Record<FindingPayload['severity'], string> = {
 let cachedFont: FontName | null = null
 let cachedBodyFont: FontName | null = null
 
+function describe(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error)
+}
+
 /**
  * Text nodes cannot be created before their font is loaded — skipping this is
  * the classic runtime error in Figma plugins (PRD §12).
@@ -135,8 +139,17 @@ export async function placeMaps(
 
   // C-3 — the findings travel with the images, so they survive the trip into a
   // presentation.
+  //
+  // Deliberately non-fatal: the maps are the deliverable, the text frame is an
+  // extra. Losing the whole placement because a text node misbehaved is the
+  // wrong trade — that is exactly what happened when this shipped with the
+  // `layoutSizingHorizontal` calls in the wrong order.
   if (extras.findings && extras.findings.length > 0) {
-    await appendFindingsFrame(wrapper, extras.findings, extras.segments)
+    try {
+      await appendFindingsFrame(wrapper, extras.findings, extras.segments)
+    } catch (error) {
+      figma.notify(`Befunde konnten nicht als Textframe abgelegt werden (${describe(error)}). Maps sind erstellt.`)
+    }
   }
 
   // Place to the right of the source frame, in absolute page coordinates.
@@ -171,39 +184,56 @@ async function appendFindingsFrame(
   frame.cornerRadius = 12
   wrapper.appendChild(frame)
 
-  const title = figma.createText()
-  title.fontName = titleFont
-  title.fontSize = cfg.titleFontSize
-  title.characters = 'Befunde — vorhergesagt'
-  title.fills = [{ type: 'SOLID', color: { r: 0.1, g: 0.1, b: 0.12 } }]
-  title.layoutSizingHorizontal = 'FILL'
-  frame.appendChild(title)
-
-  if (segments?.segmented) {
-    const context = figma.createText()
-    context.fontName = bodyFont
-    context.fontSize = cfg.findingsFontSize * 0.85
-    context.characters = `Abschnittsweise analysiert: ${segments.sectionCount} Abschnitte à ${segments.viewportHeight} px`
-    context.fills = [{ type: 'SOLID', color: { r: 0.45, g: 0.45, b: 0.5 } }]
-    context.layoutSizingHorizontal = 'FILL'
-    frame.appendChild(context)
+  /**
+   * Appends a paragraph and lets it fill the frame's width.
+   *
+   * The order matters and is the whole reason this helper exists:
+   * `layoutSizingHorizontal` may only be set once the node **is** a child of an
+   * auto-layout frame. Setting it first throws
+   * "node must be an auto-layout frame or a child of an auto-layout frame",
+   * which is how this shipped broken.
+   */
+  const paragraph = (options: { font: FontName; size: number; text: string; colour: RGB }): void => {
+    const node = figma.createText()
+    node.fontName = options.font
+    node.fontSize = options.size
+    node.characters = options.text
+    node.fills = [{ type: 'SOLID', color: options.colour }]
+    frame.appendChild(node)
+    node.layoutSizingHorizontal = 'FILL'
   }
 
-  for (const finding of findings) {
-    const entry = figma.createText()
-    entry.fontName = bodyFont
-    entry.fontSize = cfg.findingsFontSize
-    entry.characters = `${SEVERITY_MARKERS[finding.severity]} · ${finding.text}`
-    entry.fills = [{ type: 'SOLID', color: { r: 0.16, g: 0.16, b: 0.2 } }]
-    entry.layoutSizingHorizontal = 'FILL'
-    frame.appendChild(entry)
-  }
+  // If any paragraph fails, the half-built frame must not stay behind: an empty
+  // white box next to the maps looks like a result, and is worse than nothing.
+  try {
+    paragraph({ font: titleFont, size: cfg.titleFontSize, text: 'Befunde — vorhergesagt', colour: { r: 0.1, g: 0.1, b: 0.12 } })
 
-  const disclaimer = figma.createText()
-  disclaimer.fontName = bodyFont
-  disclaimer.fontSize = cfg.findingsFontSize * 0.8
-  disclaimer.characters = 'Algorithmische Vorhersage, keine Messdaten.'
-  disclaimer.fills = [{ type: 'SOLID', color: { r: 0.55, g: 0.55, b: 0.6 } }]
-  disclaimer.layoutSizingHorizontal = 'FILL'
-  frame.appendChild(disclaimer)
+    if (segments?.segmented) {
+      paragraph({
+        font: bodyFont,
+        size: cfg.findingsFontSize * 0.85,
+        text: `Abschnittsweise analysiert: ${segments.sectionCount} Abschnitte à ${segments.viewportHeight} px`,
+        colour: { r: 0.45, g: 0.45, b: 0.5 },
+      })
+    }
+
+    for (const finding of findings) {
+      paragraph({
+        font: bodyFont,
+        size: cfg.findingsFontSize,
+        text: `${SEVERITY_MARKERS[finding.severity]} · ${finding.text}`,
+        colour: { r: 0.16, g: 0.16, b: 0.2 },
+      })
+    }
+
+    paragraph({
+      font: bodyFont,
+      size: cfg.findingsFontSize * 0.8,
+      text: 'Algorithmische Vorhersage, keine Messdaten.',
+      colour: { r: 0.55, g: 0.55, b: 0.6 },
+    })
+  } catch (error) {
+    frame.remove()
+    throw error
+  }
 }
