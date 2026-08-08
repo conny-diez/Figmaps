@@ -16,7 +16,8 @@
  */
 import type { ClickCandidate } from '../engine/clickmap'
 import { ENGINE_CONFIG } from '../engine/config'
-import { meanInRect, percentile } from '../engine/imageops'
+import { meanInRect } from '../engine/imageops'
+import { sectionSalience } from '../engine/segments'
 import { signalRect } from '../engine/features/structure'
 import type { NodeSignal } from '../messages'
 import type { Finding, FindingsInput, Rule } from './types'
@@ -85,10 +86,18 @@ function argmax(values: Float32Array, predicate?: (index: number) => boolean): n
  * True when the straight path between two peaks drops clearly below the
  * hotspot threshold somewhere — i.e. they are two regions, not one band.
  */
-function hasValleyBetween(map: { width: number; values: Float32Array }, x1: number, y1: number, x2: number, y2: number): boolean {
+function hasValleyBetween(
+  map: { width: number; values: Float32Array },
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  secondPeak: number,
+): boolean {
   const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1))
   if (steps <= 0) return false
-  const valley = cfg.competitionIntensity * cfg.competitionValleyRatio
+  // Relative to the weaker of the two peaks — see `competitionValleyRatio`.
+  const valley = secondPeak * cfg.competitionValleyRatio
 
   for (let step = 1; step < steps; step++) {
     const t = step / steps
@@ -168,7 +177,7 @@ const competition: Rule = {
 
     // Two peaks inside one continuous bright band are one region, not two
     // competitors — require the connecting path to dip.
-    if (!hasValleyBetween(attention, x1, y1, x2, y2)) return null
+    if (!hasValleyBetween(attention, x1, y1, x2, y2, attention.values[second])) return null
 
     const a = labelAt(input, x1, y1)
     const b = labelAt(input, x2, y2)
@@ -214,9 +223,12 @@ const coldFold: Rule = {
 const flat: Rule = {
   id: 'flat',
   evaluate(input) {
-    const p90 = percentile(input.attention.values, 90)
-    const p50 = percentile(input.attention.values, 50)
-    if (p90 - p50 >= cfg.flatSpreadThreshold) return null
+    // Concentration, not the p90-p50 spread. The spread depends on the map's
+    // overall contrast, which differs systematically between UI types: on the
+    // same threshold it fired on 11 % of webpages and 90 % of mobile screens.
+    // The share of mass in the strongest pixels is scale-free and transfers.
+    const threshold = cfg.flatConcentrationThreshold[input.priorCategory] ?? cfg.flatConcentrationThreshold.web
+    if (sectionSalience(input.attention) >= threshold) return null
 
     return {
       id: 'flat',
@@ -230,19 +242,27 @@ const flat: Rule = {
 const deadCta: Rule = {
   id: 'dead-cta',
   evaluate(input) {
-    if (input.candidates.length === 0) return null
-    const cutoff = percentile(input.attention.values, cfg.deadCtaQuartile)
+    // At least two candidates: "quiet compared to the others" is meaningless
+    // when there is only one.
+    if (input.candidates.length < 2) return null
 
-    let worst: { candidate: ClickCandidate; mean: number } | null = null
-    for (const candidate of input.candidates) {
-      const mean = meanInRect(
+    const means = input.candidates.map((candidate) => ({
+      candidate,
+      mean: meanInRect(
         input.attention.values,
         input.attention.width,
         input.attention.height,
         candidateRect(candidate, input),
-      )
-      if (mean > cutoff) continue
-      if (!worst || mean < worst.mean) worst = { candidate, mean }
+      ),
+    }))
+    const best = Math.max(...means.map((entry) => entry.mean))
+    if (!(best > 0)) return null
+
+    const cutoff = best * cfg.deadCtaRelativeToBest
+    let worst: { candidate: ClickCandidate; mean: number } | null = null
+    for (const entry of means) {
+      if (entry.mean > cutoff) continue
+      if (!worst || entry.mean < worst.mean) worst = entry
     }
     if (!worst) return null
 

@@ -20,6 +20,7 @@ import { PRIOR_ASSET_IDS, PRIOR_DURATIONS, type PriorAssetId } from '../src/engi
 import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
 import { crossValidate, ENGINE_LABELS, FOLDS } from './crossval'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
+import { auditFindings, quantiles } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
 import { buildEpicDReport } from './epic-d-report'
 import { diagnose } from './diagnose'
@@ -267,6 +268,57 @@ async function runEval(args: Args): Promise<number> {
       console.error(`CC ist um ${drop.toFixed(4)} gefallen — erlaubt sind ${maxDrop}.`)
       return 1
     }
+  }
+
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// findings-audit — does every rule actually fire on real images?
+// ---------------------------------------------------------------------------
+
+async function runFindingsAudit(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  const viewportOverride = args.viewport ? num(args, 'viewport', 0) : undefined
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log(
+    `Findings-Audit auf "${setName}"` +
+      (viewportOverride ? `, Viewport erzwungen auf ${viewportOverride} px (sonst wäre nichts segmentiert)` : ''),
+  )
+  let last = 0
+  const result = await auditFindings({
+    setName,
+    ...(viewportOverride ? { viewportOverride } : {}),
+    ...(limit ? { limit } : {}),
+    onProgress: (done, total) => {
+      if (done - last >= 25 || done === total) {
+        last = done
+        process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+      }
+    },
+  })
+  process.stdout.write(`\r  ${result.imageCount} Bilder, davon ${result.withSignals} mit Layer-Signalen     \n\n`)
+
+  console.log('Regel              feuert   stumm  blockiert   Anteil (von bewertbaren)')
+  for (const rule of result.rules) {
+    const evaluated = rule.fired + rule.silent
+    const share = evaluated > 0 ? `${((rule.fired / evaluated) * 100).toFixed(1)} %` : '—'
+    const flag = evaluated === 0 ? '  (nicht bewertbar)' : rule.fired === 0 ? '  ← feuert NIE' : rule.fired === evaluated ? '  ← feuert IMMER' : ''
+    console.log(
+      `  ${rule.id.padEnd(16)} ${String(rule.fired).padStart(5)} ${String(rule.silent).padStart(7)} ${String(rule.blocked).padStart(10)}   ${share.padStart(7)}${flag}`,
+    )
+  }
+  console.log('')
+  for (const rule of result.rules) {
+    if (rule.blocked > 0) console.log(`  ${rule.id}: ${rule.blocked}x blockiert — ${rule.blockedReason}`)
+  }
+  console.log('')
+  console.log('Verteilung der Entscheidungsgröße (p5 / p25 / Median / p75 / p95):')
+  for (const rule of result.rules) {
+    if (rule.samples.length === 0) continue
+    const q = quantiles(rule.samples).map((value) => value.toFixed(3))
+    console.log(`  ${rule.id.padEnd(16)} ${q.join('  ')}   [${rule.variable}]`)
   }
 
   return 0
@@ -627,6 +679,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   try {
+    if (args['findings-audit']) return await runFindingsAudit(args)
     if (args['epic-d']) return await runEpicD(args)
     if (args.crossval) return await runCrossval(args)
     if (args['build-prior']) return runBuildPrior(args)

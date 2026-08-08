@@ -61,6 +61,7 @@ function input(overrides: Partial<FindingsInput> = {}): FindingsInput {
     plan,
     frameWidth: FRAME.width,
     frameHeight: FRAME.height,
+    priorCategory: 'web',
     ...overrides,
   }
 }
@@ -182,28 +183,53 @@ describe('flat', () => {
   })
 
   it('stays silent when there is a clear peak', () => {
+    // `flat` measures concentration: the share of mass in the strongest 5 %.
+    // A ramp^4 puts 0.226 there, comfortably above the web threshold of 0.148.
     const values = new Float32Array(MAP_W * MAP_H)
-    for (let i = 0; i < values.length; i++) values[i] = i / values.length
-    expect(evaluateRule('flat', input({ attention: { width: MAP_W, height: MAP_H, values } }))).toBeNull()
+    for (let i = 0; i < values.length; i++) values[i] = (i / values.length) ** 4
+    const spread = { width: MAP_W, height: MAP_H, values }
+    expect(evaluateRule('flat', input({ attention: spread }))).toBeNull()
   })
 })
 
 describe('dead-cta', () => {
-  it('fires for a candidate in the quietest quarter', () => {
+  it('fires for a candidate far quieter than its peers', () => {
     const attention = mapWithSpots([{ x: 80, y: 60, value: 1, radius: 15 }])
     const finding = evaluateRule(
       'dead-cta',
-      input({ attention, candidates: [candidate({ id: 'cold', name: 'Jetzt anfragen', x: 50, y: 50, width: 100, height: 40 })] }),
+      input({
+        attention,
+        candidates: [
+          // Sits on the hotspot.
+          candidate({ id: 'hot', name: 'Jetzt starten', x: 750, y: 550, width: 150, height: 100 }),
+          // Sits in the dark corner.
+          candidate({ id: 'cold', name: 'Jetzt anfragen', x: 50, y: 50, width: 150, height: 100 }),
+        ],
+      }),
     )
     expect(finding?.text).toContain('Jetzt anfragen')
     expect(finding?.nodeIds).toEqual(['cold'])
   })
 
-  it('stays silent when every candidate sits in a lively area', () => {
-    const attention = mapWithSpots([{ x: 15, y: 12, value: 1, radius: 12 }])
+  it('stays silent when the candidates are comparably lively', () => {
+    const attention = mapWithSpots([{ x: 50, y: 40, value: 1, radius: 30 }])
     expect(
-      evaluateRule('dead-cta', input({ attention, candidates: [candidate({ x: 100, y: 80, width: 150, height: 60 })] })),
+      evaluateRule(
+        'dead-cta',
+        input({
+          attention,
+          candidates: [
+            candidate({ id: 'a', x: 400, y: 300, width: 150, height: 100 }),
+            candidate({ id: 'b', x: 550, y: 400, width: 150, height: 100 }),
+          ],
+        }),
+      ),
     ).toBeNull()
+  })
+
+  it('stays silent with a single candidate — "quieter than the others" is empty', () => {
+    const attention = mapWithSpots([{ x: 80, y: 60, value: 1, radius: 15 }])
+    expect(evaluateRule('dead-cta', input({ attention, candidates: [candidate({ x: 50, y: 50 })] }))).toBeNull()
   })
 })
 
@@ -233,8 +259,9 @@ describe('collectFindings', () => {
   })
 
   it('returns nothing for an unremarkable screen', () => {
+    // One clear focus, one candidate, not segmented: nothing to report.
     const values = new Float32Array(MAP_W * MAP_H)
-    for (let i = 0; i < values.length; i++) values[i] = (i % MAP_W) / MAP_W
+    for (let i = 0; i < values.length; i++) values[i] = ((i % MAP_W) / MAP_W) ** 4
     const findings = collectFindings(
       input({
         attention: { width: MAP_W, height: MAP_H, values },

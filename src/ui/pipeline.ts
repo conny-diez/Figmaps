@@ -13,7 +13,7 @@ import { HeuristicAttentionEngine } from '../engine/heuristic'
 import { yieldToUi } from '../engine/imageops'
 import { analysisSourceSize } from '../engine/ops-pure'
 import type { ScalarMap } from '../engine/types'
-import { collectFindings } from '../findings'
+import { deriveFindings } from '../findings/derive'
 import type { ClickRanking, FindingPayload, MainToUi, RenderedMap, SegmentInfo, Settings } from '../messages'
 import { priorAssetIdFor, PRIOR_ASSET_LABELS } from '../engine/priors'
 import { canvasImageOps } from '../platform/imageops-canvas'
@@ -192,14 +192,14 @@ export async function generateMaps(
     }
 
     hooks.onStep?.('Befunde werden abgeleitet', 0.95)
-    const findings = collectFindings({
-      attention,
-      sectionSalience: analysis.sectionSalience,
-      candidates,
+    // Same function the end-to-end tests exercise — see `findings/derive.ts`.
+    const findings = deriveFindings({
+      analysis,
       signals: data.signals,
-      plan: analysis.plan,
       frameWidth: data.width,
       frameHeight: data.height,
+      candidates,
+      priorCategory: resolvedPrior,
     })
 
     hooks.onStep?.('Fertig', 1)

@@ -46,6 +46,11 @@ export type FindingsInput = {
   plan: SegmentPlan
   frameWidth: number
   frameHeight: number
+  /**
+   * Which location prior was used. `flat` needs it: attention concentration is
+   * scale-free but not comparable across UI types.
+   */
+  priorCategory: string
 }
 
 /** A single rule. Returns at most one finding (C-1). */

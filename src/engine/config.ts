@@ -294,20 +294,74 @@ export const ENGINE_CONFIG = {
   findings: {
     /** Never show more than this many findings (C-1). */
     maxShown: 6,
-    /** `competition`: intensity a region must reach to count as a hotspot. */
-    competitionIntensity: 0.8,
+    /**
+     * `competition`: Anteil des Maximums, den eine Region erreichen muss, um
+     * als zweiter Hotspot zu zählen.
+     *
+     * Das PRD nannte 80 %. Unter `hybrid-v1` ist die Karte prior-dominiert:
+     * eine weit entfernte Region kann höchstens `Prior dort + 0,3` erreichen
+     * und kommt damit strukturell kaum über 0,66. Gemessen auf UEyes liegt das
+     * zweite Maximum im Median bei 0,75 (p25 0,59, p75 0,81). Bei 0,8 feuerte
+     * die Regel auf 2 % der Bilder und war auf konstruierten Frames überhaupt
+     * nicht auslösbar — also nicht testbar.
+     *
+     * 0,65 liegt beim ~20. Perzentil; bindend wird damit der Tal-Test, der
+     * die eigentliche Aussage trägt („zwei getrennte Regionen").
+     */
+    competitionIntensity: 0.65,
     /** `competition`: minimum distance between the two peaks, share of width. */
     competitionMinDistance: 0.3,
     /**
      * `competition`: the path between the two peaks must dip below
-     * `competitionIntensity x this`. Without it a single wide bright band reads
-     * as two competing regions just because it is wider than the threshold.
+     * `zweites Maximum x this`. Without the valley test a single wide bright
+     * band reads as two competing regions just because it is wider than the
+     * threshold.
+     *
+     * **Relativ zum zweiten Maximum, nicht absolut.** Absolut (gegen
+     * `competitionIntensity x 0,7 = 0,56`) feuerte die Regel auf 0 von 495
+     * UEyes-Bildern: die beiden Bedingungen stehen sich im Weg, weil eine
+     * glatte, prior-dominierte Karte mit zwei starken Maxima auch dazwischen
+     * hell bleibt. Gemessen liegt das Tal im Median bei 0,74 bei einem zweiten
+     * Maximum um 0,75–0,85 — der Quotient ist die aussagekräftige Größe.
      */
-    competitionValleyRatio: 0.7,
-    /** `flat`: p90 - p50 below this means "no hierarchy". */
-    flatSpreadThreshold: 0.25,
-    /** `dead-cta`: mean attention percentile below which an element is "cold". */
-    deadCtaQuartile: 25,
+    competitionValleyRatio: 0.9,
+    /**
+     * `flat`: Konzentration der Aufmerksamkeit (Anteil der Masse in den
+     * stärksten 5 % der Pixel) unterhalb dieses Werts heißt „keine Hierarchie".
+     *
+     * **Pro UI-Typ**, weil sich die Verteilung zwischen ihnen kaum überlappt:
+     * gemessener Median 0,163 (web), 0,258 (mobile), 0,139 (desktop),
+     * 0,187 (poster). Jeder Wert ist ungefähr das 10. Perzentil seiner
+     * Kategorie, die Regel meldet also die flachsten rund 10 % — „flach" heißt
+     * flach *für diese Art Screen*.
+     *
+     * Zwei Vorgänger sind an genau dieser Stelle gescheitert. `p90 − p50` mit
+     * 0,25 (aus `heuristic-v1`) feuerte nie; mit 0,41 feuerte es auf 11 % der
+     * Webseiten und auf **90 %** der Mobile-Screens. Die Konzentration ist
+     * skalenfrei, aber nicht kategorieübergreifend vergleichbar.
+     *
+     * Wer die Engine oder die Prioren ändert, muss diese Werte nachmessen —
+     * `npm run findings-audit`.
+     */
+    flatConcentrationThreshold: {
+      web: 0.148,
+      mobile: 0.2,
+      desktop: 0.128,
+      poster: 0.135,
+    } as Record<string, number>,
+    /**
+     * `dead-cta`: ein Kandidat gilt als „ruhig", wenn seine mittlere
+     * Aufmerksamkeit unter diesem Anteil des **stärksten Kandidaten** liegt.
+     *
+     * Verglichen wird gegen die anderen interaktiven Elemente, nicht gegen das
+     * unterste Perzentil der ganzen Karte. Letzteres besteht bei einem
+     * prior-dominierten Modell aus Rändern und Weißraum; jedes echte
+     * Bedienelement liegt darüber, und die Regel feuerte nie (gemessen:
+     * ruhigster Kandidat lag beim 3,5- bis 8-fachen des 25. Perzentils).
+     * „Visuell ruhig" heißt sinnvoll: ruhig **im Vergleich zu den anderen
+     * Schaltflächen desselben Screens".
+     */
+    deadCtaRelativeToBest: 0.45,
     /**
      * `cold-fold`: **relative** margin by which a later section's attention
      * concentration must exceed the first section's — 0,08 means 8 % more.

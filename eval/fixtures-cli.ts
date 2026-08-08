@@ -71,12 +71,21 @@ type Element = {
 /** One synthetic screen: layout, pixels, signals and constructed ground truth. */
 function makeScreen(index: number, random: () => number): { image: Bitmap; truth: Bitmap; signals: NodeSignal[] } {
   const width = 1280
-  const height = 800
+  // Layout varies per screen. A generator that emits one template makes every
+  // findings rule fire on 0 % or 100 % of the set, which measures the
+  // generator rather than the rules — that is what the first version did.
+  const tall = random() < 0.4
+  const height = tall ? 2200 : 800
   const image = blank(width, height, [246, 247, 249])
 
   const heroLeft = random() < 0.5
   const heroX = heroLeft ? 80 : 700
   const textX = heroLeft ? 700 : 80
+  // Where the primary call to action sits, and how big it is: both decide
+  // whether `cta-below-fold`, `cta-rank` and `dead-cta` have anything to say.
+  const ctaY = tall && random() < 0.6 ? 1500 + Math.round(random() * 500) : 420
+  const ctaWide = random() < 0.5
+  const secondaryProminent = random() < 0.4
   const accent: Rgb = [30 + Math.round(random() * 60), 90 + Math.round(random() * 120), 200 + Math.round(random() * 50)]
 
   const elements: Element[] = [
@@ -107,23 +116,23 @@ function makeScreen(index: number, random: () => number): { image: Bitmap; truth
       name: 'Primary CTA Button',
       kind: 'button',
       x: textX,
-      y: 420,
-      width: 220,
-      height: 56,
+      y: ctaY,
+      width: ctaWide ? 320 : 150,
+      height: ctaWide ? 72 : 44,
       color: accent,
       weight: 0.6 + random() * 0.35,
     },
     {
-      name: 'Sekundär-Link',
+      name: 'Alle Angebote',
       kind: 'button',
-      x: textX + 250,
-      y: 420,
-      width: 160,
-      height: 56,
-      color: [225, 227, 232],
-      weight: 0.25,
+      x: textX + (ctaWide ? 350 : 180),
+      y: ctaY,
+      width: secondaryProminent ? 300 : 160,
+      height: secondaryProminent ? 72 : 44,
+      color: secondaryProminent ? [90, 90, 200] : [225, 227, 232],
+      weight: secondaryProminent ? 0.5 : 0.25,
     },
-    { name: 'Footer', kind: 'chrome', x: 0, y: 700, width, height: 100, color: [235, 236, 240], weight: 0.1 },
+    { name: 'Footer', kind: 'chrome', x: 0, y: height - 100, width, height: 100, color: [235, 236, 240], weight: 0.1 },
   ]
 
   for (const element of elements) paint(image, element.x, element.y, element.width, element.height, element.color)

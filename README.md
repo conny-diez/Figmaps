@@ -883,6 +883,70 @@ wird nach Severity, angezeigt werden maximal sechs.
 | `flat` | Differenz zwischen 90. und 50. Perzentil unter Schwellwert |
 | `dead-cta` | Interaktives Element im untersten Aufmerksamkeitsquartil |
 
+### Feuert jede Regel überhaupt?
+
+```bash
+npm run findings-audit -- --fixtures ueyes-web --viewport 500
+```
+
+`cold-fold` war seit seiner Einführung wirkungslos, obwohl alle Unit-Tests grün
+waren: die Tests riefen die Regel direkt mit handgebauten Werten auf, die
+Pipeline fütterte sie mit etwas strukturell anderem. Dagegen gibt es jetzt zwei
+Vorkehrungen.
+
+**1. Ein gemeinsamer Pfad.** `findings/derive.ts` ist die einzige Stelle, an der
+aus einem Analyse-Ergebnis Befunde werden. Pipeline *und* Tests gehen hindurch.
+
+**2. End-to-End-Tests je Regel.** `findings/__tests__/end-to-end.test.ts` baut
+je Regel einen Frame, lässt die **echte** Analyse laufen und prüft, dass die
+Regel dabei feuert — plus ein Gegenbeispiel, bei dem sie schweigen muss. Eine
+Regel, die sich so nicht auslösen lässt, wird nicht ausgeliefert.
+
+**3. Gemessene Trefferquoten** auf echten Bildern:
+
+| Regel | UEyes Webpage | UEyes Mobile | synthetisch¹ |
+|---|---:|---:|---:|
+| `flat` | 9,5 % | 15,2 % | 25,8 % |
+| `competition` | 2,2 % | 5,3 % | 0 % |
+| `cold-fold` | 27,7 % | 39,4 % | 25,6 % |
+| `cta-rank` | nicht messbar² | nicht messbar² | 47,5 % |
+| `cta-below-fold` | nicht messbar² | nicht messbar² | 58,1 % |
+| `dead-cta` | nicht messbar² | nicht messbar² | 4,2 % |
+
+¹ Das synthetische Set ist das einzige mit Layer-Bäumen. Seine Quoten messen
+teilweise den Generator, nicht die Realität — sie stehen hier, weil sie die
+einzige Zahl für die kandidatenbasierten Regeln sind.
+² UEyes enthält keine Layer-Bäume, also keine Klick-Kandidaten. Der Audit
+unterscheidet **blockiert** (Voraussetzung fehlt, Regel wurde nie gefragt) von
+**stumm** (Regel wurde gefragt und hat verneint) — genau die Unterscheidung,
+an der `cold-fold` gescheitert war.
+
+Für die beiden Abschnitts-Regeln erzwingt der Audit mit `--viewport 500` eine
+Segmentierung; UEyes-Bilder sind Einzel-Viewports und wären sonst ebenfalls
+blockiert.
+
+### Was der Audit ans Licht gebracht hat
+
+Drei weitere Regeln feuerten auf echten Bildern **nie**, aus derselben Ursache:
+ihre Schwellwerte stammten aus der Ausgabeverteilung von `heuristic-v1` und
+wurden beim Wechsel auf `hybrid-v1` nicht nachgemessen.
+
+| Regel | vorher | Problem | jetzt |
+|---|---|---|---|
+| `flat` | `p90 − p50 < 0,25` | `hybrid-v1` liegt nie unter 0,39 — der Prior allein erzeugt diese Spanne | Konzentration der Top-5-%-Masse, **Schwelle je UI-Typ** |
+| `competition` | zweites Maximum ≥ 0,8, Tal absolut | prior-dominierte Karte lässt entfernte Regionen kaum über 0,66 | ≥ 0,65, Tal **relativ zum zweiten Maximum** |
+| `dead-cta` | unter dem 25. Perzentil der Karte | dort liegen nur Ränder und Weißraum; jedes echte Element ist heller | unter 45 % des **stärksten Kandidaten** |
+
+Bei `flat` war ein Zwischenstand besonders lehrreich: mit einer skalenfreien,
+aber absoluten Schwelle feuerte sie auf 11 % der Webseiten und auf **90 %** der
+Mobile-Screens. Die Verteilungen der beiden UI-Typen überlappen sich kaum
+(Median 0,163 gegen 0,258), deshalb ist die Schwelle jetzt pro Kategorie
+hinterlegt: „flach" heißt flach *für diese Art Screen*.
+
+`competition` bleibt mit 2–5 % die selektivste Regel. Das ist kein Fehler —
+zwei wirklich getrennte, gleich starke Blickfänge sind selten —, aber sie ist
+die erste, die man streichen sollte, falls sie sich im Gebrauch nicht bewährt.
+
 Sprachregeln (C-2), von den Tests erzwungen:
 
 - Beschreiben, was gemessen wurde — nicht vorschreiben, was zu tun ist
@@ -1103,8 +1167,9 @@ Zusätzlich für 1.1 (M4, M5):
   Ortsprior, nicht aus einer Gewichtssuche.
 - **S-4** (abschnittsweise Analyse) — erfüllt, siehe Epic B.
 - **S-5** (3–6 Befunde in verständlichem Deutsch) — erfüllt bis auf die
-  Textabnahme durch einen Menschen. `cold-fold` war bis zum 8.8. wirkungslos
-  und ist jetzt repariert.
+  Textabnahme durch einen Menschen. Vier der sechs Regeln waren bis zum 8.8.
+  auf echten Bildern wirkungslos; alle sechs sind jetzt nachweislich erreichbar
+  und ihre Trefferquoten gemessen.
 
 ### Offen
 

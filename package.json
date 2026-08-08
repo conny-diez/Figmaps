@@ -18,7 +18,8 @@
     "build-prior": "node scripts/eval.mjs --build-prior",
     "verify": "npm run typecheck && npm run test && npm run build",
     "crossval": "node scripts/eval.mjs --crossval",
-    "epic-d": "node scripts/eval.mjs --epic-d"
+    "epic-d": "node scripts/eval.mjs --epic-d",
+    "findings-audit": "node scripts/eval.mjs --findings-audit"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
