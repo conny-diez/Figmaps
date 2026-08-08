@@ -88,6 +88,17 @@ async function assertRealmSeparation() {
   const figmaLeaks = uiJs.match(/\bfigma\s*\.\s*[A-Za-z_$]/g)
   if (figmaLeaks) problems.push(`build/ui.html calls figma.* from the iframe: ${[...new Set(figmaLeaks)].join(', ')}`)
 
+  // Since A-1 the repo also contains Node-only code (the eval harness and
+  // `ImageOpsNode`). Neither realm has Node built-ins, and a stray import would
+  // only fail at runtime inside Figma — where nobody sees the stack trace.
+  for (const [name, source] of [
+    ['build/main.js', main],
+    ['build/ui.html', uiJs],
+  ]) {
+    const nodeLeaks = source.match(/require\(["']node:[a-z_]+["']\)|from\s*["']node:[a-z_]+["']/g)
+    if (nodeLeaks) problems.push(`${name} imports Node built-ins: ${[...new Set(nodeLeaks)].join(', ')}`)
+  }
+
   if (problems.length > 0) {
     console.error(`\n✖ Realm separation violated:\n  - ${problems.join('\n  - ')}\n`)
     process.exitCode = 1

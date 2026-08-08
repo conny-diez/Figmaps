@@ -278,6 +278,56 @@ body {
   padding-left: 16px;
 }
 
+/* Epic C — findings list. */
+.findings {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.findings__item {
+  padding: 7px 9px 7px 11px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--border);
+}
+
+.findings__item--problem {
+  border-left-color: var(--danger);
+}
+
+.findings__item--attention {
+  border-left-color: var(--figma-color-icon-warning, #b87b00);
+}
+
+.findings__severity {
+  display: block;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.findings__text {
+  display: block;
+}
+
+.linkbutton {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-top: 4px;
+  font: inherit;
+  color: var(--brand);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.hint {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+}
+
 .disclaimer__icon {
   flex: 0 0 auto;
 }

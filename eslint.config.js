@@ -20,6 +20,16 @@ export default tseslint.config(
     },
   },
   {
+    // The eval harness (A-1) runs in Node, not in Figma — no plugin rules.
+    files: ['eval/**/*.ts'],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
     files: ['scripts/**/*.mjs', 'eslint.config.js', 'vitest.config.ts'],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: { globals: { console: 'readonly', process: 'readonly' } },

@@ -8,11 +8,16 @@ import { ENGINE_CONFIG } from '../engine/config'
 import { percentile } from '../engine/imageops'
 import type { ScalarMap } from '../engine/types'
 import { context2d, createCanvas, drawScalarLayer } from './canvas'
+import { drawFoldLines } from './folds'
 import { drawFooter } from './legend'
 
 export type FocusmapOptions = {
   /** Percentile threshold, 60–95 (FR-10). */
   threshold: number
+  /** B-2 — fold positions in frame pixels. */
+  folds?: readonly number[]
+  /** Frame height in frame pixels, required when `folds` is given. */
+  frameHeight?: number
 }
 
 /** Binary-ish mask alpha from the attention map, feathered by the blur below. */
@@ -70,6 +75,11 @@ export function renderFocusmap(
 
   // 3) composite
   ctx.drawImage(sharp, 0, 0)
+
+  if (options.folds && options.folds.length > 0 && options.frameHeight) {
+    drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
+  }
+
   drawFooter(ctx, canvas.width, canvas.height)
   return canvas
 }

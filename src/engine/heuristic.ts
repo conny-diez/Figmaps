@@ -1,31 +1,54 @@
-import { ENGINE_CONFIG, ENGINE_VERSION } from './config'
 import { colorOpponency } from './features/color'
 import { edgeDensity } from './features/edges'
 import { luminanceContrast } from './features/luminance'
 import { positionPrior } from './features/prior'
 import { imageSalience, interactiveSalience, textSalience } from './features/structure'
-import {
-  applyGamma,
-  gaussianBlur,
-  luminanceChannel,
-  percentileClipNormalize,
-  weightedSum,
-  yieldToUi,
-} from './imageops'
+import { applyGamma, luminanceChannel, percentileClipNormalize, weightedSum, yieldToUi } from './imageops'
+import { blurField } from './ops-pure'
+import { ACTIVE_CONFIG_ID, DEFAULT_PROFILE, resolveParams, type EngineParams, type ProfileId } from './params'
 import type { AttentionEngine, AttentionInput, FeatureMaps } from './types'
 
+export type EngineOptions = {
+  /** Named configuration (A-6). Defaults to the one the plugin ships. */
+  configId?: string
+  /** Viewing-duration profile (Epic D). */
+  profile?: ProfileId
+  /** Explicit parameters — wins over `configId`/`profile`. Used by the tuner. */
+  params?: EngineParams
+  /**
+   * Blur implementation (A-1). Defaults to the shared pure one, which is what
+   * both `ImageOpsCanvas` and `ImageOpsNode` delegate to; injecting a different
+   * one is what the parity test uses to prove the realms agree.
+   */
+  blur?: (src: Float32Array, width: number, height: number, sigma: number) => Float32Array
+}
+
 /**
- * FR-4 — the V1 attention engine.
+ * FR-4 — the heuristic attention engine.
  *
  * Pure computation on `Float32Array`s: no DOM, no canvas, no `figma.*`, no
- * randomness. Runs entirely inside the iframe and is unit-testable in Node.
+ * randomness. Runs unchanged in the iframe and in the Node eval harness (A-1).
  */
 export class HeuristicAttentionEngine implements AttentionEngine {
-  readonly version = ENGINE_VERSION
+  readonly configId: string
+  readonly profile: ProfileId
+  readonly params: EngineParams
+  private readonly blur: NonNullable<EngineOptions['blur']>
+
+  constructor(options: EngineOptions = {}) {
+    this.configId = options.configId ?? ACTIVE_CONFIG_ID
+    this.profile = options.profile ?? DEFAULT_PROFILE
+    this.params = options.params ?? resolveParams(this.configId, this.profile)
+    this.blur = options.blur ?? blurField
+  }
+
+  get version(): string {
+    return this.configId
+  }
 
   async predict(input: AttentionInput): Promise<Float32Array> {
     const features = await this.computeFeatures(input)
-    return combineFeatures(features, input.pixels.width, input.pixels.height)
+    return combineFeatures(features, input.pixels.width, input.pixels.height, this.params, this.blur)
   }
 
   /** Exposed separately so tests and debugging can inspect single features. */
@@ -45,7 +68,7 @@ export class HeuristicAttentionEngine implements AttentionEngine {
     const interactive = interactiveSalience(signals, frameWidth, frameHeight, width, height)
     const images = imageSalience(signals, frameWidth, frameHeight, width, height)
     await yieldToUi()
-    const prior = positionPrior(width, height)
+    const prior = positionPrior(width, height, this.params.prior)
 
     return {
       luminanceContrast: luminance,
@@ -61,10 +84,16 @@ export class HeuristicAttentionEngine implements AttentionEngine {
 
 /**
  * Weighted sum + post-processing (FR-4, steps 1–4).
- * Split out so unit tests can feed synthetic feature maps.
+ * Split out so unit tests and the tuner can feed synthetic feature maps.
  */
-export function combineFeatures(features: FeatureMaps, width: number, height: number): Float32Array {
-  const weights = ENGINE_CONFIG.weights
+export function combineFeatures(
+  features: FeatureMaps,
+  width: number,
+  height: number,
+  params: EngineParams = resolveParams(),
+  blur: NonNullable<EngineOptions['blur']> = blurField,
+): Float32Array {
+  const weights = params.weights
   const length = width * height
 
   const raw = weightedSum(
@@ -80,9 +109,9 @@ export function combineFeatures(features: FeatureMaps, width: number, height: nu
     length,
   )
 
-  const post = ENGINE_CONFIG.post
+  const post = params.post
   const blurSigma = Math.max(width, height) * post.blurSigmaRatio
-  const blurred = gaussianBlur(raw, width, height, blurSigma)
+  const blurred = blur(raw, width, height, blurSigma)
   const normalized = percentileClipNormalize(blurred, post.clipLowPercentile, post.clipHighPercentile)
   return applyGamma(normalized, post.gamma)
 }

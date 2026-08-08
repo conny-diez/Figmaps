@@ -3,6 +3,7 @@
  */
 import { DEFAULT_SETTINGS, type MapKind, type Settings } from '../messages'
 import { ENGINE_CONFIG } from '../engine/config'
+import { DEFAULT_PROFILE, shippedProfiles } from '../engine/params'
 
 const STORAGE_KEY = 'figmaps.settings.v1'
 
@@ -17,6 +18,13 @@ export function normaliseSettings(raw: unknown): Settings {
   const maps = (typeof input.maps === 'object' && input.maps !== null ? input.maps : {}) as Partial<Record<MapKind, boolean>>
   const focus = ENGINE_CONFIG.focus
 
+  // Epic D — a stored profile that is no longer shipped falls back to the
+  // default. Otherwise disabling an unproven profile would leave users stuck
+  // on it.
+  const allowed = shippedProfiles()
+  const storedProfile = input.profile
+  const profile = storedProfile && allowed.includes(storedProfile) ? storedProfile : DEFAULT_PROFILE
+
   const normalised: Settings = {
     maps: {
       heat: maps.heat ?? DEFAULT_SETTINGS.maps.heat,
@@ -28,6 +36,11 @@ export function normaliseSettings(raw: unknown): Settings {
       clamp(input.focusThreshold as number, focus.minPercentile, focus.maxPercentile, DEFAULT_SETTINGS.focusThreshold),
     ),
     exportScale: input.exportScale === 1 ? 1 : 2,
+    profile,
+    viewportHeight:
+      typeof input.viewportHeight === 'number' && Number.isFinite(input.viewportHeight)
+        ? Math.round(clamp(input.viewportHeight, 200, 4000, ENGINE_CONFIG.viewport.desktopHeight))
+        : null,
   }
   return normalised
 }

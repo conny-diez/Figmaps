@@ -9,7 +9,11 @@
  * (`ENGINE_CONFIG.analysisEdge`, longer edge = 512 px), not to frame pixels.
  */
 
-/** Bumped whenever the prediction changes. Appears in layer names and labels. */
+/**
+ * Bumped whenever the prediction changes. Appears in layer names and labels.
+ * Must match `ENGINE_CONFIG.activeConfigId` — see `params.ts` for the list of
+ * named configurations the eval harness can compare.
+ */
 export const ENGINE_VERSION = 'heuristic-v1'
 
 /** Name tokens that mark a node as probably interactive (FR-3). */
@@ -33,8 +37,38 @@ export const INTERACTIVE_KEYWORDS: readonly string[] = [
 ]
 
 export const ENGINE_CONFIG = {
+  /** Named configuration the plugin ships (see `params.ts`). */
+  activeConfigId: ENGINE_VERSION,
+
   /** Longer edge of the map the engine computes on. Not negotiable (PRD §10). */
   analysisEdge: 512,
+
+  /**
+   * Bounds for the decoded source bitmap that sections are cropped out of
+   * (Epic B). Capped on *width*, not on the longer edge: a 6.000 px tall frame
+   * still needs enough horizontal resolution for every section to be sampled
+   * down to `analysisEdge` rather than up. `maxPixels` is the memory guard.
+   */
+  analysisSource: {
+    maxWidth: 1024,
+    maxPixels: 12_000_000,
+  },
+
+  /** Epic B — viewport derivation and segmentation. */
+  viewport: {
+    /** Frames at least this wide are treated as desktop. */
+    desktopMinWidth: 1024,
+    /** Assumed visible height of a desktop viewport, in frame px. */
+    desktopHeight: 900,
+    /** Mobile approximation: viewport height = frame width x this factor. */
+    mobileHeightFactor: 2.0,
+    /** Below this many viewport heights a frame is analysed as a whole. */
+    segmentThreshold: 1.5,
+    /** Overlap between neighbouring sections, as a share of a viewport height. */
+    overlap: 0.2,
+    /** Refuse to cut a frame into more than this many sections. */
+    maxSections: 24,
+  },
 
   /** Feature weights of the weighted sum. Should add up to 1. */
   weights: {
@@ -161,6 +195,15 @@ export const ENGINE_CONFIG = {
       minFontSize: 11,
       maxFontSize: 40,
     },
+    /** Epic B — dashed fold markers drawn into every segmented output. */
+    fold: {
+      lineWidthRatio: 0.0016,
+      minLineWidth: 2,
+      dashRatio: 0.012,
+      gapRatio: 0.008,
+      labelFontSizeRatio: 0.014,
+      minLabelFontSize: 11,
+    },
     clickBlob: {
       /** Blob radius as a share of the longer output edge. */
       minRadiusRatio: 0.035,
@@ -194,11 +237,39 @@ export const ENGINE_CONFIG = {
     minFrameEdge: 200,
   },
 
+  /** Epic C — thresholds of the findings rules. Every rule reads from here. */
+  findings: {
+    /** Never show more than this many findings (C-1). */
+    maxShown: 6,
+    /** `competition`: intensity a region must reach to count as a hotspot. */
+    competitionIntensity: 0.8,
+    /** `competition`: minimum distance between the two peaks, share of width. */
+    competitionMinDistance: 0.3,
+    /**
+     * `competition`: the path between the two peaks must dip below
+     * `competitionIntensity x this`. Without it a single wide bright band reads
+     * as two competing regions just because it is wider than the threshold.
+     */
+    competitionValleyRatio: 0.7,
+    /** `flat`: p90 - p50 below this means "no hierarchy". */
+    flatSpreadThreshold: 0.25,
+    /** `dead-cta`: mean attention percentile below which an element is "cold". */
+    deadCtaQuartile: 25,
+    /** `cold-fold`: a later section must beat the first one by this much. */
+    coldFoldMargin: 0.08,
+    /** `cta-rank`: a primary candidate below this rank is worth reporting. */
+    ctaRankThreshold: 1,
+    /** Name tokens that mark a candidate as the *primary* call to action. */
+    primaryKeywords: ['primary', 'primär', 'cta', 'submit', 'anfragen', 'kaufen', 'jetzt'],
+  },
+
   /** Canvas placement (FR-8). */
   placement: {
     gap: 64,
     padding: 64,
     titleFontSize: 24,
+    findingsWidth: 520,
+    findingsFontSize: 16,
   },
 } as const
 

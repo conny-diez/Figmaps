@@ -1,0 +1,141 @@
+/**
+ * Epic B acceptance (M4) through the shared analysis path — the same function
+ * the iframe and the eval harness call.
+ */
+import { describe, expect, it } from 'vitest'
+import { ImageOpsNode } from '../../platform/imageops-node'
+import { analyzeFrame, signalsForSection } from '../analyze'
+import { ENGINE_CONFIG } from '../config'
+import { HeuristicAttentionEngine } from '../heuristic'
+import type { Bitmap } from '../ops'
+import { fillRect, makeSignal, solidImage } from './helpers'
+
+const ops = new ImageOpsNode()
+const engine = new HeuristicAttentionEngine()
+
+/** A tall page: light background, a dark band every 400 px. */
+function scrollPage(width: number, height: number): Bitmap {
+  const image = solidImage(width, height, [245, 246, 248])
+  for (let y = 100; y + 80 < height; y += 400) {
+    fillRect(image, { x: 40, y, width: Math.round(width * 0.5), height: 80 }, [24, 24, 32])
+  }
+  return image
+}
+
+describe('signalsForSection', () => {
+  const signals = [
+    makeSignal({ id: 'a', y: 0, height: 100 }),
+    makeSignal({ id: 'b', y: 950, height: 100 }),
+    makeSignal({ id: 'c', y: 2000, height: 100 }),
+  ]
+
+  it('keeps intersecting signals and rebases them onto the section origin', () => {
+    const section = { index: 1, y: 900, height: 900 }
+    const result = signalsForSection(signals, section)
+    expect(result.map((signal) => signal.id)).toEqual(['b'])
+    expect(result[0].y).toBe(50)
+  })
+
+  it('keeps a signal that straddles the section boundary', () => {
+    const straddling = [makeSignal({ id: 'x', y: 880, height: 60 })]
+    expect(signalsForSection(straddling, { index: 0, y: 0, height: 900 })).toHaveLength(1)
+    expect(signalsForSection(straddling, { index: 1, y: 900, height: 900 })).toHaveLength(1)
+  })
+
+  it('does not mutate the input', () => {
+    signalsForSection(signals, { index: 1, y: 900, height: 900 })
+    expect(signals[1].y).toBe(950)
+  })
+})
+
+describe('analyzeFrame', () => {
+  it('treats a short frame as a whole, with no above-the-fold map', async () => {
+    const source = scrollPage(600, 500)
+    const result = await analyzeFrame(engine, ops, {
+      source,
+      signals: [],
+      frameWidth: 600,
+      frameHeight: 500,
+    })
+
+    expect(result).not.toBeNull()
+    expect(result?.plan.segmented).toBe(false)
+    expect(result?.plan.sections).toHaveLength(1)
+    expect(result?.aboveFold).toBeNull()
+    expect(result?.sectionPeaks).toHaveLength(1)
+  })
+
+  it('segments a tall frame and returns an above-the-fold map', async () => {
+    const frameWidth = 1440
+    const frameHeight = 4000
+    const result = await analyzeFrame(engine, ops, {
+      source: scrollPage(720, 2000),
+      signals: [makeSignal({ id: 'cta', name: 'Button', y: 3200, height: 60 })],
+      frameWidth,
+      frameHeight,
+    })
+
+    expect(result).not.toBeNull()
+    expect(result?.plan.segmented).toBe(true)
+    expect(result?.plan.sections.length).toBeGreaterThan(1)
+    expect(result?.aboveFold).not.toBeNull()
+    expect(result?.sectionPeaks).toHaveLength(result?.plan.sections.length ?? 0)
+
+    // The composed map covers the whole frame at the sections' own scale.
+    const map = result!.attention
+    const scale = map.width / frameWidth
+    expect(map.height).toBe(Math.round(frameHeight * scale))
+
+    // The above-the-fold map is exactly one section, not the whole frame.
+    expect(result!.aboveFold!.height).toBeLessThan(map.height)
+
+    // No dead rows: the blend must cover every row of the composite.
+    let emptyRows = 0
+    for (let y = 0; y < map.height; y++) {
+      let sum = 0
+      for (let x = 0; x < map.width; x++) sum += map.values[y * map.width + x]
+      if (sum === 0) emptyRows++
+    }
+    expect(emptyRows).toBe(0)
+  })
+
+  it('honours the viewport override', async () => {
+    const result = await analyzeFrame(engine, ops, {
+      source: scrollPage(400, 800),
+      signals: [],
+      frameWidth: 800,
+      frameHeight: 3000,
+      viewportOverride: 600,
+    })
+    expect(result?.plan.viewportHeight).toBe(600)
+    expect(result?.plan.folds[0]).toBe(600)
+  })
+
+  it('can be cancelled between sections', async () => {
+    let calls = 0
+    const result = await analyzeFrame(
+      engine,
+      ops,
+      { source: scrollPage(720, 2000), signals: [], frameWidth: 1440, frameHeight: 4000 },
+      {
+        isCancelled: () => {
+          calls++
+          return calls > 2
+        },
+      },
+    )
+    expect(result).toBeNull()
+  })
+
+  it('bounds the analysis source, so a very tall frame stays affordable', async () => {
+    const result = await analyzeFrame(engine, ops, {
+      source: scrollPage(2400, 6000),
+      signals: [],
+      frameWidth: 2400,
+      frameHeight: 6000,
+    })
+    // Each section is sampled *down* to the analysis grid, never up.
+    expect(result!.attention.width).toBeLessThanOrEqual(ENGINE_CONFIG.analysisEdge)
+    expect(result!.attention.width).toBeGreaterThan(ENGINE_CONFIG.analysisEdge / 2)
+  })
+})

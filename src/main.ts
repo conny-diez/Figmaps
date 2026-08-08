@@ -12,7 +12,16 @@ import { currentSelection, isAnalysable, type AnalysableNode } from './figma/sel
 import { loadSettings, saveSettings } from './figma/storage'
 import { collectSignals } from './figma/traverse'
 import { ENGINE_CONFIG } from './engine/config'
-import { ERROR_TEXT, type ErrorCode, type MainToUi, type RenderedMap, type Settings, type UiToMain } from './messages'
+import {
+  ERROR_TEXT,
+  type ErrorCode,
+  type FindingPayload,
+  type MainToUi,
+  type RenderedMap,
+  type SegmentInfo,
+  type Settings,
+  type UiToMain,
+} from './messages'
 
 const UI_WIDTH = 320
 const UI_HEIGHT = 480
@@ -20,9 +29,16 @@ const UI_HEIGHT = 480
 /** Safety net so a crashed iframe cannot wedge the batch forever. */
 const PLACE_RESULT_TIMEOUT_MS = 180_000
 
+type FrameResult = {
+  maps: RenderedMap[]
+  warnings: string[]
+  findings: FindingPayload[]
+  segments?: SegmentInfo
+}
+
 type PendingResult = {
   frameId: string
-  resolve: (value: { maps: RenderedMap[]; warnings: string[] } | null) => void
+  resolve: (value: FrameResult | null) => void
 }
 
 let pending: PendingResult | null = null
@@ -48,7 +64,7 @@ figma.on('selectionchange', () => {
 // Generation pipeline
 // ---------------------------------------------------------------------------
 
-function waitForMaps(frameId: string): Promise<{ maps: RenderedMap[]; warnings: string[] } | null> {
+function waitForMaps(frameId: string): Promise<FrameResult | null> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       if (pending && pending.frameId === frameId) {
@@ -133,12 +149,23 @@ async function generate(frameIds: string[], settings: Settings): Promise<void> {
 
       if (result.maps.length === 0) {
         failed++
-        post({ type: 'FRAME_DONE', frameId: node.id, frameName: node.name, maps: [], warnings: result.warnings })
+        post({
+          type: 'FRAME_DONE',
+          frameId: node.id,
+          frameName: node.name,
+          maps: [],
+          warnings: result.warnings,
+          findings: result.findings,
+          segments: result.segments,
+        })
         continue
       }
 
       try {
-        const wrapper = await placeMaps(node, result.maps)
+        const wrapper = await placeMaps(node, result.maps, {
+          findings: result.findings,
+          segments: result.segments,
+        })
         wrappers.push(wrapper)
         created += result.maps.length
         post({
@@ -147,6 +174,8 @@ async function generate(frameIds: string[], settings: Settings): Promise<void> {
           frameName: node.name,
           maps: result.maps.map((map) => map.kind),
           warnings: result.warnings,
+          findings: result.findings,
+          segments: result.segments,
         })
       } catch (error) {
         failed++
@@ -216,8 +245,31 @@ figma.ui.onmessage = (message: UiToMain): void => {
           if (pending && pending.frameId === message.frameId) {
             const resolve = pending.resolve
             pending = null
-            resolve({ maps: message.maps, warnings: message.warnings })
+            resolve({
+              maps: message.maps,
+              warnings: message.warnings,
+              findings: message.findings,
+              segments: message.segments,
+            })
           }
+          break
+        }
+
+        // C-3 — "Im Canvas zeigen": select the nodes a finding refers to and
+        // scroll them into view. Nodes may be gone since the run; that is not
+        // an error the user needs a dialog for.
+        case 'REVEAL_NODES': {
+          const nodes: SceneNode[] = []
+          for (const id of message.nodeIds) {
+            const node = await figma.getNodeByIdAsync(id)
+            if (node && node.type !== 'DOCUMENT' && node.type !== 'PAGE') nodes.push(node)
+          }
+          if (nodes.length === 0) {
+            figma.notify('Die Ebene ist nicht mehr vorhanden.')
+            break
+          }
+          figma.currentPage.selection = nodes
+          figma.viewport.scrollAndZoomIntoView(nodes)
           break
         }
 
