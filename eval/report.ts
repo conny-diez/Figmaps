@@ -15,13 +15,21 @@ import {
   METRIC_TRUTH,
   type MetricScores,
 } from './metrics/types'
-import { bestOfSweep, type PredictorResult, type SampleResult, type SigmaSweepEntry } from './runner'
+import {
+  bestOfSweep,
+  type PredictorResult,
+  type SampleResult,
+  type SigmaSweepEntry,
+  type SpatialProfile,
+} from './runner'
 
 /**
  * The S-2 threshold, mirrored from `eval/fixtures/README.md`.
  * Keep the two in sync — the README is what a human reads before deciding.
  */
-export const S2_RULE = 'Die Engine muss die Center-Bias-Baseline in allen vier Metriken schlagen.'
+export const S2_RULE =
+  'Die Engine muss die stärkste bildunabhängige Baseline in allen vier Metriken schlagen — ' +
+  'Center-Bias in seiner besten Breite und die Mean Map (Ø Ground Truth des Tuning-Splits).'
 /** S-3, for the tuning iteration that follows. */
 export const S3_MIN_AUC_GAIN = 0.04
 
@@ -44,6 +52,8 @@ export type ReportInput = {
   uniformCheck?: UniformCheck
   /** Center-bias at several widths — the verdict is stated against the best. */
   centerBiasSweep?: readonly SigmaSweepEntry[]
+  /** Where ground truth and prediction put their mass (per UI type). */
+  positionBias?: { truth: SpatialProfile; prediction?: SpatialProfile }
   contactSheetPath?: string
   notes?: string[]
 }
@@ -75,6 +85,7 @@ function unmeasuredWeightShare(): number {
 
 export function buildReport(input: ReportInput): string {
   const centerBias = input.results.find((entry) => entry.predictor.id === 'center-bias')
+  const meanMap = input.results.find((entry) => entry.predictor.id === 'mean-map')
   const frozen = input.results.find((entry) => entry.predictor.id === 'heuristic-v1:scan')
   const candidates = input.results.filter((entry) => !entry.predictor.baseline)
   const primary = candidates[0] ?? frozen
@@ -111,9 +122,19 @@ export function buildReport(input: ReportInput): string {
   lines.push('## Befund')
   lines.push('')
   if (primary && centerBias) {
-    // Compared against the strongest center-bias in the sweep, not against the
-    // default width — a convenient sigma would make this a straw man.
-    const reference = input.centerBiasSweep ? bestOfSweep(input.centerBiasSweep) : centerBias.mean
+    // The binding reference is the strongest image-independent baseline per
+    // metric: the best center-bias width *and* the mean map. A convenient sigma
+    // or a missing mean map would make this a straw man.
+    const bestCenter = input.centerBiasSweep ? bestOfSweep(input.centerBiasSweep) : centerBias.mean
+    const reference = {} as typeof bestCenter
+    const bindingBaseline = {} as Record<string, string>
+    for (const id of METRIC_IDS) {
+      const meanValue = meanMap?.mean[id]
+      const meanWins = meanValue !== undefined && Number.isFinite(meanValue) && (meanValue - bestCenter[id]) * METRIC_DIRECTION[id] > 0
+      reference[id] = meanWins ? meanValue : bestCenter[id]
+      bindingBaseline[id] = meanWins ? 'Mean Map' : 'Center-Bias'
+    }
+
     const better = METRIC_IDS.filter((id) => (primary.mean[id] - reference[id]) * METRIC_DIRECTION[id] > 0)
     const worse = METRIC_IDS.filter((id) => (primary.mean[id] - reference[id]) * METRIC_DIRECTION[id] <= 0)
 
@@ -121,23 +142,63 @@ export function buildReport(input: ReportInput): string {
     lines.push('')
     if (worse.length === 0) {
       lines.push(
-        `**${primary.predictor.label} schlägt die Center-Bias-Baseline in allen vier Metriken. S-2 ist erfüllt.** ` +
-          'Die Feature-Maps tragen messbar zur Vorhersage bei — sie sind keine Dekoration.',
+        `**${primary.predictor.label} schlägt jede bildunabhängige Baseline in allen vier Metriken. S-2 ist erfüllt.** ` +
+          (meanMap
+            ? 'Insbesondere schlägt sie die Mean Map — die Engine sagt also mehr vorher als „wo auf dieser Art von ' +
+              'Screen üblicherweise Dinge stehen". Sie reagiert auf den konkreten Screen.'
+            : 'Die Feature-Maps tragen messbar zur Vorhersage bei — sie sind keine Dekoration.'),
       )
     } else if (better.length > 0) {
       lines.push(
-        `**${primary.predictor.label} schlägt die Center-Bias-Baseline nur teilweise — S-2 ist nicht erfüllt.** ` +
+        `**${primary.predictor.label} schlägt die stärkste Baseline nur teilweise — S-2 ist nicht erfüllt.** ` +
           `Besser in ${better.map((id) => METRIC_LABELS[id]).join(', ')}, ` +
-          `nicht besser in ${worse.map((id) => METRIC_LABELS[id]).join(', ')}. ` +
+          `nicht besser in ${worse.map((id) => `${METRIC_LABELS[id]} (bindend: ${bindingBaseline[id]})`).join(', ')}. ` +
           'Siehe PRD §8, Risiko 1.',
       )
     } else {
+      const beatsCenter = centerBias
+        ? METRIC_IDS.filter((id) => (primary.mean[id] - bestCenter[id]) * METRIC_DIRECTION[id] > 0)
+        : []
       lines.push(
-        `**${primary.predictor.label} schlägt die Center-Bias-Baseline in keiner Metrik. S-2 ist nicht erfüllt.** ` +
-          'Damit tun die sieben Feature-Maps nichts, was eine Gaußglocke in der Bildmitte nicht auch tut. ' +
-          'Konsequenz laut PRD §8: Heuristik verwerfen und in 1.2 direkt auf ein trainiertes Modell gehen.',
+        `**${primary.predictor.label} schlägt die stärkste bildunabhängige Baseline in keiner Metrik. ` +
+          'S-2 ist nicht erfüllt.**' +
+          (beatsCenter.length > 0
+            ? ` Den Center-Bias schlägt sie zwar (in ${beatsCenter.map((id) => METRIC_LABELS[id]).join(', ')}), ` +
+              'die Mean Map jedoch nicht — und die ist die aussagekräftigere Referenz.'
+            : ''),
+      )
+      lines.push('')
+      lines.push(
+        'Konsequenz laut PRD §8: Die Heuristik in ihrer jetzigen Form trägt zu wenig eigene Information. ' +
+          'Statt sie weiter von Hand zu justieren, ist der Schritt auf ein trainiertes Modell (Iteration 1.2) ' +
+          'der billigere Weg — und mit diesem Harness ist er jetzt belegbar statt Glaubenssache.',
       )
     }
+
+    // The mean map deserves its own sentence: it is the one that decides
+    // whether the engine reads the screen or merely the genre.
+    if (meanMap) {
+      const vsMean = METRIC_IDS.filter((id) => (primary.mean[id] - meanMap.mean[id]) * METRIC_DIRECTION[id] > 0)
+      const lostToMean = METRIC_IDS.filter((id) => (primary.mean[id] - meanMap.mean[id]) * METRIC_DIRECTION[id] <= 0)
+      lines.push('')
+      if (lostToMean.length === 0) {
+        lines.push(
+          `Gegen die **Mean Map** — den Durchschnitt der Ground Truth über den Tuning-Split, ohne Blick auf das ` +
+            `jeweilige Bild — gewinnt ${primary.predictor.label} in allen vier Metriken. Das ist der eigentliche ` +
+            'Beleg: die Vorhersage enthält bildspezifische Information und nicht nur den Ortsdurchschnitt des Genres.',
+        )
+      } else {
+        lines.push(
+          `**Achtung:** Gegen die **Mean Map** verliert ${primary.predictor.label} in ` +
+            `${lostToMean.map((id) => METRIC_LABELS[id]).join(', ')}` +
+            (vsMean.length > 0 ? ` und gewinnt nur in ${vsMean.map((id) => METRIC_LABELS[id]).join(', ')}` : '') +
+            '. Die Mean Map sieht das konkrete Bild nie an — sie kennt nur, wo auf dieser Art von Screen ' +
+            'üblicherweise Dinge stehen. Soweit die Engine sie nicht schlägt, sagt auch die Engine überwiegend ' +
+            'genau das vorher und nicht, was in diesem konkreten Screen passiert.',
+        )
+      }
+    }
+
     if (input.centerBiasSweep) {
       lines.push('')
       lines.push(
@@ -180,10 +241,98 @@ export function buildReport(input: ReportInput): string {
       lines.push(`| ${entry.predictor.label} | ${vsCenter} | ${vsFrozen} |`)
     }
     lines.push('')
+
+    if (meanMap) {
+      lines.push('Gegen die Mean Map — die härtere Referenz:')
+      lines.push('')
+      lines.push(`| Engine | ${METRIC_IDS.map((id) => `Δ ${METRIC_LABELS[id]} vs Mean Map`).join(' | ')} |`)
+      lines.push(`|---|${METRIC_IDS.map(() => '---:').join('|')}|`)
+      for (const entry of input.results) {
+        if (entry.predictor.id === 'mean-map') continue
+        lines.push(
+          `| ${entry.predictor.label} | ${METRIC_IDS.map((id) => delta(entry.mean[id], meanMap.mean[id], METRIC_DIRECTION[id])).join(' | ')} |`,
+        )
+      }
+      lines.push('')
+
+      // A mean over 27 images hides whether the engine is uniformly worse or
+      // better on some screens and much worse on others. The first would mean
+      // "no image-specific signal", the second "signal, but noisy".
+      if (primary && primary.predictor.id !== 'mean-map') {
+        const wins = {} as Record<string, number>
+        const byId = new Map(meanMap.perSample.map((entry) => [entry.sampleId, entry.scores]))
+        for (const id of METRIC_IDS) {
+          wins[id] = primary.perSample.filter((entry) => {
+            const against = byId.get(entry.sampleId)
+            if (!against || !Number.isFinite(entry.scores[id]) || !Number.isFinite(against[id])) return false
+            return (entry.scores[id] - against[id]) * METRIC_DIRECTION[id] > 0
+          }).length
+        }
+        const total = primary.perSample.length
+        lines.push(
+          `Pro Bild betrachtet gewinnt ${primary.predictor.label} gegen die Mean Map in ` +
+            `${METRIC_IDS.map((id) => `${METRIC_LABELS[id]} ${wins[id]}/${total}`).join(', ')}.`,
+        )
+        lines.push('')
+        lines.push(
+          '_Ein Mittelwert allein verbirgt, ob die Engine überall gleichmäßig schlechter ist (dann enthält sie ' +
+            'keine bildspezifische Information) oder auf manchen Screens besser und auf anderen deutlich ' +
+            'schlechter (dann enthält sie Signal, aber verrauschtes)._',
+        )
+        lines.push('')
+      }
+    }
     lines.push('_Vorzeichen sind richtungsbereinigt: **+ ist immer besser**, auch bei KL (wo der Rohwert kleiner wird)._')
     lines.push('')
     lines.push(`_S-3 verlangt mindestens +${S3_MIN_AUC_GAIN.toFixed(3)} AUC gegenüber der 1.0-Baseline. Diese Iteration tunt nicht._`)
     lines.push('')
+  }
+
+  // --- Position bias -------------------------------------------------------
+  if (input.positionBias) {
+    const { truth, prediction } = input.positionBias
+    const prior = resolveParams().prior
+
+    lines.push('## Positions-Bias')
+    lines.push('')
+    lines.push(
+      'Wo die Aufmerksamkeit im Bild liegt, in normierten Koordinaten — (0,0) ist oben links, (0,5 / 0,5) die Mitte. ' +
+        'UEyes zeigt, dass sich dieser Bias zwischen UI-Typen unterscheidet; deshalb steht er hier pro Set und wird ' +
+        'nicht über Typen gemittelt.',
+    )
+    lines.push('')
+    lines.push('| | Schwerpunkt x | Schwerpunkt y | Streuung x | Streuung y | Masse im oberen Drittel |')
+    lines.push('|---|---:|---:|---:|---:|---:|')
+    lines.push(
+      `| Ground Truth | ${fmt(truth.centerX, 3)} | ${fmt(truth.centerY, 3)} | ${fmt(truth.spreadX, 3)} | ${fmt(truth.spreadY, 3)} | ${fmt(truth.topThird * 100, 1)} % |`,
+    )
+    if (prediction) {
+      lines.push(
+        `| Vorhersage | ${fmt(prediction.centerX, 3)} | ${fmt(prediction.centerY, 3)} | ${fmt(prediction.spreadX, 3)} | ${fmt(prediction.spreadY, 3)} | ${fmt(prediction.topThird * 100, 1)} % |`,
+      )
+    }
+    lines.push(`| Positions-Prior der Engine | ${fmt(prior.centerX, 3)} | ${fmt(prior.centerY, 3)} | — | — | — |`)
+    lines.push('| Center-Bias | 0.500 | 0.500 | — | — | 21.5 % |')
+    lines.push('')
+
+    if (prediction) {
+      const dy = truth.centerY - prediction.centerY
+      const spreadRatio = prediction.spreadY > 0 ? truth.spreadY / prediction.spreadY : Number.NaN
+      lines.push(
+        `Die Vorhersage liegt vertikal ${Math.abs(dy) < 0.02 ? 'praktisch deckungsgleich mit' : dy < 0 ? `${fmt(Math.abs(dy) * 100, 1)} % der Bildhöhe **über**` : `${fmt(dy * 100, 1)} % der Bildhöhe **unter**`} ` +
+          'der gemessenen Aufmerksamkeit.' +
+          (Number.isFinite(spreadRatio)
+            ? ` Die gemessene Aufmerksamkeit ist vertikal um Faktor ${fmt(1 / spreadRatio, 2)} ${spreadRatio < 1 ? 'breiter' : 'enger'} verteilt als die Vorhersage.`
+            : ''),
+      )
+      lines.push('')
+      lines.push(
+        '_Der Positions-Prior der Engine ist derselbe für alle UI-Typen (`ENGINE_CONFIG.prior`). ' +
+          'Getrennte Priors für Mobile und Desktop stehen als Punkt in PRD §9 für Iteration 1.2 — ' +
+          'die Zahlen hier sind die Grundlage dafür._',
+      )
+      lines.push('')
+    }
   }
 
   // --- Baseline robustness -------------------------------------------------
@@ -319,6 +468,8 @@ export function buildReport(input: ReportInput): string {
     if (input.index.name) lines.push(`**${input.index.name}**`)
     if (input.index.license) lines.push(`Lizenz: ${input.index.license}`)
     lines.push('')
+    for (const note of input.index.notes ?? []) lines.push(`- ${note}`)
+    if ((input.index.notes ?? []).length > 0) lines.push('')
     if (input.index.citation) {
       lines.push('> ' + input.index.citation)
       lines.push('')

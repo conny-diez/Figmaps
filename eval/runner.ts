@@ -61,6 +61,78 @@ export async function runEvaluation(
   return { results, samples: [...samples], primaryPredictions }
 }
 
+/**
+ * Where a map puts its mass, in normalised coordinates with (0,0) top-left.
+ *
+ * UEyes' central finding is that location bias differs between UI types, so the
+ * report states it per set instead of leaving it to be inferred from CC.
+ */
+export type SpatialProfile = {
+  /** Centre of mass. */
+  centerX: number
+  centerY: number
+  /** Standard deviation of the mass around the centre — how spread out it is. */
+  spreadX: number
+  spreadY: number
+  /** Share of the total mass in the top third of the image. */
+  topThird: number
+}
+
+export function spatialProfile(map: ScalarMap): SpatialProfile {
+  let total = 0
+  let sumX = 0
+  let sumY = 0
+  let top = 0
+
+  for (let y = 0; y < map.height; y++) {
+    const ny = (y + 0.5) / map.height
+    for (let x = 0; x < map.width; x++) {
+      const value = map.values[y * map.width + x]
+      if (!(value > 0)) continue
+      total += value
+      sumX += value * ((x + 0.5) / map.width)
+      sumY += value * ny
+      if (ny < 1 / 3) top += value
+    }
+  }
+  if (!(total > 0)) return { centerX: 0.5, centerY: 0.5, spreadX: 0, spreadY: 0, topThird: 0 }
+
+  const centerX = sumX / total
+  const centerY = sumY / total
+
+  let varX = 0
+  let varY = 0
+  for (let y = 0; y < map.height; y++) {
+    const ny = (y + 0.5) / map.height
+    for (let x = 0; x < map.width; x++) {
+      const value = map.values[y * map.width + x]
+      if (!(value > 0)) continue
+      const dx = (x + 0.5) / map.width - centerX
+      const dy = ny - centerY
+      varX += value * dx * dx
+      varY += value * dy * dy
+    }
+  }
+
+  return {
+    centerX,
+    centerY,
+    spreadX: Math.sqrt(varX / total),
+    spreadY: Math.sqrt(varY / total),
+    topThird: top / total,
+  }
+}
+
+export function meanProfile(profiles: readonly SpatialProfile[]): SpatialProfile {
+  if (profiles.length === 0) return { centerX: 0.5, centerY: 0.5, spreadX: 0, spreadY: 0, topThird: 0 }
+  const keys: Array<keyof SpatialProfile> = ['centerX', 'centerY', 'spreadX', 'spreadY', 'topThird']
+  const out = {} as SpatialProfile
+  for (const key of keys) {
+    out[key] = profiles.reduce((sum, profile) => sum + profile[key], 0) / profiles.length
+  }
+  return out
+}
+
 export type SigmaSweepEntry = { sigma: number; mean: MetricScores }
 
 /**

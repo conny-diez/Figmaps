@@ -249,7 +249,7 @@ function generateSynthetic(counts: { tuning: number; test: number; quick: number
   console.log('nicht gemessen — Zahlen daraus sind kein Beleg für S-2 oder S-3.')
 }
 
-function runUeyesImport(explicitPath: string | undefined, name: string, quick: number): void {
+function runUeyesImport(explicitPath: string | undefined, category: string, name: string, quick: number): void {
   const root = resolveDatasetRoot(explicitPath, process.env)
   console.log(`UEyes-Datensatz: ${root}`)
 
@@ -257,6 +257,7 @@ function runUeyesImport(explicitPath: string | undefined, name: string, quick: n
     root,
     target: ROOT,
     setName: name,
+    category,
     quick,
     log: (message) => console.log(message),
   })
@@ -265,11 +266,15 @@ function runUeyesImport(explicitPath: string | undefined, name: string, quick: n
 
   console.log('')
   console.log(`Importiert nach ${summary.target}`)
+  console.log(`  Kategorie:      ${summary.category}`)
   console.log(`  tuning (Train): ${summary.tuning}`)
   console.log(`  test   (Test):  ${summary.test}`)
   console.log(`  davon quick:    ${summary.quick}`)
   console.log(`  Dauern:         ${summary.index.durations.map((d) => `${d}s`).join(', ')}`)
+  if (summary.converted > 0) console.log(`  konvertiert:    ${summary.converted} JPEG → PNG`)
   console.log('')
+  for (const note of summary.index.notes ?? []) console.log(`Hinweis: ${note}`)
+  if ((summary.index.notes ?? []).length > 0) console.log('')
   console.log('Ground Truth: heatmaps/<d>s (kontinuierlich, für CC und KL)')
   console.log('              fixmaps/<d>s  (binär, für AUC-Judd und NSS)')
   console.log('Keine signals/ — ein Screenshot hat keinen Layer-Baum (Teilmessung, siehe Report).')
@@ -320,9 +325,11 @@ export function main(argv: readonly string[]): number {
     }
     if (args.has('ueyes')) {
       const explicit = args.get('ueyes')
+      const category = String(args.get('category') ?? 'web')
       runUeyesImport(
         typeof explicit === 'string' ? explicit : undefined,
-        String(args.get('name') ?? 'ueyes-web'),
+        category,
+        String(args.get('name') ?? `ueyes-${category}`),
         counts.quick,
       )
       return 0
@@ -330,12 +337,16 @@ export function main(argv: readonly string[]): number {
 
     console.log(
       [
-        'npm run eval:fixtures -- --ueyes <pfad-zum-UEyes_dataset> [--name ueyes-web] [--quick 27]',
-        '    Importiert die Kategorie "web" aus info.csv / image_types.csv.',
+        'npm run eval:fixtures -- --ueyes <pfad-zum-UEyes_dataset> [--category web] [--name …] [--quick 27]',
+        '    Importiert eine Kategorie aus info.csv / image_types.csv.',
+        '    --category: web | mobile | desktop | poster            (default: web)',
+        '    Jede Kategorie landet in einem eigenen Set und wird getrennt berichtet —',
+        '    Positions-Bias unterscheidet sich zwischen UI-Typen, Mischen verwischt das.',
         '    Der Pfad kann auch über die Umgebungsvariable UEYES_DIR kommen.',
         '    Übernommen wird die Train/Test-Aufteilung des Datensatzes, keine eigene.',
         '    Ground Truth: heatmaps_<d>s (für CC/KL) und fixmaps_<d>s (für AUC/NSS),',
         '    Dauern 1s, 3s und 7s. Ausgewertet wird zunächst nur 3s.',
+        '    Nicht-PNG-Quellen werden mit `sips` nach PNG transcodiert.',
         '',
         'npm run eval:fixtures -- --synthetic [--tuning 30 --test 30 --quick 12]',
         '    Generiert ein lizenzfreies Set, um den Harness zu prüfen.',

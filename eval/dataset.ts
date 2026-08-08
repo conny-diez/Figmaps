@@ -43,6 +43,8 @@ export type DatasetIndex = {
   citation?: string
   /** Viewing durations present in the set, in seconds. */
   durations: number[]
+  /** Caveats about the data itself — reproduced verbatim in every report. */
+  notes?: string[]
   /** Fraction of grid pixels treated as fixations when no fixation map exists. */
   fixationShare?: number
   items: DatasetItem[]
@@ -67,12 +69,23 @@ export const FIXTURES_ROOT = 'eval/fixtures'
 /** Fallback share of grid pixels used as fixations when no fixmap exists. */
 const DEFAULT_FIXATION_SHARE = 0.02
 
-function readPng(path: string): Bitmap {
+export function readPng(path: string): Bitmap {
   return nodeImageOps.decodeSync(new Uint8Array(readFileSync(path)))
 }
 
+/** Ids of one split, without loading a single pixel. */
+export function listSplit(setName: string, split: SplitName, root = FIXTURES_ROOT): string[] {
+  return readIndex(setName, root)
+    .items.filter((item) => matchesSplit(item, split))
+    .map((item) => item.id)
+}
+
+export function heatmapPath(setName: string, id: string, duration: number, root = FIXTURES_ROOT): string {
+  return join(root, setName, 'heatmaps', `${duration}s`, `${id}.png`)
+}
+
 /** Greyscale luminance of a decoded map, normalised to `[0,1]`. */
-function toScalarMap(bitmap: Bitmap): ScalarMap {
+export function toScalarMap(bitmap: Bitmap): ScalarMap {
   const values = new Float32Array(bitmap.width * bitmap.height)
   let max = 0
   for (let i = 0, p = 0; i < values.length; i++, p += 4) {
@@ -90,7 +103,7 @@ function toScalarMap(bitmap: Bitmap): ScalarMap {
  * Area-averaged rescale of a continuous field, via the shared bitmap
  * resampler — packing into the red channel keeps one resampler in the repo.
  */
-function resizeScalarMap(map: ScalarMap, width: number, height: number): ScalarMap {
+export function resizeScalarMap(map: ScalarMap, width: number, height: number): ScalarMap {
   const packed = new Uint8ClampedArray(map.width * map.height * 4)
   for (let i = 0, p = 0; i < map.values.length; i++, p += 4) {
     const v = Math.round(map.values[i] * 255)

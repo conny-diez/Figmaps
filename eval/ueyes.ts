@@ -18,16 +18,30 @@
  * licence. The published paper serves only as a reference for checking our own
  * metric implementations.
  */
+import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import type { DatasetIndex, DatasetItem } from './dataset'
 
 /** Both names occur: the README says `info.csv`, the release ships `image_types.csv`. */
 const INDEX_FILE_NAMES = ['info.csv', 'image_types.csv']
 
-/** The category column value for web pages. The README says "webpage". */
-const WEB_CATEGORIES = ['web', 'webpage']
+/**
+ * UI types of the data set, with the spellings that occur in the wild: the
+ * README names them "webpage, desktop UI, mobile UI, poster", the released
+ * index file writes the short forms.
+ *
+ * Each type is imported into its **own** set and reported separately. UEyes'
+ * central finding is that location and gaze-direction bias differ between UI
+ * types — averaging them together would erase exactly what we want to see.
+ */
+export const UEYES_CATEGORIES: Record<string, { label: string; matches: string[] }> = {
+  web: { label: 'Webpage', matches: ['web', 'webpage'] },
+  mobile: { label: 'Mobile UI', matches: ['mobile', 'mobile ui', 'mobileui'] },
+  desktop: { label: 'Desktop UI', matches: ['desktop', 'desktop ui', 'desktopui'] },
+  poster: { label: 'Poster', matches: ['poster'] },
+}
 
 export const UEYES_DURATIONS = [1, 3, 7]
 
@@ -113,8 +127,25 @@ export function parseIndexCsv(text: string): UeyesRow[] {
   })
 }
 
+export function categoryKey(name: string): string {
+  const key = name.toLowerCase()
+  for (const [id, entry] of Object.entries(UEYES_CATEGORIES)) {
+    if (id === key || entry.matches.includes(key)) return id
+  }
+  throw new Error(
+    `Unbekannte Kategorie "${name}". Verfügbar: ${Object.entries(UEYES_CATEGORIES)
+      .map(([id, entry]) => `${id} (${entry.label})`)
+      .join(', ')}`,
+  )
+}
+
+export function rowHasCategory(row: UeyesRow, category: string): boolean {
+  return UEYES_CATEGORIES[category].matches.includes(row.category.toLowerCase())
+}
+
+/** Kept for the web-specific call sites and tests. */
 export function isWebRow(row: UeyesRow): boolean {
-  return WEB_CATEGORIES.includes(row.category.toLowerCase())
+  return rowHasCategory(row, 'web')
 }
 
 /** Maps the dataset's own Train/Test label onto our split names. */
@@ -129,6 +160,8 @@ export type ImportOptions = {
   root: string
   target: string
   setName: string
+  /** Which UI type to import — one set per type, never mixed. */
+  category: string
   /** How many test images additionally carry the `quick` label for A-7. */
   quick: number
   log?: (message: string) => void
@@ -137,13 +170,63 @@ export type ImportOptions = {
 export type ImportSummary = {
   setName: string
   target: string
+  category: string
   tuning: number
   test: number
   quick: number
+  /** Files that had to be transcoded from JPEG to PNG. */
+  converted: number
   skipped: Array<{ id: string; reason: string }>
   index: DatasetIndex
 }
 
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47]
+
+function isPng(path: string): boolean {
+  const head = readFileSync(path).subarray(0, 4)
+  return PNG_MAGIC.every((byte, i) => head[i] === byte)
+}
+
+/** Files per `sips` invocation — keeps the argument list well inside limits. */
+const CONVERT_CHUNK = 200
+
+/**
+ * Transcodes non-PNG sources to PNG.
+ *
+ * Roughly half of UEyes ships as JPEG (the mobile subset entirely), and our
+ * decoder is PNG-only by design — a JPEG decoder would be a large piece of
+ * code whose only job is reading fixtures. `sips` is part of macOS; on other
+ * platforms the error says what to install.
+ */
+function convertToPng(files: Array<{ from: string; to: string }>, outputDir: string): void {
+  if (files.length === 0) return
+
+  for (let offset = 0; offset < files.length; offset += CONVERT_CHUNK) {
+    const chunk = files.slice(offset, offset + CONVERT_CHUNK)
+    const result = spawnSync('sips', ['-s', 'format', 'png', ...chunk.map((file) => file.from), '--out', outputDir], {
+      encoding: 'utf8',
+    })
+
+    if (result.error && (result.error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(
+        'Konvertierung nach PNG braucht `sips` (Teil von macOS) — nicht gefunden.\n' +
+          'Auf anderen Plattformen die Bilder vorher konvertieren, z. B.:\n' +
+          "  mogrify -format png -path <ziel> '*.jpg'",
+      )
+    }
+    if (result.status !== 0) {
+      throw new Error(`sips fehlgeschlagen (Exit ${result.status}): ${result.stderr?.trim() ?? 'keine Ausgabe'}`)
+    }
+  }
+
+  // sips writes `<basename>.png` into the output directory; the ids already are
+  // the basenames, so the names line up. Verify rather than assume.
+  for (const file of files) {
+    if (!existsSync(file.to)) throw new Error(`Konvertierung erzeugte keine Datei: ${file.to} (aus ${file.from})`)
+  }
+}
+
+/** Copies a PNG after checking our decoder can actually read it. */
 function copyPng(from: string, to: string): void {
   // Verified rather than blindly copied: our decoder handles 8-bit,
   // non-interlaced PNG only, and a file that fails here would otherwise blow up
@@ -152,95 +235,148 @@ function copyPng(from: string, to: string): void {
   copyFileSync(from, to)
 }
 
+/**
+ * Share of pixels in a fixation map that are neither 0 nor 255.
+ *
+ * A fixation map is binary by definition. Where UEyes stores it as JPEG, lossy
+ * compression puts a ringing border around every blob — small, but it belongs
+ * in the report rather than in a footnote nobody reads.
+ */
+export function nonBinaryShare(path: string): number {
+  const bitmap = nodeImageOps.decodeSync(new Uint8Array(readFileSync(path)))
+  const count = bitmap.width * bitmap.height
+  let impure = 0
+  for (let i = 0; i < count; i++) {
+    const value = bitmap.data[i * 4]
+    if (value !== 0 && value !== 255) impure++
+  }
+  return count === 0 ? 0 : impure / count
+}
+
+/** One artefact directory: where it comes from, where it goes. */
+type Channel = { source: string; target: string }
+
 export function importUeyes(options: ImportOptions): ImportSummary {
   const log = options.log ?? (() => {})
+  const category = categoryKey(options.category)
   const indexPath = resolveIndexFile(options.root)
   const rows = parseIndexCsv(readFileSync(indexPath, 'utf8'))
 
-  const webRows = rows.filter(isWebRow)
-  if (webRows.length === 0) {
+  const selected = rows.filter((row) => rowHasCategory(row, category))
+  if (selected.length === 0) {
     const categories = [...new Set(rows.map((row) => row.category))].join(', ')
     throw new Error(
-      `Keine Zeilen der Kategorie ${WEB_CATEGORIES.join('/')} in ${indexPath}. Gefundene Kategorien: ${categories}`,
+      `Keine Zeilen der Kategorie "${category}" in ${indexPath}. Gefundene Kategorien: ${categories}`,
     )
   }
-  log(`${indexPath}: ${rows.length} Zeilen, davon ${webRows.length} Kategorie "web"`)
+  log(`${indexPath}: ${rows.length} Zeilen, davon ${selected.length} Kategorie "${category}"`)
 
   const base = join(options.target, options.setName)
-  mkdirSync(join(base, 'images'), { recursive: true })
-  for (const duration of UEYES_DURATIONS) {
-    mkdirSync(join(base, 'heatmaps', `${duration}s`), { recursive: true })
-    mkdirSync(join(base, 'fixmaps', `${duration}s`), { recursive: true })
-  }
+  const channels: Channel[] = [
+    { source: join(options.root, 'images'), target: join(base, 'images') },
+    ...UEYES_DURATIONS.flatMap((duration) => [
+      { source: join(options.root, 'saliency_maps', `heatmaps_${duration}s`), target: join(base, 'heatmaps', `${duration}s`) },
+      { source: join(options.root, 'saliency_maps', `fixmaps_${duration}s`), target: join(base, 'fixmaps', `${duration}s`) },
+    ]),
+  ]
+  for (const channel of channels) mkdirSync(channel.target, { recursive: true })
 
-  const items: DatasetItem[] = []
+  // --- 1) decide which rows are usable at all ------------------------------
   const skipped: ImportSummary['skipped'] = []
-  let testSeen = 0
+  const usable: Array<{ id: string; fileName: string; split: 'tuning' | 'test' }> = []
 
-  for (const row of webRows) {
+  for (const row of selected) {
     const split = splitOf(row)
     if (!split) {
       skipped.push({ id: row.imageName, reason: `unbekannter Train/Test-Wert "${row.split}"` })
       continue
     }
 
-    // The id drops the extension; every artefact is stored as `<id>.png`.
-    const id = row.imageName.replace(/\.[^.]+$/, '')
-    const sources = [
-      { from: join(options.root, 'images', row.imageName), to: join(base, 'images', `${id}.png`) },
-      ...UEYES_DURATIONS.flatMap((duration) => [
-        {
-          from: join(options.root, 'saliency_maps', `heatmaps_${duration}s`, row.imageName),
-          to: join(base, 'heatmaps', `${duration}s`, `${id}.png`),
-        },
-        {
-          from: join(options.root, 'saliency_maps', `fixmaps_${duration}s`, row.imageName),
-          to: join(base, 'fixmaps', `${duration}s`, `${id}.png`),
-        },
-      ]),
-    ]
-
-    const missing = sources.filter((source) => !existsSync(source.from))
+    const missing = channels.filter((channel) => !existsSync(join(channel.source, row.imageName)))
     if (missing.length > 0) {
-      skipped.push({ id, reason: `fehlende Datei(en): ${missing.map((m) => m.from.replace(options.root, '…')).join(', ')}` })
+      skipped.push({
+        id: row.imageName,
+        reason: `fehlende Datei(en) in ${missing.map((channel) => basename(channel.source)).join(', ')}`,
+      })
       continue
     }
 
-    try {
-      for (const source of sources) copyPng(source.from, source.to)
-    } catch (error) {
-      skipped.push({ id, reason: error instanceof Error ? error.message : String(error) })
-      continue
+    // The id drops the extension; every artefact is stored as `<id>.png`.
+    usable.push({ id: row.imageName.replace(/\.[^.]+$/, ''), fileName: row.imageName, split })
+  }
+
+  // --- 2) copy PNGs, transcode the rest, one batch per channel -------------
+  let converted = 0
+  for (const channel of channels) {
+    const toConvert: Array<{ from: string; to: string }> = []
+
+    for (const entry of usable) {
+      const from = join(channel.source, entry.fileName)
+      const to = join(channel.target, `${entry.id}.png`)
+      if (isPng(from)) copyPng(from, to)
+      else toConvert.push({ from, to })
     }
 
+    if (toConvert.length > 0) {
+      log(`  ${basename(channel.target)}: ${toConvert.length} Dateien nach PNG konvertieren …`)
+      convertToPng(toConvert, channel.target)
+      converted += toConvert.length
+    }
+  }
+
+  // --- 3) how binary are the fixation maps really? -------------------------
+  const fixmapDir = join(base, 'fixmaps', '3s')
+  const probe = usable.slice(0, Math.min(20, usable.length))
+  const impure = probe.map((entry) => nonBinaryShare(join(fixmapDir, `${entry.id}.png`)))
+  const meanImpure = impure.length > 0 ? impure.reduce((sum, value) => sum + value, 0) / impure.length : 0
+
+  const notes: string[] = []
+  if (converted > 0) {
+    notes.push(
+      `${converted} Quelldateien lagen als JPEG vor und wurden verlustfrei nach PNG transcodiert ` +
+        '(die JPEG-Kompression selbst ist bereits geschehen und nicht rückgängig zu machen).',
+    )
+  }
+  if (meanImpure > 0.001) {
+    notes.push(
+      `Die Fixationskarten sind zu ${(meanImpure * 100).toFixed(1)} % nicht exakt binär (Stichprobe aus ${probe.length} Bildern) — ` +
+        'JPEG-Ringing an den Rändern der Fixationsblobs. Beim Einlesen wird bei 127 re-binarisiert; ' +
+        'ein dünner Saum je Blob bleibt als Rauschquelle, die in verlustfrei gespeicherten Teilmengen fehlt.',
+    )
+  }
+
+  // --- 4) splits -----------------------------------------------------------
+  const items: DatasetItem[] = []
+  let testSeen = 0
+  for (const entry of usable) {
     // The A-7 quick set is a prefix of the test split, so the gate never sees
     // an image the tuning split has touched.
-    if (split === 'test' && testSeen < options.quick) {
-      items.push({ id, split: ['test', 'quick'] })
+    if (entry.split === 'test') {
+      items.push({ id: entry.id, split: testSeen < options.quick ? ['test', 'quick'] : 'test' })
       testSeen++
     } else {
-      items.push({ id, split })
-      if (split === 'test') testSeen++
+      items.push({ id: entry.id, split: entry.split })
     }
-
-    if (items.length % 50 === 0) log(`  ${items.length} Bilder …`)
   }
 
   const index: DatasetIndex = {
-    name: 'UEyes — Webpage-Teilmenge',
-    source: `UEyes_dataset (${indexPath})`,
+    name: `UEyes — ${UEYES_CATEGORIES[category].label}-Teilmenge`,
+    source: `UEyes_dataset (${indexPath}), Kategorie "${category}"`,
     license: UEYES_LICENSE,
     citation: UEYES_CITATION,
     durations: UEYES_DURATIONS,
+    notes,
     items,
   }
 
   return {
     setName: options.setName,
     target: base,
+    category,
     tuning: items.filter((item) => item.split === 'tuning').length,
     test: items.filter((item) => item.split !== 'tuning').length,
     quick: items.filter((item) => Array.isArray(item.split)).length,
+    converted,
     skipped,
     index,
   }

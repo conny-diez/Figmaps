@@ -14,9 +14,10 @@ import { PROFILE_DURATIONS, PROFILE_IDS, type ProfileId } from '../src/engine/pa
 import { renderContactSheet, type Triptych } from './contact-sheet'
 import { loadSamples, readIndex, type SplitName } from './dataset'
 import { METRIC_IDS, METRIC_LABELS } from './metrics/types'
-import { CENTER_BIAS_SIGMAS, resolvePredictors } from './predictors'
+import { computeMeanMap, type MeanMap } from './mean-map'
+import { CENTER_BIAS_SIGMAS, meanMapPredictor, resolvePredictors } from './predictors'
 import { buildReport, type UniformCheck } from './report'
-import { runEvaluation, sweepCenterBias, worstCases, type PredictorResult } from './runner'
+import { meanProfile, runEvaluation, spatialProfile, sweepCenterBias, worstCases, type PredictorResult } from './runner'
 import { renderTunedModule, tuneProfile, type TuneOutcome } from './tune'
 
 const CONTACT_SHEET_CASES = 12
@@ -111,6 +112,23 @@ async function runEval(args: Args): Promise<number> {
   const index = readIndex(setName)
   const samples = loadSamples(setName, split, { duration, ...(limit ? { limit } : {}) })
   const predictors = resolvePredictors(engine)
+
+  // A-4, third baseline: the averaged ground truth of the *tuning* split.
+  // Computed from tuning even when a different split is being scored, so the
+  // baseline never contains the answer it is competing against.
+  let meanMap: MeanMap | undefined
+  if (args['mean-map'] !== false && !args['no-mean-map']) {
+    try {
+      process.stdout.write('Mean Map wird gebildet … ')
+      meanMap = computeMeanMap(setName, 'tuning', duration)
+      console.log(`${meanMap.count} Bilder`)
+      predictors.unshift(meanMapPredictor(meanMap))
+    } catch (error) {
+      console.log('')
+      console.warn(`  Mean-Map-Baseline übersprungen: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   const primary = predictors.find((predictor) => !predictor.baseline) ?? predictors[predictors.length - 1]
 
   console.log(
@@ -144,6 +162,15 @@ async function runEval(args: Args): Promise<number> {
 
   const centerBiasSweep = sweepCenterBias(run.samples, CENTER_BIAS_SIGMAS)
 
+  const predictionProfiles = run.samples
+    .map((sample) => run.primaryPredictions.get(sample.id))
+    .filter((map): map is NonNullable<typeof map> => map !== undefined)
+    .map(spatialProfile)
+  const positionBias = {
+    truth: meanProfile(run.samples.map((sample) => spatialProfile(sample.truth.salience))),
+    ...(predictionProfiles.length > 0 ? { prediction: meanProfile(predictionProfiles) } : {}),
+  }
+
   const primaryResult = run.results.find((entry) => entry.predictor.id === primary.id)
   const worst = primaryResult ? worstCases(primaryResult, CONTACT_SHEET_CASES) : []
 
@@ -169,6 +196,12 @@ async function runEval(args: Args): Promise<number> {
 
   const notes: string[] = []
   if (limit) notes.push(`Lauf auf ${limit} Bildern begrenzt (\`--limit\`) — nicht als Abnahmezahl verwenden.`)
+  if (meanMap && split === 'tuning') {
+    notes.push(
+      'Die Mean-Map-Baseline wurde auf demselben Split gebildet, der hier bewertet wird. Ihre Werte sind ' +
+        'deshalb optimistisch (in-sample) — für einen belastbaren Vergleich `--set test` verwenden.',
+    )
+  }
   if (worst.length < CONTACT_SHEET_CASES) {
     notes.push(`Kontaktbogen zeigt ${worst.length} statt ${CONTACT_SHEET_CASES} Fälle — das Set ist kleiner.`)
   }
@@ -184,6 +217,7 @@ async function runEval(args: Args): Promise<number> {
     index,
     uniformCheck,
     centerBiasSweep,
+    positionBias,
     contactSheetPath,
     notes,
   })
@@ -292,6 +326,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --set <split>       tuning | test | quick                                          (default: test)',
         '  --fixtures <name>   Referenz-Set unter eval/fixtures/                              (default: ueyes-web)',
         '  --duration <s>      Betrachtungsdauer der Ground Truth: 1 | 3 | 7                  (default: 3)',
+        '  --no-mean-map       Mean-Map-Baseline weglassen (sie liest den Tuning-Split)',
         '  --report <path>     Zielpfad des Markdown-Reports',
         '  --limit <n>         nur die ersten n Bilder (Rauchtest)',
         '  --gate --baseline <file> [--max-cc-drop 0.02] [--write]   Regressions-Gate (A-7)',

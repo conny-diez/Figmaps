@@ -29,9 +29,9 @@ Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 | **Befunde** | Ein deterministisches Regelwerk formuliert, was gemessen wurde — mit „Im Canvas zeigen" auf die betroffene Ebene. |
 | **Betrachtungsdauer** | Drei Profile (`glance` 1 s, `scan` 3 s, `read` 7 s). Ausgeliefert wird nur, was der Harness belegt hat; aktuell ist das `scan`. |
 
-**Aktueller Stand:** gemessen gegen UEyes (Webpage-Teilmenge, 3 s). FigMaps 1.0
-schlägt die Center-Bias-Baseline in allen vier Metriken — **S-2 ist erfüllt**.
-Es ist eine Teilmessung: siehe [Erste Messung](#erste-messung-ueyes-webpage-3s).
+**Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
+FigMaps 1.0 schlägt den Center-Bias deutlich, verliert aber gegen die Mean Map —
+**S-2 ist nicht erfüllt**. Siehe [Messungen](#messungen-ueyes-3s).
 
 ---
 
@@ -248,11 +248,23 @@ Laufen immer mit:
    Damit dieser Vergleich nicht an einer bequemen Wahl hängt, läuft die
    Baseline über mehrere Breiten (σ 0,15 – 0,8) und das Urteil wird gegen den
    **besten** Center-Bias je Metrik gefällt.
-2. **Uniform** — konstante Map. Untergrenze und Sanity-Check der Metriken: muss
+2. **Mean Map** — der Durchschnitt der Ground Truth über den **Tuning**-Split,
+   angewandt auf jedes Testbild, ohne das Bild anzusehen. Die übliche
+   Vergleichsbasis der Saliency-Literatur und deutlich stärker als eine
+   Gaußglocke: sie kennt die tatsächliche räumliche Verteilung des Datensatzes.
+   Alles, was sie erklärt, ist Wissen über das *Genre*, nicht über den
+   konkreten Screen. Berechnet in normierten Koordinaten und ausschließlich auf
+   dem Tuning-Split — sonst enthielte sie die Antwort, gegen die sie antritt.
+3. **Uniform** — konstante Map. Untergrenze und Sanity-Check der Metriken: muss
    exakt AUC 0,5 / CC 0 / NSS 0 liefern. Tut sie das auf echten Daten nicht,
    bricht `npm run eval` ab und schreibt keinen Report — dann stimmt der
    Import, nicht die Engine.
-3. **FigMaps 1.0** — die ausgelieferte Konfiguration, eingefroren.
+4. **FigMaps 1.0** — die ausgelieferte Konfiguration, eingefroren.
+
+Der Report vergleicht gegen die **stärkste** dieser Baselines je Metrik und
+weist zusätzlich aus, in wie vielen Einzelbildern die Engine die Mean Map
+schlägt — ein Mittelwert allein verbirgt, ob eine Engine überall gleichmäßig
+schlechter ist oder nur auf manchen Screens.
 
 ### Tuning (A-6)
 
@@ -290,54 +302,118 @@ UEyes-Läufen gemischt.
 
 ---
 
-## Erste Messung (UEyes Webpage, 3 s)
+## Messungen (UEyes, 3 s)
+
+Jede UI-Kategorie ist ein **eigenes Set** und wird **getrennt** berichtet. UEyes'
+zentraler Befund ist, dass Positions- und Blickrichtungs-Bias sich zwischen
+UI-Typen unterscheiden; ein Mittelwert über Typen würde genau das verwischen.
 
 ```bash
-npm run eval -- --fixtures ueyes-web --set test --duration 3 --engine heuristic
+npm run eval:fixtures -- --ueyes <pfad> --category web
+npm run eval:fixtures -- --ueyes <pfad> --category mobile
+
+npm run eval -- --fixtures ueyes-web    --set test --duration 3
+npm run eval -- --fixtures ueyes-mobile --set test --duration 3
 ```
 
-27 Bilder (Test-Split des Datensatzes), Betrachtungsdauer 3 s:
+Je 27 Bilder (Test-Split des Datensatzes), Betrachtungsdauer 3 s:
+
+**Webpage**
 
 | Engine | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
 |---|---:|---:|---:|---:|
+| **Mean Map** (Ø GT, 468 Tuning-Bilder) | **0,787** | **0,450** | **1,116** | **1,111** |
+| FigMaps 1.0 | 0,718 | 0,298 | 0,760 | 1,401 |
 | Center-Bias (bester σ je Metrik) | 0,592 | 0,119 | 0,324 | 1,624 |
 | Uniform | 0,500 | 0,000 | 0,000 | 1,673 |
-| **FigMaps 1.0** | **0,718** | **0,298** | **0,760** | **1,401** |
 
-**S-2 ist erfüllt:** FigMaps 1.0 schlägt die Center-Bias-Baseline in allen vier
-Metriken — auch gegen deren beste Breite. Die Feature-Maps sind keine Dekoration.
+**Mobile UI**
 
-Der Sanity-Check ist sauber: Uniform liefert auf echten Daten exakt
-AUC 0,5 / CC 0 / NSS 0.
+| Engine | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
+|---|---:|---:|---:|---:|
+| **Mean Map** (Ø GT, 468 Tuning-Bilder) | **0,782** | **0,518** | **1,096** | **0,833** |
+| FigMaps 1.0 | 0,746 | 0,404 | 0,900 | 1,059 |
+| Center-Bias (bester σ je Metrik) | 0,545 | 0,090 | 0,157 | 1,456 |
+| Uniform | 0,500 | 0,000 | 0,000 | 1,349 |
 
-Kontrolllauf auf dem Train-Split (468 Bilder, auf die nie getunt wurde) bestätigt
-das Bild — 0,733 / 0,340 / 0,825 / 1,294 gegen Center-Bias 0,605 / 0,135 / 0,347
-/ 1,556. Der Befund hängt also nicht an den 27 Test-Bildern.
+### Befund: S-2 ist nicht erfüllt
 
-### Drei Vorbehalte, die zum Ergebnis gehören
+FigMaps 1.0 schlägt den Center-Bias **deutlich** — in beiden Kategorien, in
+allen vier Metriken, auch gegen dessen beste Breite. Gegen die **Mean Map**
+verliert die Engine jedoch ebenso deutlich, ebenfalls in beiden Kategorien und
+allen vier Metriken.
+
+Die Mean Map ist der Durchschnitt der Ground Truth über den Tuning-Split,
+angewandt auf jedes Testbild, **ohne das Bild je anzusehen**. Sie ist die
+übliche Vergleichsbasis der Saliency-Literatur und die aussagekräftigere
+Referenz: alles, was sie schon erklärt, ist Wissen darüber, *wo auf dieser Art
+von Screen üblicherweise Dinge stehen* — nicht darüber, was in diesem konkreten
+Screen passiert.
+
+Pro Bild betrachtet gewinnt die Engine gegen die Mean Map in **5–7 von 27**
+Fällen (beide Kategorien, je nach Metrik). Es ist also nicht so, dass gar keine
+bildspezifische Information enthalten wäre — aber auf rund vier Fünfteln der
+Screens ist der generische Durchschnitt die bessere Vorhersage.
+
+**Konsequenz laut PRD §8:** Die Heuristik trägt in ihrer jetzigen Form zu wenig
+eigene Information. Sie weiter von Hand zu justieren lohnt weniger als der
+Schritt auf ein trainiertes Modell (Iteration 1.2) — und dieser Schritt ist mit
+dem Harness jetzt belegbar statt Glaubenssache.
+
+Der Sanity-Check ist in beiden Läufen sauber: Uniform liefert auf echten Daten
+exakt AUC 0,5 / CC 0 / NSS 0.
+
+### Positions-Bias — der Unterschied zwischen den UI-Typen
+
+Schwerpunkt der Aufmerksamkeit in normierten Koordinaten, (0,0) = oben links:
+
+| | Schwerpunkt x | Schwerpunkt y | Masse im oberen Drittel |
+|---|---:|---:|---:|
+| Ground Truth Webpage | 0,380 | 0,301 | 64,2 % |
+| Ground Truth Mobile UI | 0,346 | 0,297 | 61,9 % |
+| Vorhersage Webpage | 0,476 | 0,482 | 33,8 % |
+| Vorhersage Mobile UI | 0,461 | 0,455 | 38,9 % |
+| Positions-Prior der Engine | 0,350 | 0,280 | — |
+| Center-Bias | 0,500 | 0,500 | 21,5 % |
+
+Zwei Dinge fallen auf:
+
+1. **Der gemessene Bias der beiden UI-Typen liegt nah beieinander** — Mobile ist
+   etwas weiter links (0,346 vs 0,380), vertikal praktisch identisch. Der große
+   Unterschied liegt nicht zwischen den Typen, sondern zwischen Ground Truth und
+   unserer Vorhersage.
+2. **Der Positions-Prior der Engine trifft die Realität gut** (0,35 / 0,28 gegen
+   gemessene 0,35–0,38 / 0,30) — aber die fertige Vorhersage landet bei
+   0,46–0,48 / 0,46–0,48, also fast in der Bildmitte. Die Pixel-Features ziehen
+   den guten Prior in die Mitte zurück.
+
+Das erklärt den Befund oben: die Mean Map ist im Kern genau dieser
+Positions-Prior, sauber aus Daten geschätzt — und unsere Feature-Maps
+verschlechtern ihn, statt ihn zu ergänzen.
+
+### Was der Kontaktbogen zeigt
+
+Die visuelle Fehleranalyse passt dazu: die Ground Truth besteht aus **wenigen,
+eng begrenzten Hotspots** (Logo, Headline, Gesichter, oben links), unsere
+Vorhersage ist **flächig** und färbt fast die ganze Seite warm ein. Auf dichten
+Screens findet die Heuristik überall Kontrast und Kanten und verteilt
+Aufmerksamkeit entsprechend breit — die gemessene Aufmerksamkeit ist vertikal um
+Faktor 1,5 enger konzentriert als die vorhergesagte.
+
+Der Engpass ist **Selektivität**, nicht Position.
+
+### Zwei Vorbehalte, die zum Ergebnis gehören
 
 1. **Teilmessung.** Ein Screenshot bringt keinen Layer-Baum mit, deshalb sind
    `textSalience`, `interactiveSalience` und `imageSalience` auf diesem
    Datensatz konstant null. Das sind **40 % der Engine-Gewichtung**, die hier
-   nicht bewertet sind; gemessen ist die Pixel-Hälfte plus Positions-Prior.
-   Ob die Struktur-Signale tragen, ist mit UEyes grundsätzlich nicht
-   beantwortbar — dafür braucht es das eigene Set aus First-Click-Tests.
-2. **Kleiner Test-Split.** 27 Bilder sind wenig; der Kontrolllauf oben mildert
-   das, ersetzt aber keinen größeren Test-Split.
-3. **Absolut niedrig.** Ein CC von 0,30 ist für Saliency kein schlechter Wert,
-   aber die Literatur erreicht auf UEyes mit trainierten Modellen deutlich mehr.
-   Das ist genau der Vergleich, den Iteration 1.2 führen kann, sobald sie will.
-
-### Was der Kontaktbogen zeigt
-
-Die visuelle Fehleranalyse ist eindeutiger als die Zahl: die Ground Truth besteht
-aus **wenigen, eng begrenzten Hotspots** (Logo, Headline, Gesichter, oben links),
-unsere Vorhersage ist **flächig** und färbt fast die ganze Seite warm ein. Auf
-dichten Webseiten findet die Heuristik überall Kontrast und Kanten und verteilt
-Aufmerksamkeit entsprechend breit.
-
-Der Engpass ist also **Selektivität**, nicht Position. Das ist ein konkreter
-Ansatzpunkt für 1.2 — und eine Hypothese, die der Harness jetzt prüfen kann.
+   nicht bewertet sind. Ob die Struktur-Signale tragen, ist mit UEyes
+   grundsätzlich nicht beantwortbar — dafür braucht es das eigene Set aus
+   First-Click-Tests. Der Befund gilt für die Pixel-Hälfte der Engine.
+2. **Kleiner Test-Split.** Je 27 Bilder sind wenig. Der Befund fällt aber in
+   zwei unabhängigen Kategorien identisch aus und mit deutlichem Abstand, nicht
+   knapp. Ein Kontrolllauf auf dem Train-Split (468 Bilder) bestätigt die
+   Größenordnung ebenfalls.
 
 ---
 
@@ -521,8 +597,8 @@ Zusätzlich für 1.1 (M4, M5):
 | ID | Inhalt | Stand |
 |---|---|---|
 | M1 | A-1 Engine-Entkopplung | **fertig** — Engine kennt nur `Bitmap`/`Float32Array`, `ImageOps` mit Canvas- und Node-Implementierung, Parity-Test grün |
-| M2 | A-2 bis A-5 Harness | **fertig** — UEyes importiert, `npm run eval` liefert Report und Kontaktbogen, die Zahl für 1.0 liegt auf dem Tisch (S-2 erfüllt) |
-| M3 | A-6, A-7 Tuning | **Code fertig, Abnahme offen** — `npm run tune` und das Gate stehen; `heuristic-v2` ist noch nicht erzeugt |
+| M2 | A-2 bis A-5 Harness | **fertig** — UEyes importiert (Webpage + Mobile UI), `npm run eval` liefert Report und Kontaktbogen, die Zahl für 1.0 liegt auf dem Tisch: **S-2 nicht erfüllt** |
+| M3 | A-6, A-7 Tuning | **Code fertig, Abnahme offen** — `npm run tune` und das Gate stehen; `heuristic-v2` ist noch nicht erzeugt und nach dem S-2-Befund auch nicht die naheliegende nächste Maßnahme |
 | M4 | Epic B | **fertig** |
 | M5 | Epic C | **fertig bis auf die Textabnahme** — sechs Regeln implementiert und getestet, Formulierungen sind noch von einem Menschen freizugeben (C-1) |
 | M6 | Epic D | **Code fertig, Beleg offen** — drei Profile existieren und sind evaluierbar; ausgeliefert wird bis zum Beleg nur `scan` |
@@ -531,24 +607,33 @@ Zusätzlich für 1.1 (M4, M5):
 
 - **S-1** (ein Befehl liefert AUC/CC/NSS) — **erfüllt.** Reproduzierbar,
   versioniert, Referenz-Set und Metrik-Zuordnung im Report dokumentiert.
-- **S-2** (Engine schlägt Center-Bias) — **erfüllt** für die Pixel-Hälfte der
-  Engine, siehe [Erste Messung](#erste-messung-ueyes-webpage-3s) samt Vorbehalten.
+- **S-2** (Engine schlägt die Baseline) — **nicht erfüllt.** Center-Bias ja,
+  Mean Map nein, in beiden UI-Kategorien. Siehe
+  [Messungen](#messungen-ueyes-3s). Laut PRD §8 ist genau das ein zulässiges
+  und wertvolles Iterationsergebnis: „Unangenehm, aber deutlich billiger als es
+  nicht zu wissen."
 - **S-3** (+0,04 AUC nach Tuning) — **offen.** In dieser Iteration wurde nicht
-  getunt, `src/engine/tuned.ts` ist leer.
+  getunt, `src/engine/tuned.ts` ist leer. Angesichts des S-2-Befunds ist Tuning
+  der Gewichte auch nicht der naheliegende nächste Schritt.
 - **S-4** (abschnittsweise Analyse) — erfüllt, siehe Epic B.
 - **S-5** (3–6 Befunde in verständlichem Deutsch) — erfüllt bis auf die
   Textabnahme durch einen Menschen.
 
 ### Offen
 
-1. **Eigenes Validierungsset** aus First-Click-Tests. Der einzige Weg,
+1. **Entscheidung zum S-2-Befund.** Die Optionen stehen im PRD §8: trainiertes
+   Modell in 1.2 (ONNX Runtime Web im iframe; UMSI auf UEyes nachtrainiert
+   erreicht laut Literatur 0,878 AUC gegen 0,778 ohne UI-Training) oder die
+   Heuristik gezielt auf Selektivität umbauen. Beides ist jetzt messbar.
+2. **Eigenes Validierungsset** aus First-Click-Tests. Der einzige Weg,
    `textSalience`, `interactiveSalience` und `imageSalience` überhaupt zu
    bewerten — auf Screenshots sind sie konstant null. Ohne das bleibt jede
    Messung eine Teilmessung über 60 % der Gewichtung.
-2. **Tuning (M3)** gegen den Tuning-Split, danach Kontaktbogen durchsehen.
 3. **Textabnahme der Findings (M5)** — C-1 verlangt ausdrücklich, dass keine
    Regel feuert, deren Text nicht von einem Menschen bestätigt wurde.
 4. **Epic D belegen** — 1 s und 7 s sind importiert, aber noch nicht ausgewertet.
+5. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
+   für FigMaps nicht die relevanten UI-Typen.
 
 ## Nicht in 1.1
 

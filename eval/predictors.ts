@@ -11,7 +11,8 @@ import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import type { ImageOps } from '../src/engine/ops'
 import { ENGINE_CONFIGS, PROFILE_IDS, type EngineParams, type ProfileId } from '../src/engine/params'
 import type { ScalarMap } from '../src/engine/types'
-import type { EvalSample } from './dataset'
+import { resizeScalarMap, type EvalSample } from './dataset'
+import type { MeanMap } from './mean-map'
 
 export type Predictor = {
   id: string
@@ -53,6 +54,26 @@ export const centerBias: Predictor = {
   predict(sample) {
     return Promise.resolve(centerBiasMap(sample.grid.width, sample.grid.height))
   },
+}
+
+/**
+ * Baseline 3 — the averaged ground truth of the tuning split, applied to every
+ * test image without looking at it (see `mean-map.ts`).
+ *
+ * The real test for S-2: it encodes where attention usually sits on this kind
+ * of screen. Whatever it already explains is not an achievement of the engine.
+ */
+export function meanMapPredictor(meanMap: MeanMap): Predictor {
+  return {
+    id: 'mean-map',
+    label: `Mean Map (Ø Ground Truth aus ${meanMap.count} ${meanMap.split}-Bildern)`,
+    baseline: true,
+    predict(sample) {
+      // Stretched back onto the target aspect ratio — the average lives in
+      // normalised coordinates.
+      return Promise.resolve(resizeScalarMap(meanMap.map, sample.grid.width, sample.grid.height))
+    },
+  }
 }
 
 /** Baseline 2 — a constant map. Lower bound and sanity check of the metrics. */
