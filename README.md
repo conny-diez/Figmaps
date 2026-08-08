@@ -402,6 +402,129 @@ Faktor 1,5 enger konzentriert als die vorhergesagte.
 
 Der Engpass ist **Selektivität**, nicht Position.
 
+---
+
+## Diagnose: woher kommt die Vorhersagekraft?
+
+```bash
+npm run diagnose -- --fixtures ueyes-web     # nur Tuning-Split, kein Tuning
+npm run diagnose -- --fixtures ueyes-mobile
+```
+
+Zwei Versuche, **ausschließlich auf dem Tuning-Split** (je 468 Bilder), zur
+Diagnose — nicht als Tuning für S-3. Es wird nichts gespeichert und keine
+Konfiguration erzeugt; der Test-Split bleibt unberührt.
+
+Die Mean Map ist hier **leave-one-out** gebildet: das bewertete Bild fließt
+nicht in seine eigene Baseline ein. Sonst wäre der Vergleich auf demselben
+Split, aus dem die Baseline entsteht, zu ihren Gunsten verzerrt.
+
+### Versuch 1 — Prior-Gewichtung: schließt sie die Lücke? **Nein.**
+
+Positions-Prior von 0,1 auf 0,9 hochgezogen, übrige Features anteilig herunter
+(CC, Webpage / Mobile UI):
+
+| Prior-Gewicht | 0,1 (= 1.0) | 0,2 | 0,3 | 0,5 | 0,7 | 0,9 | Mean Map |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Webpage | 0,279 | **0,295** | 0,294 | 0,282 | 0,271 | 0,262 | **0,421** |
+| Mobile UI | 0,441 | **0,458** | 0,439 | 0,397 | 0,369 | 0,351 | **0,507** |
+
+Die Kurve hat ein flaches Maximum bei 0,2 und fällt danach **monoton ab**. Der
+beste Punkt schließt nur **11 % (Web) bzw. 26 % (Mobile)** der Lücke zur Mean
+Map.
+
+**Damit ist die Hypothese widerlegt:** Der Rückstand liegt *nicht* daran, dass
+der Prior zu schwach gewichtet wäre. Ein reiner Ortsprior in unserer Form —
+eine analytische F-Pattern-Glocke — ist schlechter als der empirisch geschätzte
+Ortsprior der Mean Map. Das Problem ist die **Form** des Priors, nicht sein
+Gewicht.
+
+### Versuch 2 — trägt die Bildanalyse Signal? **Ja, messbar.**
+
+Mean Map als Basis, Bildanalyse additiv mit Gewicht α (beide auf `[0,1]`
+normiert). α = 0 ist exakt die Mean Map:
+
+**Webpage** (CC)
+
+| α | 0 | 0,1 | 0,2 | 0,3 | 0,4 | **0,5** | 0,75 | 1,5 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| + Pixel-Features | 0,421 | 0,431 | 0,439 | 0,444 | 0,447 | **0,448** | 0,445 | 0,420 |
+| + FigMaps 1.0 | 0,421 | 0,429 | 0,434 | 0,438 | 0,440 | 0,441 | 0,441 | 0,431 |
+
+**Mobile UI** (CC)
+
+| α | 0 | 0,1 | 0,2 | 0,3 | 0,4 | **0,5** | 0,75 | 1,5 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| + Pixel-Features | 0,507 | 0,524 | 0,537 | 0,545 | 0,550 | **0,551** | 0,546 | 0,506 |
+| + FigMaps 1.0 | 0,507 | 0,519 | 0,529 | 0,535 | 0,540 | 0,543 | 0,545 | 0,535 |
+
+Der Hybrid ist in **allen vier Metriken** besser als die Mean Map allein, in
+beiden Kategorien, über den gesamten Bereich. Bestwerte bei α ≈ 0,5:
+
+| | CC | AUC-Judd | NSS | KL |
+|---|---:|---:|---:|---:|
+| Webpage: Mean Map → Hybrid | 0,421 → **0,448** | 0,767 → **0,782** | 0,992 → **1,062** | 1,088 → **1,071** |
+| Mobile UI: Mean Map → Hybrid | 0,507 → **0,551** | 0,764 → **0,781** | 0,995 → **1,091** | 0,797 → **0,777** |
+
+**Die Pixel-Features sind also nicht wertlos.** Sie tragen bildspezifisches
+Signal in der Größenordnung **+0,027 CC (Web)** und **+0,044 CC (Mobile)** — die
+Kurve steigt sauber an, hat ein Maximum und fällt wieder, wie es ein echter
+Effekt tut, nicht wie Rauschen.
+
+Bemerkenswert: **nur die Pixel-Features beizumischen ist besser als die
+komplette 1.0-Vorhersage beizumischen.** Deren eigener Positions-Prior ist neben
+der Mean Map redundant und, wie Versuch 1 zeigt, schlechter — er verwässert den
+Beitrag der Bildanalyse.
+
+### Wo FigMaps die Mean Map schlägt
+
+115 von 468 Bildern (25 %) bei Webpage, 166 von 468 (35 %) bei Mobile UI. Der
+Unterschied zwischen Gewinnern und Verlierern ist eindeutig und in beiden
+Kategorien derselbe:
+
+| | Gewinner Web | Verlierer Web | Gewinner Mobile | Verlierer Mobile |
+|---|---:|---:|---:|---:|
+| Ø Masse im oberen Drittel | **45,1 %** | 62,7 % | **42,6 %** | 70,3 % |
+| Ø Schwerpunkt y | **0,382** | 0,296 | **0,383** | 0,262 |
+| Ø Konzentration der GT | 47,3 % | 48,5 % | 38,8 % | 38,0 % |
+| Ø Seitenverhältnis | 1,46 | 1,41 | 0,56 | 0,56 |
+
+Konzentration und Seitenverhältnis unterscheiden sich **nicht** — der einzige
+Trennfaktor ist die vertikale Lage der Aufmerksamkeit.
+
+Der Kontaktbogen bestätigt es: die Gewinner sind durchweg
+**Hero-dominierte Landingpages** — ein großes Bild oder eine
+kontrastreiche Grafik mit einer fetten Headline in der **Bildmitte**, nicht in
+der Kopfzeile. Also genau die Screens, auf denen der generische
+Ortsdurchschnitt danebenliegt und Luminanz-Kontrast und Kantendichte etwas
+finden. Verlierer sind dichte, konventionell aufgebaute Seiten mit starker
+Navigation oben, wo der Durchschnitt schon fast alles erklärt.
+
+### Was daraus folgt
+
+Die Engine hat zwei trennbare Probleme, und nur eines davon ist gravierend:
+
+1. **Der analytische Positions-Prior ist zu schlecht.** Ein aus Daten
+   geschätzter Ortsprior (Mean Map) schlägt ihn deutlich, und mehr Gewicht auf
+   den analytischen Prior macht es schlechter, nicht besser. Das ist der
+   Hauptanteil des Rückstands — und billig zu beheben.
+2. **Die Bildanalyse trägt echtes, aber schwaches Signal** — rund +0,03 bis
+   +0,04 CC über einem guten Ortsprior. Sie ist kein Ersatz für den Prior,
+   sondern eine Ergänzung, und sie wirkt vor allem dort, wo der Screen von der
+   Norm abweicht.
+
+Der naheliegende nächste Schritt ist damit **nicht** Gewichts-Tuning, sondern
+den Prior durch einen datengeschätzten zu ersetzen und die Bildanalyse additiv
+darüberzulegen. Das ist zugleich die Struktur, die ein trainiertes Modell von
+selbst lernt — Iteration 1.2 bleibt der sauberere Weg, hat jetzt aber eine
+Messlatte und eine Erklärung.
+
+> Die Zahlen dieses Abschnitts stammen vom **Tuning-Split** und sind
+> Diagnose, keine Abnahme. Eine daraus abgeleitete Konfiguration müsste auf dem
+> Test-Split neu gemessen werden.
+
+---
+
 ### Zwei Vorbehalte, die zum Ergebnis gehören
 
 1. **Teilmessung.** Ein Screenshot bringt keinen Layer-Baum mit, deshalb sind
@@ -621,10 +744,14 @@ Zusätzlich für 1.1 (M4, M5):
 
 ### Offen
 
-1. **Entscheidung zum S-2-Befund.** Die Optionen stehen im PRD §8: trainiertes
-   Modell in 1.2 (ONNX Runtime Web im iframe; UMSI auf UEyes nachtrainiert
-   erreicht laut Literatur 0,878 AUC gegen 0,778 ohne UI-Training) oder die
-   Heuristik gezielt auf Selektivität umbauen. Beides ist jetzt messbar.
+1. **Entscheidung zum S-2-Befund.** Die [Diagnose](#diagnose-woher-kommt-die-vorhersagekraft)
+   hat die Ursache eingegrenzt: der analytische Positions-Prior ist der
+   Hauptanteil des Rückstands, die Bildanalyse trägt echtes, aber schwaches
+   Signal (+0,03 bis +0,04 CC). Optionen: den Prior durch einen
+   datengeschätzten ersetzen (billig, aber die Engine wird damit
+   datensatzabhängig) oder direkt auf ein trainiertes Modell in 1.2 (ONNX
+   Runtime Web im iframe; UMSI auf UEyes nachtrainiert erreicht laut Literatur
+   0,878 AUC gegen 0,778 ohne UI-Training). Beides ist jetzt messbar.
 2. **Eigenes Validierungsset** aus First-Click-Tests. Der einzige Weg,
    `textSalience`, `interactiveSalience` und `imageSalience` überhaupt zu
    bewerten — auf Screenshots sind sie konstant null. Ohne das bleibt jede

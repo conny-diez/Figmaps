@@ -145,6 +145,20 @@ export type LoadOptions = {
  * `tuning` and reported on `test`, never the other way round (A-2).
  */
 export function loadSamples(setName: string, split: SplitName, options: LoadOptions = {}): EvalSample[] {
+  const samples = [...iterateSamples(setName, split, options)]
+  if (samples.length === 0) throw new Error(`Referenz-Set "${setName}" / "${split}": kein einziges Bild verwertbar.`)
+  return samples
+}
+
+/**
+ * Same as `loadSamples`, but yields one sample at a time and lets the previous
+ * one be collected.
+ *
+ * A tuning split of 468 mobile screenshots is several gigabytes of decoded
+ * pixels; anything that walks the whole split — the mean map, the diagnostics —
+ * must stream rather than collect.
+ */
+export function* iterateSamples(setName: string, split: SplitName, options: LoadOptions = {}): Generator<EvalSample> {
   const root = options.root ?? FIXTURES_ROOT
   const index = readIndex(setName, root)
   const base = join(root, setName)
@@ -163,7 +177,6 @@ export function loadSamples(setName: string, split: SplitName, options: LoadOpti
   const heatmapDir = join(base, 'heatmaps', `${duration}s`)
   const fixmapDir = join(base, 'fixmaps', `${duration}s`)
 
-  const samples: EvalSample[] = []
   for (const item of selected) {
     const image = readPng(join(base, 'images', `${item.id}.png`))
 
@@ -200,7 +213,7 @@ export function loadSamples(setName: string, split: SplitName, options: LoadOpti
     const signalsPath = join(base, 'signals', `${item.id}.json`)
     const hasSignals = existsSync(signalsPath)
 
-    samples.push({
+    yield {
       id: item.id,
       image,
       grid,
@@ -210,9 +223,6 @@ export function loadSamples(setName: string, split: SplitName, options: LoadOpti
       truth: { salience, fixations, fixationSource },
       duration,
       hasSignals,
-    })
+    }
   }
-
-  if (samples.length === 0) throw new Error(`Referenz-Set "${setName}" / "${split}": kein einziges Bild verwertbar.`)
-  return samples
 }

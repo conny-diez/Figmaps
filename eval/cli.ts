@@ -11,8 +11,13 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { PROFILE_DURATIONS, PROFILE_IDS, type ProfileId } from '../src/engine/params'
+import { analyzeFrame } from '../src/engine/analyze'
+import { HeuristicAttentionEngine } from '../src/engine/heuristic'
+import { nodeImageOps } from '../src/platform/imageops-node'
 import { renderContactSheet, type Triptych } from './contact-sheet'
-import { loadSamples, readIndex, type SplitName } from './dataset'
+import { iterateSamples, loadSamples, readIndex, type SplitName } from './dataset'
+import { diagnose } from './diagnose'
+import { buildDiagnoseReport } from './diagnose-report'
 import { METRIC_IDS, METRIC_LABELS } from './metrics/types'
 import { computeMeanMap, type MeanMap } from './mean-map'
 import { CENTER_BIAS_SIGMAS, meanMapPredictor, resolvePredictors } from './predictors'
@@ -253,6 +258,94 @@ async function runEval(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// diagnose — two experiments on the tuning split, no tuning
+// ---------------------------------------------------------------------------
+
+async function runDiagnose(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  const duration = num(args, 'duration', 3)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log(`Diagnose auf "${setName}" / tuning / ${duration}s — Test-Split wird nicht angefasst.`)
+  process.stdout.write('Mean-Map-Akkumulator … ')
+
+  let lastLogged = 0
+  const result = await diagnose({
+    setName,
+    duration,
+    ...(limit ? { limit } : {}),
+    onProgress: (done) => {
+      if (done === 1) process.stdout.write('fertig\n')
+      if (done - lastLogged >= 25) {
+        lastLogged = done
+        process.stdout.write(`\r  ${done} Bilder …   `)
+      }
+    },
+  })
+  process.stdout.write(`\r  ${result.sampleCount} Bilder ausgewertet\n\n`)
+
+  const width = 14
+  console.log('Versuch 1 — Prior-Gewichtung')
+  console.log(`${'Prior'.padEnd(width)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}`)
+  console.log(`${'FigMaps 1.0'.padEnd(width)}${METRIC_IDS.map((id) => result.engineV1[id].toFixed(3).padStart(10)).join('')}`)
+  for (const entry of result.priorSweep) {
+    console.log(
+      `${entry.weight.toFixed(1).padEnd(width)}${METRIC_IDS.map((id) => entry.mean[id].toFixed(3).padStart(10)).join('')}`,
+    )
+  }
+  console.log(`${'Mean Map (LOO)'.padEnd(width)}${METRIC_IDS.map((id) => result.meanMapAlone[id].toFixed(3).padStart(10)).join('')}`)
+  console.log('')
+
+  console.log('Versuch 2 — Mean Map + Bildanalyse')
+  console.log(`${'α'.padEnd(width)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}`)
+  console.log(`${'0 (Mean Map)'.padEnd(width)}${METRIC_IDS.map((id) => result.meanMapAlone[id].toFixed(3).padStart(10)).join('')}`)
+  for (const entry of result.hybridPixel) {
+    console.log(
+      `${`+Pixel ${entry.alpha}`.padEnd(width)}${METRIC_IDS.map((id) => entry.mean[id].toFixed(3).padStart(10)).join('')}`,
+    )
+  }
+  for (const entry of result.hybridEngine) {
+    console.log(
+      `${`+Engine ${entry.alpha}`.padEnd(width)}${METRIC_IDS.map((id) => entry.mean[id].toFixed(3).padStart(10)).join('')}`,
+    )
+  }
+  console.log('')
+  console.log(`FigMaps schlägt die Mean Map auf ${result.winCount} von ${result.sampleCount} Bildern.`)
+
+  // Contact sheet of the winners — what do these screens have in common?
+  const reportPath = str(args, 'report', `out/diagnose-${setName}.md`)
+  let contactSheet: string | undefined
+  const shown = result.winners.slice(0, num(args, 'sheet', 12))
+  if (shown.length > 0) {
+    const wanted = new Set(shown.map((entry) => entry.id))
+    const byId = new Map<string, Triptych>()
+    const engine = new HeuristicAttentionEngine()
+    for (const sample of iterateSamples(setName, 'tuning', { duration })) {
+      if (!wanted.has(sample.id)) continue
+      const analysis = await analyzeFrame(engine, nodeImageOps, {
+        source: sample.image,
+        signals: sample.signals,
+        frameWidth: sample.frameWidth,
+        frameHeight: sample.frameHeight,
+        segment: false,
+      })
+      if (analysis) byId.set(sample.id, { original: sample.image, truth: sample.truth.salience, prediction: analysis.attention })
+    }
+    const rows = shown.map((entry) => byId.get(entry.id)).filter((row): row is Triptych => row !== undefined)
+    if (rows.length > 0) {
+      const sheetPath = reportPath.replace(/\.md$/, '') + '-gewinner.png'
+      writeFile(sheetPath, renderContactSheet(rows))
+      contactSheet = relative(dirname(reportPath), sheetPath) || sheetPath
+      console.log(`Kontaktbogen der Gewinner: ${sheetPath}`)
+    }
+  }
+
+  writeFile(reportPath, buildDiagnoseReport(result, timestamp(), contactSheet))
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // tune
 // ---------------------------------------------------------------------------
 
@@ -331,6 +424,12 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --limit <n>         nur die ersten n Bilder (Rauchtest)',
         '  --gate --baseline <file> [--max-cc-drop 0.02] [--write]   Regressions-Gate (A-7)',
         '',
+        'npm run diagnose -- [options]     nur Diagnose, kein Tuning, nur Tuning-Split',
+        '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
+        '  --duration <s>      Betrachtungsdauer                                             (default: 3)',
+        '  --sheet <n>         Anzahl Gewinner im Kontaktbogen                               (default: 12)',
+        '  --report <path>     Zielpfad des Markdown-Reports',
+        '',
         'npm run tune -- [options]',
         '  --set <split>       tuning | quick   (test ist gesperrt)',
         '  --iterations <n>    Random-Search-Iterationen                                       (default: 300)',
@@ -343,6 +442,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   try {
+    if (args.diagnose) return await runDiagnose(args)
     return args.tune ? await runTune(args) : await runEval(args)
   } catch (error) {
     console.error(`\n${error instanceof Error ? error.message : String(error)}`)

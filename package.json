@@ -14,6 +14,7 @@
     "eval": "node scripts/eval.mjs",
     "eval:fixtures": "node scripts/fixtures.mjs",
     "tune": "node scripts/eval.mjs --tune",
+    "diagnose": "node scripts/eval.mjs --diagnose",
     "verify": "npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {
