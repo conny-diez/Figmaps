@@ -114,6 +114,22 @@ export async function analyzeFrame(
     const grid = fitWithin(crop.width, crop.height, ENGINE_CONFIG.analysisEdge)
     const pixels = ops.resize(crop, grid.width, grid.height)
 
+    // `frameHeight` is the *section* height, not the frame's. Consequence: the
+    // position prior is rebuilt for every section, so each one gets its own
+    // top-heavy bell rather than a slice of one bell spanning the whole frame.
+    //
+    // That follows Epic B's premise — saliency is relative to the visible
+    // cut-out — and it matches how the data prior was estimated, from
+    // single-viewport screenshots. It is, however, **inherited from 1.0 rather
+    // than chosen**, and it is not covered by any measurement: the whole
+    // evaluation runs with `segment: false`, and UEyes contains no scrolled
+    // pages to validate it against.
+    //
+    // It has a visible cost. On content-free areas the composed map shows a
+    // band at the top of every section, one section step apart; see
+    // `__tests__/analyze.test.ts` → "prior repeats per section". hybrid-v1
+    // amplifies this because there the prior is the base of the prediction,
+    // whereas in heuristic-v1 it was one weighted term among seven.
     const values = await engine.predict({
       pixels,
       signals: signalsForSection(input.signals, section),

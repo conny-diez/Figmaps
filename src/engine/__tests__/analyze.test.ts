@@ -127,6 +127,50 @@ describe('analyzeFrame', () => {
     expect(result).toBeNull()
   })
 
+  /**
+   * Pins the behaviour documented in `analyze.ts`: the position prior is
+   * rebuilt per section, so a featureless page shows one band per section
+   * rather than a single bell over the whole frame.
+   *
+   * This is not an endorsement — the test exists so the effect is observed and
+   * a change to it is visible, instead of being discovered on a customer's
+   * 6.000 px landing page.
+   */
+  it('repeats the prior per section, one band per section step', async () => {
+    const frameWidth = 1440
+    const frameHeight = 4000
+    // Uniform grey: every structure in the result comes from the prior alone.
+    const flat = solidImage(720, 2000, [180, 180, 180])
+    const result = await analyzeFrame(engine, ops, { source: flat, signals: [], frameWidth, frameHeight })
+
+    const map = result!.attention
+    const rowMeans: number[] = []
+    for (let y = 0; y < map.height; y++) {
+      let sum = 0
+      for (let x = 0; x < map.width; x++) sum += map.values[y * map.width + x]
+      rowMeans.push(sum / map.width)
+    }
+
+    // Local maxima of the row profile, in frame pixels.
+    const peaks: number[] = []
+    for (let y = 2; y < rowMeans.length - 2; y++) {
+      const isPeak =
+        rowMeans[y] > rowMeans[y - 1] && rowMeans[y] >= rowMeans[y + 1] &&
+        rowMeans[y] > rowMeans[y - 2] && rowMeans[y] >= rowMeans[y + 2]
+      if (isPeak) peaks.push(Math.round((y / map.height) * frameHeight))
+    }
+
+    // One peak per section boundary, spaced by the section step.
+    const step = ENGINE_CONFIG.viewport.desktopHeight * (1 - ENGINE_CONFIG.viewport.overlap)
+    expect(peaks.length).toBeGreaterThanOrEqual(result!.plan.sections.length - 2)
+    for (let i = 1; i < peaks.length; i++) {
+      expect(Math.abs(peaks[i] - peaks[i - 1] - step)).toBeLessThan(step * 0.2)
+    }
+
+    // The banding is strong, not a rounding artefact.
+    expect(Math.max(...rowMeans) - Math.min(...rowMeans)).toBeGreaterThan(0.2)
+  })
+
   it('bounds the analysis source, so a very tall frame stays affordable', async () => {
     const result = await analyzeFrame(engine, ops, {
       source: scrollPage(2400, 6000),
