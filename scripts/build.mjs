@@ -45,7 +45,7 @@ const htmlPlugin = {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Attention Maps</title>
+<title>FigMaps</title>
 <style>${css}</style>
 </head>
 <body>

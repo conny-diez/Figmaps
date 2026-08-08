@@ -76,7 +76,7 @@ export function drawFooter(ctx: CanvasRenderingContext2D, width: number, height:
   ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
   ctx.font = `400 ${Math.round(font * 0.85)}px ${FONT_STACK}`
   ctx.textAlign = 'right'
-  ctx.fillText(`Attention Maps · ${ENGINE_VERSION}`, width - Math.round(font), y + barHeight / 2)
+  ctx.fillText(`FigMaps · ${ENGINE_VERSION}`, width - Math.round(font), y + barHeight / 2)
   ctx.restore()
 }
 

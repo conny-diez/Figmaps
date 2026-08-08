@@ -48,7 +48,7 @@ export async function placeMaps(node: AnalysableNode, maps: readonly RenderedMap
   const font = await loadTitleFont()
 
   const wrapper = figma.createFrame()
-  wrapper.name = `[AM] ${node.name} — ${timestamp(new Date())}`
+  wrapper.name = `[FigMaps] ${node.name} — ${timestamp(new Date())}`
   wrapper.layoutMode = 'HORIZONTAL'
   wrapper.primaryAxisSizingMode = 'AUTO'
   wrapper.counterAxisSizingMode = 'AUTO'

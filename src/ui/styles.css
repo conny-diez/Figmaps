@@ -45,9 +45,18 @@ body {
 }
 
 .app__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
+}
+
+.app__logo {
+  flex: 0 0 auto;
+  /* The mark's frame outline is drawn with `currentColor`. */
+  color: var(--text);
 }
 
 .app__title {
