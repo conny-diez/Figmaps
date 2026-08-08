@@ -16,7 +16,8 @@
     "tune": "node scripts/eval.mjs --tune",
     "diagnose": "node scripts/eval.mjs --diagnose",
     "build-prior": "node scripts/eval.mjs --build-prior",
-    "verify": "npm run typecheck && npm run test && npm run build"
+    "verify": "npm run typecheck && npm run test && npm run build",
+    "crossval": "node scripts/eval.mjs --crossval"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

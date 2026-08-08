@@ -107,19 +107,36 @@ export function priorMap(id: PriorAssetId, width: number, height: number): Float
 
   const bytes = decodeBase64(asset.data)
   if (bytes.length < asset.width * asset.height) return null
+  return resamplePrior(bytes, asset.width, asset.height, width, height)
+}
 
-  const source = new Float32Array(asset.width * asset.height)
-  for (let i = 0; i < source.length; i++) source[i] = bytes[i] / 255
+/**
+ * Turns quantised prior samples into a map on the target grid.
+ *
+ * Split out from `priorMap` so the cross-validation can feed a per-fold prior
+ * through *exactly* the path the shipped asset takes — including the 8-bit
+ * quantisation. Measuring a float prior and shipping a quantised one would be
+ * measuring something else.
+ */
+export function resamplePrior(
+  samples: Uint8Array,
+  sourceWidth: number,
+  sourceHeight: number,
+  width: number,
+  height: number,
+): Float32Array {
+  const source = new Float32Array(sourceWidth * sourceHeight)
+  for (let i = 0; i < source.length; i++) source[i] = samples[i] / 255
 
   const out = new Float32Array(width * height)
   let max = 0
   for (let y = 0; y < height; y++) {
     // Map pixel centres onto the source grid, so the prior does not shift by
     // half a cell on small maps.
-    const sy = ((y + 0.5) / height) * asset.height - 0.5
+    const sy = ((y + 0.5) / height) * sourceHeight - 0.5
     for (let x = 0; x < width; x++) {
-      const sx = ((x + 0.5) / width) * asset.width - 0.5
-      const value = sampleBilinear(source, asset.width, asset.height, sx, sy)
+      const sx = ((x + 0.5) / width) * sourceWidth - 0.5
+      const value = sampleBilinear(source, sourceWidth, sourceHeight, sx, sy)
       out[y * width + x] = value
       if (value > max) max = value
     }

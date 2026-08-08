@@ -18,6 +18,8 @@ import { renderContactSheet, type Triptych } from './contact-sheet'
 import { iterateSamples, loadSamples, readIndex, type SplitName } from './dataset'
 import type { PriorAssetId } from '../src/engine/priors'
 import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
+import { crossValidate, ENGINE_LABELS } from './crossval'
+import { buildCrossvalReport } from './crossval-report'
 import { diagnose } from './diagnose'
 import { buildDiagnoseReport } from './diagnose-report'
 import { METRIC_IDS, METRIC_LABELS } from './metrics/types'
@@ -269,6 +271,60 @@ async function runEval(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// crossval — k-fold over the whole category, both data-dependent parts refit
+// ---------------------------------------------------------------------------
+
+async function runCrossval(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  const duration = num(args, 'duration', 3)
+  const folds = num(args, 'folds', 5)
+
+  console.log(`Kreuzvalidierung "${setName}", ${folds} Folds, ${duration}s — Tuning und Test zusammen.`)
+  let last = 0
+  const result = await crossValidate({
+    setName,
+    duration,
+    folds,
+    onProgress: (done, total) => {
+      if (done - last >= 25 || done === total) {
+        last = done
+        process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+      }
+    },
+  })
+  process.stdout.write(`\r  ${result.imageCount} Bilder out-of-sample bewertet     \n\n`)
+
+  const width = 14
+  console.log(`${'Engine'.padEnd(width)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(18)).join('')}`)
+  for (const engine of ['hybrid-v1', 'mean-map', 'heuristic-v1', 'center-bias', 'uniform'] as const) {
+    const cells = METRIC_IDS.map((id) => {
+      const summary = result.summaries[engine][id]
+      return `${summary.mean.toFixed(3)} ± ${summary.sd.toFixed(3)}`.padStart(18)
+    }).join('')
+    console.log(`${ENGINE_LABELS[engine].padEnd(width)}${cells}`)
+  }
+  console.log('')
+  console.log('hybrid-v1 − Mean Map, gepaart je Bild (+ ist besser):')
+  for (const comparison of result.hybridVsMeanMap) {
+    const significant = comparison.ci95[0] > 0
+    console.log(
+      `  ${METRIC_LABELS[comparison.metric].padEnd(9)} ` +
+        `${comparison.mean >= 0 ? '+' : ''}${comparison.mean.toFixed(4)}  ` +
+        `95%-KI [${comparison.ci95[0].toFixed(4)}, ${comparison.ci95[1].toFixed(4)}]  ` +
+        `t=${comparison.tStatistic.toFixed(1)}  ` +
+        `besser auf ${(comparison.winRate * 100).toFixed(1)} %  ` +
+        `${significant ? '→ belastbar' : '→ nicht von Rauschen zu trennen'}`,
+    )
+  }
+  console.log('')
+
+  const reportPath = str(args, 'report', `out/crossval-${setName}.md`)
+  writeFile(reportPath, buildCrossvalReport(result, timestamp()))
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // build-prior — the data-estimated location priors of hybrid-v1
 // ---------------------------------------------------------------------------
 
@@ -479,6 +535,11 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --sheet <n>         Anzahl Gewinner im Kontaktbogen                               (default: 12)',
         '  --report <path>     Zielpfad des Markdown-Reports',
         '',
+        'npm run crossval -- [options]    k-fache Kreuzvalidierung über Tuning + Test',
+        '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
+        '  --folds <k>         Anzahl Folds                                                  (default: 5)',
+        '  --duration <s>      Betrachtungsdauer                                             (default: 3)',
+        '',
         'npm run tune -- [options]',
         '  --set <split>       tuning | quick   (test ist gesperrt)',
         '  --iterations <n>    Random-Search-Iterationen                                       (default: 300)',
@@ -491,6 +552,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   try {
+    if (args.crossval) return await runCrossval(args)
     if (args['build-prior']) return runBuildPrior(args)
     if (args.diagnose) return await runDiagnose(args)
     return args.tune ? await runTune(args) : await runEval(args)

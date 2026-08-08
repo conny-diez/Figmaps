@@ -28,6 +28,12 @@ export type EngineOptions = {
    * eval harness works on raw screenshots and knows the category from the set.
    */
   priorAsset?: PriorAssetId
+  /**
+   * Supplies the data prior directly instead of reading the bundled asset.
+   * Used by the cross-validation, where every fold needs a prior estimated
+   * without the images it is about to be scored on.
+   */
+  priorProvider?: (width: number, height: number) => Float32Array | null
 }
 
 /**
@@ -42,6 +48,7 @@ export class HeuristicAttentionEngine implements AttentionEngine {
   readonly params: EngineParams
   private readonly blur: NonNullable<EngineOptions['blur']>
   private readonly priorAsset: PriorAssetId | undefined
+  private readonly priorProvider: EngineOptions['priorProvider']
 
   constructor(options: EngineOptions = {}) {
     this.configId = options.configId ?? ACTIVE_CONFIG_ID
@@ -49,6 +56,7 @@ export class HeuristicAttentionEngine implements AttentionEngine {
     this.params = options.params ?? resolveParams(this.configId, this.profile)
     this.blur = options.blur ?? blurField
     this.priorAsset = options.priorAsset
+    this.priorProvider = options.priorProvider
   }
 
   get version(): string {
@@ -83,7 +91,8 @@ export class HeuristicAttentionEngine implements AttentionEngine {
     // missing, so a build without the generated priors still runs.
     const prior =
       this.params.priorSource === 'data'
-        ? (priorMap(this.priorAsset ?? priorAssetIdFor(frameWidth, frameHeight), width, height) ??
+        ? (this.priorProvider?.(width, height) ??
+          priorMap(this.priorAsset ?? priorAssetIdFor(frameWidth, frameHeight), width, height) ??
           positionPrior(width, height, this.params.prior))
         : positionPrior(width, height, this.params.prior)
 

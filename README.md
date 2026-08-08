@@ -35,10 +35,10 @@ Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 | **Betrachtungsdauer** | Drei Profile (`glance` 1 s, `scan` 3 s, `read` 7 s). Ausgeliefert wird nur, was der Harness belegt hat; aktuell ist das `scan`. |
 
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
-`hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt
-jede bildunabhängige Baseline in AUC, CC und NSS, liegt bei KL gleichauf.
-**S-2 ist damit knapp nicht erfüllt**, der Abstand zu 1.0 ist aber groß.
-Siehe [Messungen](#messungen-ueyes-3s).
+`hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt in
+einer 5-fachen Kreuzvalidierung über je 495 Bilder **jede bildunabhängige
+Baseline in allen vier Metriken**, in beiden Kategorien. **S-2 ist erfüllt.**
+Siehe [Kreuzvalidierung](#kreuzvalidierung-495-bilder-je-kategorie).
 
 ---
 
@@ -180,7 +180,8 @@ src/
    └─ styles.css
 
 eval/                      Epic A — läuft offline in Node
-├─ cli.ts                  A-5/A-6/A-7  eval, tune, Regressions-Gate
+├─ cli.ts                  A-5/A-6/A-7  eval, tune, diagnose, crossval, Gate
+├─ crossval.ts             k-fache Kreuzvalidierung, Prior je Fold neu geschätzt
 ├─ fixtures-cli.ts         A-2  Fixtures vorbereiten / synthetisches Set
 ├─ dataset.ts              A-2  Splits laden, auf das Analyse-Raster bringen
 ├─ metrics/                A-3  AUC-Judd · CC · NSS · KL (+ Unit-Tests)
@@ -392,9 +393,11 @@ Einmalig gemessen, nachdem alles auf dem Tuning-Split entwickelt war:
 | Mean Map | 0,782 | 0,518 | 1,096 | **0,833** |
 | FigMaps 1.0 | 0,746 | 0,404 | 0,900 | 1,059 |
 
-**S-2 bleibt formal nicht erfüllt** — in AUC, CC und NSS schlägt `hybrid-v1` die
-Mean Map deutlich, bei KL liegt es gleichauf (Mobile: 0,001 schlechter) bzw.
-leicht darunter (Webpage). Die Schwelle verlangt alle vier.
+Auf diesen 27 Bildern schlägt `hybrid-v1` die Mean Map in AUC, CC und NSS
+deutlich, bei KL liegt es gleichauf bzw. minimal darunter. **27 Bilder tragen
+diese Aussage aber nicht** — siehe die Kreuzvalidierung unten, die dieselbe
+Frage mit 495 statt 27 out-of-sample-Bewertungen beantwortet und das KL-Ergebnis
+umdreht.
 
 Gegenüber der ausgelieferten 1.0 ist der Sprung erheblich:
 
@@ -407,6 +410,95 @@ Gegenüber der ausgelieferten 1.0 ist der Sprung erheblich:
 
 Die S-3-Schwelle von +0,040 AUC ist damit in beiden Kategorien überschritten —
 ohne dass Gewichte getunt wurden.
+
+---
+
+## Kreuzvalidierung (495 Bilder je Kategorie)
+
+```bash
+npm run crossval -- --fixtures ueyes-web
+npm run crossval -- --fixtures ueyes-mobile
+```
+
+Der Test-Split des Datensatzes hat 27 Bilder — zu wenig, um 0,02 CC von
+Rauschen zu trennen. Die Kreuzvalidierung nimmt **Tuning und Test zusammen**
+(495 Bilder), teilt sie in 5 Folds und schätzt pro Fold **beide**
+datenabhängigen Größen ausschließlich aus den übrigen vier: die
+Mean-Map-Baseline **und** den Ortsprior von `hybrid-v1` — letzteren inklusive
+der 8-Bit-Quantisierung auf 32 × 32, also genau in der ausgelieferten Form.
+Jedes Bild wird damit out-of-sample bewertet.
+
+### Mittelwert ± Streuung über die Einzelbilder
+
+**Webpage** (n = 495)
+
+| Engine | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
+|---|---|---|---|---|
+| **hybrid-v1** | **0,781** ± 0,064 | **0,444** ± 0,134 | **1,054** ± 0,326 | **1,080** ± 0,253 |
+| Mean Map | 0,768 ± 0,069 | 0,422 ± 0,146 | 0,997 ± 0,347 | 1,093 ± 0,310 |
+| FigMaps 1.0 | 0,688 ± 0,114 | 0,276 ± 0,173 | 0,668 ± 0,428 | 1,355 ± 0,297 |
+| Center-Bias | 0,604 ± 0,095 | 0,133 ± 0,154 | 0,343 ± 0,357 | 1,562 ± 0,344 |
+| Uniform | 0,500 ± 0,000 | 0,000 ± 0,000 | 0,000 ± 0,000 | 1,583 ± 0,275 |
+
+**Mobile UI** (n = 495)
+
+| Engine | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
+|---|---|---|---|---|
+| **hybrid-v1** | **0,780** ± 0,070 | **0,546** ± 0,171 | **1,082** ± 0,374 | **0,777** ± 0,220 |
+| Mean Map | 0,765 ± 0,076 | 0,508 ± 0,189 | 1,001 ± 0,391 | 0,798 ± 0,279 |
+| FigMaps 1.0 | 0,743 ± 0,075 | 0,439 ± 0,130 | 0,885 ± 0,317 | 0,969 ± 0,223 |
+| Center-Bias | 0,557 ± 0,135 | 0,103 ± 0,263 | 0,192 ± 0,499 | 1,348 ± 0,491 |
+| Uniform | 0,500 ± 0,000 | 0,000 ± 0,000 | 0,000 ± 0,000 | 1,264 ± 0,287 |
+
+### Ist der Unterschied größer als die Streuung?
+
+Die Frage hat zwei Lesarten, und sie führen zu **entgegengesetzten Antworten**.
+Beide stehen hier, weil nur eine davon beantwortet, ob der Unterschied echt ist.
+
+**Lesart A — gegen die Streuung zwischen Screens: nein.** Der CC-Unterschied
+ist 0,023, die Streuung zwischen einzelnen Screens 0,134. Der Unterschied ist
+also rund sechsmal kleiner als die Streuung. Das beantwortet aber die Frage
+„kann ich aus dem Mittelwert ablesen, wie gut die Engine auf *einem bestimmten*
+Screen abschneidet?" — und die Antwort darauf ist tatsächlich nein.
+
+**Lesart B — gegen die eigene Unsicherheit, gepaart je Bild: ja, deutlich.**
+Beide Engines werden auf denselben Screens gemessen, deren Schwierigkeit kürzt
+sich also heraus. Differenz je Bild bilden, dann Mittelwert und Unsicherheit:
+
+| | Δ AUC | Δ CC | Δ NSS | Δ KL |
+|---|---|---|---|---|
+| **Webpage** | +0,0134 | +0,0228 | +0,0575 | +0,0134 |
+| 95-%-Intervall | [0,012 – 0,015] | [0,020 – 0,026] | [0,051 – 0,065] | [0,002 – 0,025] |
+| t | 17,8 | 15,5 | 16,1 | 2,4 |
+| besser auf | 89,9 % | 76,0 % | 77,8 % | 46,1 % |
+| **Mobile UI** | +0,0150 | +0,0383 | +0,0808 | +0,0209 |
+| 95-%-Intervall | [0,013 – 0,017] | [0,035 – 0,042] | [0,073 – 0,088] | [0,012 – 0,030] |
+| t | 18,8 | 20,8 | 21,2 | 4,4 |
+| besser auf | 83,8 % | 82,0 % | 83,2 % | 51,5 % |
+
+Alle Vorzeichen richtungsbereinigt: **+ ist besser**, auch bei KL.
+
+**In allen vier Metriken und beiden Kategorien schließt das 95-%-Intervall die
+Null aus.** Bei AUC, CC und NSS mit t zwischen 15 und 21 — der Unterschied ist
+das Zehn- bis Zwanzigfache seiner eigenen Unsicherheit. **S-2 ist damit
+erfüllt**; das gegenteilige Ergebnis auf dem 27-Bild-Test-Split war ein Artefakt
+der Stichprobengröße.
+
+### Ein Vorbehalt bei KL
+
+KL ist der schwächste Fall und verdient eine eigene Zeile: t = 2,4 (Webpage)
+bzw. 4,4 (Mobile), und die **Trefferquote liegt bei 46 % bzw. 52 %** — der
+Mittelwert verbessert sich, der Median praktisch nicht. Der Gewinn kommt also
+von einer Minderheit von Screens mit großer Verbesserung, nicht von einer
+durchgängig besseren Vorhersage. Bei Webpage sind sich die fünf Folds im
+Vorzeichen zudem nicht einig (−0,007 / +0,010 / +0,035 / +0,023 / +0,006).
+
+Das entwertet den Befund nicht — AUC, CC und NSS sind eindeutig, und alle vier
+Intervalle schließen die Null aus. Aber „hybrid-v1 schlägt die Mean Map auch in
+KL" ist die schwächste der vier Aussagen und sollte nicht als die stärkste
+zitiert werden.
+
+---
 
 ### Abweichungs-Score: nicht ausgeliefert
 
@@ -822,10 +914,12 @@ Zusätzlich für 1.1 (M4, M5):
 
 - **S-1** (ein Befehl liefert AUC/CC/NSS) — **erfüllt.** Reproduzierbar,
   versioniert, Referenz-Set und Metrik-Zuordnung im Report dokumentiert.
-- **S-2** (Engine schlägt die Baseline) — **knapp nicht erfüllt.** `hybrid-v1`
-  schlägt jede bildunabhängige Baseline in AUC, CC und NSS deutlich, liegt bei
-  KL gleichauf; die Schwelle verlangt alle vier. `heuristic-v1` verliert klar.
-  Siehe [Messungen](#messungen-ueyes-3s).
+- **S-2** (Engine schlägt die Baseline) — **erfüllt.** In der Kreuzvalidierung
+  über je 495 Bilder schlägt `hybrid-v1` jede bildunabhängige Baseline in allen
+  vier Metriken, in beiden Kategorien, mit 95-%-Intervallen ohne Null.
+  `heuristic-v1` verliert weiterhin klar. Siehe
+  [Kreuzvalidierung](#kreuzvalidierung-495-bilder-je-kategorie); KL ist der
+  schwächste Fall und dort eigens vermerkt.
 - **S-3** (+0,04 AUC gegenüber 1.0) — **erreicht, aber nicht durch Tuning.**
   `hybrid-v1` liegt +0,083 (Webpage) bzw. +0,048 (Mobile) über 1.0.
   `src/engine/tuned.ts` ist weiterhin leer; die Verbesserung kommt aus dem
@@ -836,9 +930,9 @@ Zusätzlich für 1.1 (M4, M5):
 
 ### Offen
 
-1. **`hybrid-v1` scharfschalten — oder nicht.** Der Code steht, die Zahl steht,
-   das Umschalten ist eine Zeile. Zwei Dinge sprechen dagegen und gehören auf
-   den Tisch: die Engine wird damit **datensatzabhängig** (der Prior stammt aus
+1. **`hybrid-v1` scharfschalten — oder nicht.** Der Code steht, die Zahl steht
+   (S-2 erfüllt), das Umschalten ist eine Zeile. Zwei Dinge sprechen dagegen und
+   gehören auf den Tisch: die Engine wird damit **datensatzabhängig** (der Prior stammt aus
    UEyes und passt auf meinestadt-Screens nur, soweit die dem Durchschnitt
    ähneln), und mit dem Asset kommt die **CC-BY-Pflicht** ins Produkt
    ([`NOTICE.md`](NOTICE.md)). Dafür spricht der gemessene Sprung.
