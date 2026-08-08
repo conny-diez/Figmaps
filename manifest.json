@@ -1,0 +1,12 @@
+{
+  "name": "Attention Maps",
+  "id": "1000000000000000001",
+  "api": "1.0.0",
+  "main": "build/main.js",
+  "ui": "build/ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["none"]
+  }
+}

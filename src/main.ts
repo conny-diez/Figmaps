@@ -1,0 +1,243 @@
+/**
+ * Figma main thread entry point.
+ *
+ * Responsibilities (PRD §6.3): selection, export, tree traversal, placing the
+ * results and client storage. This file — and everything under `src/figma/` —
+ * must never touch `document`, `canvas`, `Image` or `fetch`; none of them exist
+ * in this realm.
+ */
+import { exportFrame } from './figma/export'
+import { placeMaps } from './figma/place'
+import { currentSelection, isAnalysable, type AnalysableNode } from './figma/selection'
+import { loadSettings, saveSettings } from './figma/storage'
+import { collectSignals } from './figma/traverse'
+import { ENGINE_CONFIG } from './engine/config'
+import { ERROR_TEXT, type ErrorCode, type MainToUi, type RenderedMap, type Settings, type UiToMain } from './messages'
+
+const UI_WIDTH = 320
+const UI_HEIGHT = 480
+
+/** Safety net so a crashed iframe cannot wedge the batch forever. */
+const PLACE_RESULT_TIMEOUT_MS = 180_000
+
+type PendingResult = {
+  frameId: string
+  resolve: (value: { maps: RenderedMap[]; warnings: string[] } | null) => void
+}
+
+let pending: PendingResult | null = null
+let cancelled = false
+let running = false
+
+function post(message: MainToUi): void {
+  figma.ui.postMessage(message)
+}
+
+function postError(code: ErrorCode, error?: unknown, frameName?: string): void {
+  const detail = error instanceof Error && error.message ? ` (${error.message})` : ''
+  post({ type: 'ERROR', code, message: `${ERROR_TEXT[code]}${detail}`, frameName })
+}
+
+figma.showUI(__html__, { width: UI_WIDTH, height: UI_HEIGHT, themeColors: true, title: 'Attention Maps' })
+
+figma.on('selectionchange', () => {
+  post({ type: 'SELECTION', frames: currentSelection() })
+})
+
+// ---------------------------------------------------------------------------
+// Generation pipeline
+// ---------------------------------------------------------------------------
+
+function waitForMaps(frameId: string): Promise<{ maps: RenderedMap[]; warnings: string[] } | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (pending && pending.frameId === frameId) {
+        pending = null
+        resolve(null)
+      }
+    }, PLACE_RESULT_TIMEOUT_MS)
+
+    pending = {
+      frameId,
+      resolve: (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+    }
+  })
+}
+
+async function resolveNode(frameId: string): Promise<AnalysableNode> {
+  const node = await figma.getNodeByIdAsync(frameId)
+  if (!node || !isAnalysable(node)) throw new Error('Frame nicht gefunden')
+  return node
+}
+
+async function generate(frameIds: string[], settings: Settings): Promise<void> {
+  cancelled = false
+  running = true
+  const wrappers: SceneNode[] = []
+  let created = 0
+  let failed = 0
+
+  try {
+    for (let index = 0; index < frameIds.length; index++) {
+      if (cancelled) break
+
+      let node: AnalysableNode
+      try {
+        node = await resolveNode(frameIds[index])
+      } catch (error) {
+        failed++
+        postError('INVALID_NODE', error)
+        continue
+      }
+
+      post({ type: 'BATCH_PROGRESS', current: index + 1, total: frameIds.length, frameName: node.name })
+
+      if (Math.min(node.width, node.height) < ENGINE_CONFIG.traversal.minFrameEdge) {
+        failed++
+        postError('FRAME_TOO_SMALL', undefined, node.name)
+        continue
+      }
+
+      try {
+        const exported = await exportFrame(node, settings.exportScale)
+        const tree = collectSignals(node)
+
+        post({
+          type: 'FRAME_DATA',
+          frameId: node.id,
+          frameName: node.name,
+          png: exported.png,
+          signals: tree.signals,
+          width: node.width,
+          height: node.height,
+          exportScale: exported.scale,
+          notices: [...exported.notices, ...tree.notices],
+        })
+      } catch (error) {
+        failed++
+        postError('EXPORT_FAILED', error, node.name)
+        continue
+      }
+
+      const result = await waitForMaps(node.id)
+      if (cancelled || result === null) {
+        if (!cancelled) {
+          failed++
+          postError('RENDER_FAILED', undefined, node.name)
+        }
+        continue
+      }
+
+      if (result.maps.length === 0) {
+        failed++
+        post({ type: 'FRAME_DONE', frameId: node.id, frameName: node.name, maps: [], warnings: result.warnings })
+        continue
+      }
+
+      try {
+        const wrapper = await placeMaps(node, result.maps)
+        wrappers.push(wrapper)
+        created += result.maps.length
+        post({
+          type: 'FRAME_DONE',
+          frameId: node.id,
+          frameName: node.name,
+          maps: result.maps.map((map) => map.kind),
+          warnings: result.warnings,
+        })
+      } catch (error) {
+        failed++
+        postError('PLACE_FAILED', error, node.name)
+      }
+    }
+
+    if (wrappers.length > 0) figma.viewport.scrollAndZoomIntoView(wrappers)
+
+    post({ type: 'DONE', created, failed })
+
+    if (cancelled) {
+      figma.notify(created > 0 ? `Abgebrochen — ${created} Maps erstellt` : 'Abgebrochen')
+    } else if (created > 0) {
+      figma.notify(created === 1 ? '1 Map erstellt' : `${created} Maps erstellt`)
+    } else if (failed > 0) {
+      figma.notify('Keine Maps erstellt', { error: true })
+    }
+  } finally {
+    running = false
+    pending = null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Message handling — every branch is wrapped, the user never sees a trace (NFR-5)
+// ---------------------------------------------------------------------------
+
+figma.ui.onmessage = (message: UiToMain): void => {
+  void (async () => {
+    try {
+      switch (message.type) {
+        case 'REQUEST_SELECTION': {
+          post({ type: 'SETTINGS', settings: await loadSettings() })
+          post({ type: 'SELECTION', frames: currentSelection() })
+          break
+        }
+
+        case 'GENERATE': {
+          if (running) break
+          const frames = message.config.frameIds
+          if (frames.length === 0) {
+            postError('NO_SELECTION')
+            post({ type: 'DONE', created: 0, failed: 0 })
+            break
+          }
+          try {
+            await saveSettings(message.config.settings)
+          } catch {
+            // Persisting settings is best effort — never block a run for it.
+          }
+          await generate(frames, message.config.settings)
+          break
+        }
+
+        case 'CANCEL': {
+          cancelled = true
+          if (pending) {
+            const resolve = pending.resolve
+            pending = null
+            resolve(null)
+          }
+          break
+        }
+
+        case 'PLACE_RESULT': {
+          if (pending && pending.frameId === message.frameId) {
+            const resolve = pending.resolve
+            pending = null
+            resolve({ maps: message.maps, warnings: message.warnings })
+          }
+          break
+        }
+
+        case 'SAVE_SETTINGS': {
+          try {
+            await saveSettings(message.settings)
+          } catch (error) {
+            postError('STORAGE_FAILED', error)
+          }
+          break
+        }
+
+        default: {
+          // Exhaustiveness guard — an unknown message must not crash the plugin.
+          const unhandled: never = message
+          void unhandled
+        }
+      }
+    } catch (error) {
+      postError('UNKNOWN', error)
+    }
+  })()
+}
