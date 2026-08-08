@@ -373,9 +373,72 @@ Vorhersage = norm(Ortsprior)  +  0,3 · norm(Bildanalyse)
   speichert Handy-Screenshots mit 1080 px Gerätebreite, was die Breitenregel als
   Desktop lesen würde.
 
-`hybrid-v1` ist **nicht die aktive Konfiguration.** Das Umschalten ist eine
-Zeile (`ENGINE_CONFIG.activeConfigId`) und bleibt nach der A-6-Regel eine
-menschliche Entscheidung.
+`hybrid-v1` ist seit dem 8.8.2026 die **aktive Konfiguration**
+(`ENGINE_VERSION`). `heuristic-v1` bleibt vollständig erhalten und ist im
+Harness weiterhin die eingefrorene 1.0-Referenz.
+
+#### Wie der Prior ausgewählt wird
+
+Auflösungskette in `computeFeatures`, in dieser Reihenfolge:
+
+1. `priorProvider(width, height)` — injizierter Callback, nur von der
+   Kreuzvalidierung genutzt
+2. `priorMap(priorAsset ?? priorAssetIdFor(frameWidth, frameHeight), …)` — das
+   gebündelte Asset
+3. `positionPrior(…)` — die analytische F-Pattern-Glocke, falls kein Asset da ist
+
+Der ganze Zweig wird nur betreten, wenn `priorSource === 'data'` ist;
+`heuristic-v1` nimmt immer den analytischen Weg.
+
+Die Regel selbst ist **binär und ohne Restfall**:
+
+```ts
+priorAssetIdFor(frameWidth) = frameWidth >= 1024 ? 'web' : 'mobile'
+```
+
+Die Schwelle ist `ENGINE_CONFIG.viewport.desktopMinWidth`, dieselbe, die auch
+die Viewport-Höhe bestimmt. Die Höhe geht **nicht** ein — ein 1440 × 6000-Frame
+bleibt korrekt „web".
+
+**Es gibt keinen „passt zu keiner Kategorie"-Fall.** Jeder Frame bekommt einen
+der beiden Prioren, auch Formate, auf denen keiner geschätzt wurde:
+
+| Frame | Ergebnis | Bewertung |
+|---|---|---|
+| Poster / Social 1080 × 1080 | `web` | UEyes *hat* eine Poster-Kategorie — nicht importiert |
+| Desktop-App-UI 1280 × 800 | `web` | UEyes hat `desktop` — nicht importiert |
+| Schmaler Desktop 960 px | `mobile` | schlicht falsch |
+| Tablet 834 × 1194 | `mobile` | vertretbar, ungeprüft |
+| Banner 1920 × 400 | `web` | top-lastiger Prior auf einer Form, für die er nie geschätzt wurde |
+
+Der Schaden ist begrenzt — beide Prioren sind top-lastig, es geht um eine
+Verschiebung der Betonung, nicht um Unsinn. Und die beiden gemessenen
+Kategorien sind genau die beiden Zielformate von FigMaps. Aber es ist eine
+stille erzwungene Wahl, kein behandelter Fall.
+
+#### Prior bei segmentierten Frames (Epic B)
+
+`analyzeFrame` übergibt je Abschnitt `frameHeight: section.height`. Der Prior
+wird damit **pro Abschnitt neu gebildet** — jeder Abschnitt bekommt seine eigene
+top-lastige Glocke, nicht einen Ausschnitt aus einer Glocke über den ganzen
+Frame.
+
+Das passt zur Prämisse von Epic B (Saliency ist relativ zum sichtbaren
+Ausschnitt) und dazu, wie der Prior geschätzt wurde (aus Einzel-Viewport-
+Screenshots). **Es war aber keine Entscheidung, sondern aus 1.0 geerbt**, und
+keine Messung deckt es ab: die gesamte Auswertung läuft mit `segment: false`,
+und UEyes enthält keine gescrollten Seiten.
+
+Es hat sichtbare Kosten. Auf einem inhaltsfreien grauen 1440 × 4000-Frame zeigt
+die zusammengesetzte Map ein Band am Kopf **jedes** Abschnitts, im Abstand von
+720 px (ein Abschnittsschritt), mit einem Zeilenprofil von 0,50 bis 0,08.
+`heuristic-v1` zeigt dieselbe Periodizität deutlich schwächer (0,77 bis 0,39),
+weil der Prior dort ein gewichteter Term von sieben mit Gewicht 0,1 war — in
+`hybrid-v1` ist er die Basis der Vorhersage.
+
+Der Test `analyze.test.ts` → „repeats the prior per section" hält das Verhalten
+fest, damit eine Änderung daran sichtbar wird. Er ist Dokumentation, keine
+Billigung.
 
 ### Messung: hybrid-v1 gegen den Test-Split
 
@@ -857,7 +920,7 @@ App durchzugehen:
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |
 | 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[FigMaps] … — …` rechts daneben, Viewport springt darauf, `3 Maps erstellt` |
-| 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt, Legende + Fußzeile mit `heuristic-v1` vorhanden |
+| 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt, Legende + Fußzeile mit `hybrid-v1` vorhanden |
 | 7 | Clickmap begutachten | Ranking im Panel; primärer CTA auf Platz 1 (mind. 2 von 3 Referenz-Screens) |
 | 8 | Focus-Schwelle 60 → 95, neu erzeugen | Sichtbare klare Fläche wird monoton kleiner |
 | 9 | Overlay-Deckkraft ändern, neu erzeugen | Heatmap-Overlay entsprechend transparenter/kräftiger |

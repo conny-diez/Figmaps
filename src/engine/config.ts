@@ -13,8 +13,14 @@
  * Bumped whenever the prediction changes. Appears in layer names and labels.
  * Must match `ENGINE_CONFIG.activeConfigId` — see `params.ts` for the list of
  * named configurations the eval harness can compare.
+ *
+ * `hybrid-v1` since 2026-08-08: data-estimated location prior plus additive
+ * image analysis. Beats every image-independent baseline in all four metrics
+ * across a 5-fold cross-validation over 495 images per UI category
+ * (see README, „Kreuzvalidierung"). `heuristic-v1` remains available for
+ * comparison and is what the harness reports as the frozen 1.0 reference.
  */
-export const ENGINE_VERSION = 'heuristic-v1'
+export const ENGINE_VERSION = 'hybrid-v1'
 
 /** Name tokens that mark a node as probably interactive (FR-3). */
 export const INTERACTIVE_KEYWORDS: readonly string[] = [
