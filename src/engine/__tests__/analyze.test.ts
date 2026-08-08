@@ -128,15 +128,16 @@ describe('analyzeFrame', () => {
   })
 
   /**
-   * Pins the behaviour documented in `analyze.ts`: the position prior is
-   * rebuilt per section, so a featureless page shows one band per section
-   * rather than a single bell over the whole frame.
+   * The prior is still rebuilt per section, so a featureless page still shows
+   * one local maximum per section. What the scroll-depth attenuation changes is
+   * their *amplitude*: without it all five sit at 0.50 — five equally bright
+   * bands — with it they halve (0.50 / 0.25 / 0.13) and fall below the
+   * renderer's transparency cutoff from the third section on.
    *
-   * This is not an endorsement — the test exists so the effect is observed and
-   * a change to it is visible, instead of being discovered on a customer's
-   * 6.000 px landing page.
+   * Measured on a featureless grey frame, which is the worst case: any real
+   * content dominates the prior.
    */
-  it('repeats the prior per section, one band per section step', async () => {
+  it('attenuates the per-section prior with scroll depth', async () => {
     const frameWidth = 1440
     const frameHeight = 4000
     // Uniform grey: every structure in the result comes from the prior alone.
@@ -151,24 +152,44 @@ describe('analyzeFrame', () => {
       rowMeans.push(sum / map.width)
     }
 
-    // Local maxima of the row profile, in frame pixels.
-    const peaks: number[] = []
+    // Local maxima of the row profile: position in frame pixels, plus height.
+    const peaks: Array<{ y: number; value: number }> = []
     for (let y = 2; y < rowMeans.length - 2; y++) {
       const isPeak =
         rowMeans[y] > rowMeans[y - 1] && rowMeans[y] >= rowMeans[y + 1] &&
         rowMeans[y] > rowMeans[y - 2] && rowMeans[y] >= rowMeans[y + 2]
-      if (isPeak) peaks.push(Math.round((y / map.height) * frameHeight))
+      if (isPeak) peaks.push({ y: Math.round((y / map.height) * frameHeight), value: rowMeans[y] })
     }
 
-    // One peak per section boundary, spaced by the section step.
+    // Still one maximum per section step — the attenuation changes height,
+    // not position.
     const step = ENGINE_CONFIG.viewport.desktopHeight * (1 - ENGINE_CONFIG.viewport.overlap)
     expect(peaks.length).toBeGreaterThanOrEqual(result!.plan.sections.length - 2)
     for (let i = 1; i < peaks.length; i++) {
-      expect(Math.abs(peaks[i] - peaks[i - 1] - step)).toBeLessThan(step * 0.2)
+      expect(Math.abs(peaks[i].y - peaks[i - 1].y - step)).toBeLessThan(step * 0.2)
     }
 
-    // The banding is strong, not a rounding artefact.
-    expect(Math.max(...rowMeans) - Math.min(...rowMeans)).toBeGreaterThan(0.2)
+    // Strictly decreasing while above the floor: no plateau of equal bands,
+    // which is what read as an artefact before.
+    expect(peaks[1].value).toBeLessThan(peaks[0].value * 0.65)
+    expect(peaks[2].value).toBeLessThan(peaks[1].value * 0.65)
+
+    // From the third section on, nothing is drawn at all on empty areas.
+    const cutoff = ENGINE_CONFIG.render.transparencyCutoff
+    expect(peaks[0].value).toBeGreaterThan(cutoff)
+    for (const peak of peaks.slice(3)) expect(peak.value).toBeLessThan(cutoff)
+  })
+
+  it('leaves an unsegmented frame untouched by the attenuation', async () => {
+    // Section 0 is scaled by factor^0 = 1, and a single-section frame returns
+    // its map unchanged — the above-the-fold map must not be dimmed.
+    const short = solidImage(600, 400, [200, 200, 200])
+    const result = await analyzeFrame(engine, ops, { source: short, signals: [], frameWidth: 1200, frameHeight: 800 })
+    expect(result!.plan.segmented).toBe(false)
+    // Spread would overflow the stack on a 512x341 map.
+    let peak = 0
+    for (const value of result!.attention.values) if (value > peak) peak = value
+    expect(peak).toBeCloseTo(1, 5)
   })
 
   it('bounds the analysis source, so a very tall frame stays affordable', async () => {

@@ -187,6 +187,23 @@ function isPng(path: string): boolean {
   return PNG_MAGIC.every((byte, i) => head[i] === byte)
 }
 
+/**
+ * True when the file is a PNG *our* decoder can read.
+ *
+ * Being a PNG is not enough: part of the poster subset is interlaced (Adam7),
+ * which the decoder rejects by design. Those files go through the transcoder
+ * with the JPEGs instead of aborting the import — `sips` writes a baseline PNG.
+ */
+function isReadablePng(path: string): boolean {
+  if (!isPng(path)) return false
+  try {
+    nodeImageOps.decodeSync(new Uint8Array(readFileSync(path)))
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Files per `sips` invocation — keeps the argument list well inside limits. */
 const CONVERT_CHUNK = 200
 
@@ -198,8 +215,8 @@ const CONVERT_CHUNK = 200
  * code whose only job is reading fixtures. `sips` is part of macOS; on other
  * platforms the error says what to install.
  */
-function convertToPng(files: Array<{ from: string; to: string }>, outputDir: string): void {
-  if (files.length === 0) return
+function convertToPng(files: Array<{ from: string; to: string }>, outputDir: string): string[] {
+  if (files.length === 0) return []
 
   for (let offset = 0; offset < files.length; offset += CONVERT_CHUNK) {
     const chunk = files.slice(offset, offset + CONVERT_CHUNK)
@@ -221,17 +238,15 @@ function convertToPng(files: Array<{ from: string; to: string }>, outputDir: str
 
   // sips writes `<basename>.png` into the output directory; the ids already are
   // the basenames, so the names line up. Verify rather than assume.
+  const failed: string[] = []
   for (const file of files) {
-    if (!existsSync(file.to)) throw new Error(`Konvertierung erzeugte keine Datei: ${file.to} (aus ${file.from})`)
+    if (!existsSync(file.to) || !isReadablePng(file.to)) failed.push(file.from)
   }
+  return failed
 }
 
-/** Copies a PNG after checking our decoder can actually read it. */
+/** Copies a PNG that has already been checked with `isReadablePng`. */
 function copyPng(from: string, to: string): void {
-  // Verified rather than blindly copied: our decoder handles 8-bit,
-  // non-interlaced PNG only, and a file that fails here would otherwise blow up
-  // in the middle of a long eval run.
-  nodeImageOps.decodeSync(new Uint8Array(readFileSync(from)))
   copyFileSync(from, to)
 }
 
@@ -307,26 +322,39 @@ export function importUeyes(options: ImportOptions): ImportSummary {
 
   // --- 2) copy PNGs, transcode the rest, one batch per channel -------------
   let converted = 0
+  const unreadable = new Set<string>()
   for (const channel of channels) {
     const toConvert: Array<{ from: string; to: string }> = []
 
     for (const entry of usable) {
       const from = join(channel.source, entry.fileName)
       const to = join(channel.target, `${entry.id}.png`)
-      if (isPng(from)) copyPng(from, to)
+      // Readable PNG -> copy verbatim. Everything else (JPEG, interlaced PNG,
+      // 16-bit) goes through the transcoder rather than aborting the import.
+      if (isReadablePng(from)) copyPng(from, to)
       else toConvert.push({ from, to })
     }
 
     if (toConvert.length > 0) {
       log(`  ${basename(channel.target)}: ${toConvert.length} Dateien nach PNG konvertieren …`)
-      convertToPng(toConvert, channel.target)
-      converted += toConvert.length
+      const failures = convertToPng(toConvert, channel.target)
+      converted += toConvert.length - failures.length
+      for (const from of failures) {
+        unreadable.add(basename(from).replace(/\.[^.]+$/, ''))
+      }
     }
   }
 
+  // An image whose artefacts could not be made readable is dropped entirely —
+  // a half-imported sample would fail later, in the middle of an eval run.
+  for (const id of unreadable) {
+    skipped.push({ id, reason: 'nicht lesbar und nicht konvertierbar (z. B. Adam7-Interlacing)' })
+  }
+  const readable = usable.filter((entry) => !unreadable.has(entry.id))
+
   // --- 3) how binary are the fixation maps really? -------------------------
   const fixmapDir = join(base, 'fixmaps', '3s')
-  const probe = usable.slice(0, Math.min(20, usable.length))
+  const probe = readable.slice(0, Math.min(20, readable.length))
   const impure = probe.map((entry) => nonBinaryShare(join(fixmapDir, `${entry.id}.png`)))
   const meanImpure = impure.length > 0 ? impure.reduce((sum, value) => sum + value, 0) / impure.length : 0
 
@@ -348,7 +376,7 @@ export function importUeyes(options: ImportOptions): ImportSummary {
   // --- 4) splits -----------------------------------------------------------
   const items: DatasetItem[] = []
   let testSeen = 0
-  for (const entry of usable) {
+  for (const entry of readable) {
     // The A-7 quick set is a prefix of the test split, so the gate never sees
     // an image the tuning split has touched.
     if (entry.split === 'test') {

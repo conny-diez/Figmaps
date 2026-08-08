@@ -4,8 +4,19 @@
  * access and free of any DOM access so that both bundles can import it.
  */
 import { DEFAULT_PROFILE, type ProfileId } from './engine/params'
+import type { PriorAssetId } from './engine/priors'
 
-export type { ProfileId }
+export type { ProfileId, PriorAssetId }
+
+/**
+ * Which reference population the location prior is taken from.
+ *
+ * `auto` derives it from the frame geometry. That reliably separates web pages
+ * from mobile apps, but cannot recognise desktop-app UIs or posters — they are
+ * geometrically indistinguishable from web pages (see `priors/index.ts`). The
+ * person who drew the frame can say instead.
+ */
+export type UiTypeSetting = PriorAssetId | 'auto'
 
 /** `fold` is derived, not selectable — see `SELECTABLE_MAP_KINDS`. */
 export type MapKind = 'heat' | 'click' | 'focus' | 'fold'
@@ -75,6 +86,8 @@ export type Settings = {
   exportScale: 1 | 2
   /** Epic D — viewing-duration profile. Only shipped profiles are offered. */
   profile: ProfileId
+  /** Which location prior to use; `auto` derives it from the frame geometry. */
+  uiType: UiTypeSetting
   /**
    * Epic B — viewport height in frame px, or `null` for the derived default.
    * Overridable because "900 px desktop" is an assumption, not a measurement.
@@ -88,6 +101,7 @@ export const DEFAULT_SETTINGS: Settings = {
   focusThreshold: 80,
   exportScale: 2,
   profile: DEFAULT_PROFILE,
+  uiType: 'auto',
   viewportHeight: null,
 }
 

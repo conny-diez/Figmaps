@@ -4,6 +4,7 @@
 import { DEFAULT_SETTINGS, type MapKind, type Settings } from '../messages'
 import { ENGINE_CONFIG } from '../engine/config'
 import { DEFAULT_PROFILE, shippedProfiles } from '../engine/params'
+import { hasPriorAsset, PRIOR_ASSET_IDS } from '../engine/priors'
 
 const STORAGE_KEY = 'figmaps.settings.v1'
 
@@ -37,6 +38,11 @@ export function normaliseSettings(raw: unknown): Settings {
     ),
     exportScale: input.exportScale === 1 ? 1 : 2,
     profile,
+    // A stored UI type whose prior is not in this build falls back to `auto`.
+    uiType:
+      input.uiType && input.uiType !== 'auto' && PRIOR_ASSET_IDS.includes(input.uiType) && hasPriorAsset(input.uiType)
+        ? input.uiType
+        : 'auto',
     viewportHeight:
       typeof input.viewportHeight === 'number' && Number.isFinite(input.viewportHeight)
         ? Math.round(clamp(input.viewportHeight, 200, 4000, ENGINE_CONFIG.viewport.desktopHeight))

@@ -42,6 +42,13 @@ export function buildDiagnoseReport(result: DiagnoseResult, generatedAt: string,
   )
   lines.push('')
 
+  lines.push(
+    '> **Diese Zahlen gelten für einzelne Viewport-Ausschnitte.** Alle Läufe verwenden `segment: false`; die ' +
+      'Referenzbilder sind Einzel-Screenshots. Für **segmentierte Frames** (Epic B, ab 1,5 Viewport-Höhen) ist ' +
+      'nichts davon gemessen: dort wird der Ortsprior je Abschnitt neu gebildet und mit der Scrolltiefe gedämpft, ' +
+      'und UEyes enthält keine gescrollten Seiten, an denen sich das prüfen ließe.',
+  )
+  lines.push('')
   lines.push('## Referenzen auf denselben Bildern')
   lines.push('')
   lines.push(`| | ${METRIC_IDS.map((id) => METRIC_LABELS[id]).join(' | ')} |`)

@@ -21,10 +21,20 @@ import { ENGINE_CONFIG } from '../config'
 import { sampleBilinear } from '../imageops'
 import { PRIOR_ASSETS } from './generated'
 
-const DESKTOP_MIN_WIDTH = ENGINE_CONFIG.viewport.desktopMinWidth
+const MOBILE_MAX_WIDTH = ENGINE_CONFIG.viewport.mobileMaxWidth
+const MOBILE_MIN_ASPECT = ENGINE_CONFIG.viewport.mobileMinAspect
 
 /** Which reference population a prior was estimated from. */
-export type PriorAssetId = 'web' | 'mobile'
+export type PriorAssetId = 'web' | 'mobile' | 'desktop' | 'poster'
+
+export const PRIOR_ASSET_IDS: readonly PriorAssetId[] = ['web', 'mobile', 'desktop', 'poster']
+
+export const PRIOR_ASSET_LABELS: Record<PriorAssetId, string> = {
+  web: 'Webseite',
+  mobile: 'Mobile App',
+  desktop: 'Desktop-Anwendung',
+  poster: 'Poster / Grafik',
+}
 
 export type PriorAsset = {
   width: number
@@ -64,21 +74,49 @@ export function decodeBase64(input: string): Uint8Array {
 }
 
 /**
- * Picks the prior for a frame.
+ * Picks the prior for a frame from its geometry.
  *
- * Inside the plugin the geometry is *design* pixels, where the same width
- * threshold that decides the viewport height (B-1) is a reliable mobile signal:
- * a phone frame is 360–430 px wide, a desktop frame 1024 px or more, and a long
- * desktop scroll page stays wide however tall it gets.
+ * Needs **both** criteria; each alone gets a common case wrong:
  *
- * This does **not** generalise to raw screenshots — UEyes stores phone captures
- * at 1080x1920 device pixels, which this rule would call desktop. The eval
- * harness therefore states the category explicitly instead of inferring it
- * (`EngineOptions.priorAsset`).
+ *   - width alone (the rule until 2026-08-08, threshold 1024 px) sent a
+ *     960 px wide desktop layout to `mobile`. Measured against the labelled
+ *     UEyes images it hit 24 % — *worse* than always answering `web`.
+ *   - aspect ratio alone sends a 1440x6000 desktop scroll page to `mobile`,
+ *     because it is four times taller than wide.
+ *
+ * So: phone-width **and** portrait. A tall desktop page stays wide and is
+ * caught by the width test; a small landscape widget is caught by the aspect
+ * test. On the labelled data the aspect part separates webpage from mobile
+ * perfectly (495/495 each) at a threshold of 1.5.
+ *
+ * The width part is a **design-pixel** rule and cannot be validated against
+ * UEyes, which stores phone captures at 1080 px device width. The eval harness
+ * therefore states the category explicitly (`EngineOptions.priorAsset`) rather
+ * than inferring it.
+ *
+ * `desktop` and `poster` are never returned: see `PRIOR_SELECTION_NOTE`.
  */
-export function priorAssetIdFor(frameWidth: number, _frameHeight: number): PriorAssetId {
-  return frameWidth >= DESKTOP_MIN_WIDTH ? 'web' : 'mobile'
+export function priorAssetIdFor(frameWidth: number, frameHeight: number): PriorAssetId {
+  const portrait = frameWidth > 0 && frameHeight / frameWidth >= MOBILE_MIN_ASPECT
+  return frameWidth < MOBILE_MAX_WIDTH && portrait ? 'mobile' : 'web'
 }
+
+/**
+ * Why the automatic rule only ever answers `web` or `mobile`, although priors
+ * for `desktop` and `poster` ship.
+ *
+ * Measured on all 1.980 labelled UEyes images: webpage and desktop-app UI are
+ * geometrically indistinguishable (median aspect 0.67 vs 0.56, widths
+ * 720–1896 vs 237–3170), and posters span everything from 0.32 to 3.25. The
+ * best geometric four-way rule reached 53 % accuracy and identified only
+ * 11 of 495 desktop images, while misrouting 64 webpages to the poster prior —
+ * for a gain of 0.0005 CC over the two-way rule. Guessing those two categories
+ * costs more than it returns.
+ *
+ * They are reachable by explicit selection instead (`Settings.uiType`), where
+ * the person who drew the frame states what it is.
+ */
+export const PRIOR_SELECTION_NOTE = 'automatisch nur web/mobile; desktop und poster nur bei expliziter Wahl'
 
 export function hasPriorAsset(id: PriorAssetId): boolean {
   return PRIOR_ASSETS[id] !== undefined

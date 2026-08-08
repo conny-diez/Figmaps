@@ -8,7 +8,7 @@
  * Runs offline in Node. It never imports anything from the iframe or the Figma
  * main thread — only the engine, which is platform free since A-1.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { PROFILE_DURATIONS, PROFILE_IDS, type ProfileId } from '../src/engine/params'
 import { analyzeFrame } from '../src/engine/analyze'
@@ -16,7 +16,7 @@ import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { renderContactSheet, type Triptych } from './contact-sheet'
 import { iterateSamples, loadSamples, readIndex, type SplitName } from './dataset'
-import type { PriorAssetId } from '../src/engine/priors'
+import { PRIOR_ASSET_IDS, type PriorAssetId } from '../src/engine/priors'
 import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
 import { crossValidate, ENGINE_LABELS } from './crossval'
 import { buildCrossvalReport } from './crossval-report'
@@ -333,14 +333,20 @@ const PRIOR_SIZE_BUDGET_BYTES = 50 * 1024
 function runBuildPrior(args: Args): number {
   const duration = num(args, 'duration', 3)
   const size = num(args, 'size', 64)
-  const sets: Array<{ id: PriorAssetId; setName: string }> = [
-    { id: 'web', setName: str(args, 'web-set', 'ueyes-web') },
-    { id: 'mobile', setName: str(args, 'mobile-set', 'ueyes-mobile') },
-  ]
+  // One prior per UI type. `desktop` and `poster` ship too, even though the
+  // geometric rule never picks them — they are reachable by explicit choice.
+  const sets: Array<{ id: PriorAssetId; setName: string }> = PRIOR_ASSET_IDS.map((id) => ({
+    id,
+    setName: str(args, `${id}-set`, `ueyes-${id}`),
+  }))
 
   console.log(`Ortsprioren aus dem **Tuning**-Split, ${size}x${size}, ${duration}s`)
   const builds: PriorBuild[] = []
   for (const set of sets) {
+    if (!existsSync(join('eval', 'fixtures', set.setName, 'index.json'))) {
+      console.log(`  ${set.id.padEnd(7)} übersprungen — ${set.setName} nicht importiert`)
+      continue
+    }
     const build = buildPrior(set.id, set.setName, duration, size, (bytes) => Buffer.from(bytes).toString('base64'))
     const kilobytes = build.bytes / 1024
     console.log(

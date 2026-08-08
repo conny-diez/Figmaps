@@ -328,6 +328,17 @@ body {
   color: var(--text-secondary);
 }
 
+/* UI-type selector — picks which location prior is used. */
+.select {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 6px;
+  font: inherit;
+}
+
 /* CC BY 4.0 attribution for the bundled location prior — see NOTICE.md. */
 .attribution {
   margin: 6px 0 0;

@@ -75,7 +75,11 @@ export async function generateMaps(
     if (cancelled()) return empty()
     hooks.onStep?.('Aufmerksamkeit wird berechnet', 0.2)
 
-    const engine = new HeuristicAttentionEngine({ profile: settings.profile })
+    const engine = new HeuristicAttentionEngine({
+      profile: settings.profile,
+      // `auto` leaves the choice to the geometry rule inside the engine.
+      ...(settings.uiType !== 'auto' ? { priorAsset: settings.uiType } : {}),
+    })
     const analysis = await analyzeFrame(
       engine,
       canvasImageOps,

@@ -1,3 +1,46 @@
+# Drittanbieter-Inhalte, Namensnennung und nicht gemessene Annahmen
+
+## Nicht gemessene Annahmen
+
+Alles, was FigMaps über Aufmerksamkeit behauptet, ist entweder an UEyes
+gemessen oder steht hier. Diese Liste ist kurz zu halten.
+
+### Scrolltiefen-Dämpfung (`ENGINE_CONFIG.viewport.sectionAttenuation`)
+
+Bei segmentierten Frames trägt jeder Abschnitt abgeschwächt zur Gesamtkarte
+bei — Abschnitt *i* mit `max(0,12; 0,5^i)`.
+
+**Begründung:** Ohne Dämpfung bekommt jeder Abschnitt seinen eigenen,
+gleich starken Ortsprior; auf inhaltsarmen Flächen entsteht dadurch ein Band
+am Kopf *jedes* Abschnitts im Abstand eines Abschnittsschritts. Dass
+Aufmerksamkeit mit der Scrolltiefe abnimmt, ist aus Web-Analytics gut belegt.
+
+**Was nicht gemessen ist:** alles Quantitative daran. UEyes enthält
+ausschließlich einzelne Viewport-Ausschnitte, keine gescrollten Seiten. Weder
+der Verlauf (geometrisch) noch der Faktor (0,5) noch die Untergrenze (0,12)
+sind an Daten überprüft. Der Startwert wurde so gewählt, dass die Bänder auf
+einem grauen 1440 × 4000-Testframe verschwinden — ein Kriterium für die
+Darstellung, nicht für die Vorhersagegüte.
+
+**Wie es überprüfbar würde:** Eye-Tracking oder Scroll-Analytics auf gescrollten
+Seiten. Das eigene First-Click-Set könnte den Anfang liefern.
+
+### Alle Messzahlen gelten für einzelne Viewport-Ausschnitte
+
+Sämtliche Reports (`npm run eval`, `crossval`, `diagnose`) laufen mit
+`segment: false` auf Einzel-Screenshots. **Für segmentierte Frames ist keine
+einzige Zahl gemessen.** Das steht auch in jedem Report neben den Tabellen.
+
+### Ortsprior-Auswahl aus der Frame-Breite
+
+Die Regel „schmaler als 600 px **und** hochkant ⇒ mobil" nutzt eine
+Design-Pixel-Schwelle, die an UEyes nicht überprüfbar ist: der Datensatz
+speichert Geräte-Pixel (Telefone mit 1080 px Breite). Überprüft ist nur der
+Seitenverhältnis-Teil — er trennt Webseite und Mobile auf den 1.980 gelabelten
+Bildern fehlerfrei.
+
+---
+
 # Drittanbieter-Inhalte und Namensnennung
 
 ## UEyes — Ortsprioren in `src/engine/priors/generated.ts`

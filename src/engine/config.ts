@@ -64,6 +64,23 @@ export const ENGINE_CONFIG = {
   viewport: {
     /** Frames at least this wide are treated as desktop. */
     desktopMinWidth: 1024,
+    /**
+     * Prior-Auswahl (`priors/index.ts`): mobil ist ein Frame nur, wenn er
+     * schmaler als das hier ist **und** hochkant. Beides zusammen, weil jedes
+     * Kriterium für sich einen Alltagsfall falsch macht — siehe dort.
+     *
+     * 600 px trennt Telefone (360–430) von Tablets (768+) in Design-Pixeln.
+     * Diese Zahl ist an UEyes **nicht** überprüfbar, weil der Datensatz
+     * Geräte-Pixel speichert.
+     */
+    mobileMaxWidth: 600,
+    /**
+     * Ab diesem Höhen-zu-Breiten-Verhältnis gilt ein schmaler Frame als
+     * hochkant. 1,5 trennt auf den 1.980 gelabelten UEyes-Bildern Webseite und
+     * Mobile fehlerfrei (je 495/495); Telefone liegen bei 1,78–2,17,
+     * Webseiten bei höchstens 1,11.
+     */
+    mobileMinAspect: 1.5,
     /** Assumed visible height of a desktop viewport, in frame px. */
     desktopHeight: 900,
     /** Mobile approximation: viewport height = frame width x this factor. */
@@ -74,6 +91,36 @@ export const ENGINE_CONFIG = {
     overlap: 0.2,
     /** Refuse to cut a frame into more than this many sections. */
     maxSections: 24,
+
+    /**
+     * Scroll-depth attenuation of a section's contribution to the composed map.
+     * Section `i` is scaled by `max(sectionAttenuationFloor, factor^i)`.
+     *
+     * WARUM: Jeder Abschnitt wird für sich normiert und bekommt seinen eigenen
+     * top-lastigen Ortsprior. Ohne Dämpfung erzeugt das auf inhaltsarmen
+     * Flächen ein Band am Kopf *jedes* Abschnitts, im Abstand eines
+     * Abschnittsschritts — sichtbar gemessen auf einem grauen 1440x4000-Frame.
+     *
+     * ANNAHME, KEINE MESSUNG: Dass Aufmerksamkeit mit der Scrolltiefe abnimmt,
+     * ist aus Analytics gut belegt, aber **wir haben es nicht gemessen**. UEyes
+     * enthält ausschließlich einzelne Viewport-Ausschnitte, keine gescrollten
+     * Seiten; mit diesem Datensatz ist weder der Verlauf noch der Startwert
+     * überprüfbar. Der Faktor ist so gewählt, dass die Bänder auf dem
+     * Testframe verschwinden — ein Kriterium für die Darstellung, nicht für
+     * die Vorhersagegüte. Siehe NOTICE.md, „Nicht gemessene Annahmen".
+     */
+    sectionAttenuation: 0.5,
+    /**
+     * Untergrenze der Dämpfung.
+     *
+     * Bewusst knapp unter der Transparenzschwelle des Renderers gewählt: auf
+     * inhaltsfreien Flächen fallen tiefe Abschnitte damit unter die Schwelle
+     * und werden gar nicht gezeichnet, während ein echter Blickfang dort noch
+     * schwach sichtbar bleibt. Eine höhere Untergrenze erzeugt wieder ein
+     * Plateau gleich heller Bänder — genau das Artefakt, das die Dämpfung
+     * beseitigen soll.
+     */
+    sectionAttenuationFloor: 0.12,
   },
 
   /** Feature weights of the weighted sum. Should add up to 1. */

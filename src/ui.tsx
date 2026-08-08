@@ -8,7 +8,7 @@ import { render } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ENGINE_CONFIG, ENGINE_VERSION } from './engine/config'
 import { PROFILE_LABELS, shippedProfiles, type ProfileId } from './engine/params'
-import { shipsPriorAsset } from './engine/priors'
+import { hasPriorAsset, PRIOR_ASSET_IDS, PRIOR_ASSET_LABELS, shipsPriorAsset } from './engine/priors'
 import { SEVERITY_LABELS } from './findings/types'
 import {
   DEFAULT_SETTINGS,
@@ -50,6 +50,13 @@ const AVAILABLE_PROFILES: ProfileId[] = shippedProfiles()
  * whenever the bundle carries them. See NOTICE.md.
  */
 const PRIOR_ATTRIBUTION = shipsPriorAsset()
+
+/**
+ * UI types with a prior in this build. The geometry rule only ever picks
+ * `web` or `mobile`; desktop-app UIs and posters are geometrically
+ * indistinguishable from web pages, so they need to be stated.
+ */
+const AVAILABLE_UI_TYPES = PRIOR_ASSET_IDS.filter(hasPriorAsset)
 
 function send(message: UiToMain): void {
   parent.postMessage({ pluginMessage: message }, '*')
@@ -273,6 +280,30 @@ function App(): preact.JSX.Element {
                 </button>
               ))}
             </div>
+          </section>
+        )}
+
+        {PRIOR_ATTRIBUTION && AVAILABLE_UI_TYPES.length > 0 && (
+          <section class="section">
+            <p class="section__label">Art des Screens</p>
+            <select
+              class="select"
+              value={settings.uiType}
+              disabled={phase === 'working'}
+              onChange={(event) => patchSettings({ uiType: event.currentTarget.value as Settings['uiType'] })}
+            >
+              <option value="auto">Automatisch erkennen</option>
+              {AVAILABLE_UI_TYPES.map((id) => (
+                <option key={id} value={id}>
+                  {PRIOR_ASSET_LABELS[id]}
+                </option>
+              ))}
+            </select>
+            <p class="hint">
+              {settings.uiType === 'auto'
+                ? 'Aus der Frame-Geometrie abgeleitet — unterscheidet Webseite und Mobile App zuverlässig, Desktop-Anwendung und Poster nicht.'
+                : 'Bestimmt, welcher Ortsprior verwendet wird.'}
+            </p>
           </section>
         )}
 

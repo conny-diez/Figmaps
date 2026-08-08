@@ -226,6 +226,13 @@ export function buildReport(input: ReportInput): string {
   lines.push('')
   lines.push(`Richtung: ${METRIC_IDS.map((id) => `${METRIC_LABELS[id]} ${METRIC_DIRECTION[id] > 0 ? '↑' : '↓'}`).join(' · ')}`)
   lines.push('')
+  lines.push(
+    '> **Diese Zahlen gelten für einzelne Viewport-Ausschnitte.** Alle Läufe verwenden `segment: false`; die ' +
+      'Referenzbilder sind Einzel-Screenshots. Für **segmentierte Frames** (Epic B, ab 1,5 Viewport-Höhen) ist ' +
+      'nichts davon gemessen: dort wird der Ortsprior je Abschnitt neu gebildet und mit der Scrolltiefe gedämpft, ' +
+      'und UEyes enthält keine gescrollten Seiten, an denen sich das prüfen ließe.',
+  )
+  lines.push('')
 
   // --- Deltas against the two references -----------------------------------
   if (centerBias || frozen) {

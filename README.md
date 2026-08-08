@@ -377,6 +377,37 @@ Vorhersage = norm(Ortsprior)  +  0,3 · norm(Bildanalyse)
 (`ENGINE_VERSION`). `heuristic-v1` bleibt vollständig erhalten und ist im
 Harness weiterhin die eingefrorene 1.0-Referenz.
 
+#### Vier Prioren, zwei davon automatisch erreichbar
+
+Es gibt einen Ortsprior je UEyes-Kategorie — `web`, `mobile`, `desktop`,
+`poster` —, je 32 × 32 und 1,3 kB. Die **automatische** Auswahl liefert aber nur
+`web` oder `mobile`, und das ist ein Messergebnis, keine Bequemlichkeit:
+
+| Regel | Trefferquote auf 1.980 gelabelten Bildern | Ø CC |
+|---|---:|---:|
+| Oracle (Kategorie immer bekannt) | 100 % | 0,4450 |
+| **Seitenverhältnis, 2 Kategorien** | **50,0 %** | **0,4304** |
+| 4 Kategorien aus Geometrie | 53,1 % | 0,4309 |
+| immer `web` (gar keine Regel) | 25,0 % | 0,4268 |
+| Breite ≥ 1024 (die Regel bis 8.8.) | 24,0 % | 0,4247 |
+
+Zwei Dinge stehen darin. Erstens war die **alte Breiten-Regel schlechter als
+gar keine Regel**. Zweitens bringt die geometrische Vier-Wege-Auflösung
++0,0005 CC gegenüber zwei Kategorien — sie erkennt 11 von 495 Desktop-Bildern
+und leitet dafür 64 Webseiten auf den Poster-Prior um. Webseite und
+Desktop-Anwendung sind geometrisch nicht unterscheidbar (Median-Seitenverhältnis
+0,67 gegen 0,56, Breiten 720–1896 gegen 237–3170), Poster überdecken alles von
+0,32 bis 3,25.
+
+Deshalb: `desktop` und `poster` sind **nur über die explizite Auswahl**
+„Art des Screens" im Panel erreichbar. Wer den Frame gezeichnet hat, weiß, was
+es ist; raten kostet mehr, als es bringt.
+
+Der Preis einer Fehlzuordnung ist begrenzt, aber nicht null — die vier Prioren
+korrelieren untereinander mit 0,87 bis 0,97, eine falsche Wahl kostet 0,02 bis
+0,05 CC. Das ist in derselben Größenordnung wie der gesamte Gewinn von
+`hybrid-v1` gegenüber der Mean Map.
+
 #### Wie der Prior ausgewählt wird
 
 Auflösungskette in `computeFeatures`, in dieser Reihenfolge:
@@ -390,31 +421,39 @@ Auflösungskette in `computeFeatures`, in dieser Reihenfolge:
 Der ganze Zweig wird nur betreten, wenn `priorSource === 'data'` ist;
 `heuristic-v1` nimmt immer den analytischen Weg.
 
-Die Regel selbst ist **binär und ohne Restfall**:
+Die Regel braucht **beide** Kriterien, weil jedes für sich einen Alltagsfall
+falsch macht:
 
 ```ts
-priorAssetIdFor(frameWidth) = frameWidth >= 1024 ? 'web' : 'mobile'
+mobil  ⇔  Breite < 600 px  UND  Höhe / Breite >= 1,5
 ```
 
-Die Schwelle ist `ENGINE_CONFIG.viewport.desktopMinWidth`, dieselbe, die auch
-die Viewport-Höhe bestimmt. Die Höhe geht **nicht** ein — ein 1440 × 6000-Frame
-bleibt korrekt „web".
+- **Breite allein** (die Regel bis 8.8.) schickte ein 960 px breites
+  Desktop-Layout auf den Mobile-Prior.
+- **Seitenverhältnis allein** schickt eine 1440 × 6000-Scrollseite auf den
+  Mobile-Prior — sie ist viermal höher als breit.
 
-**Es gibt keinen „passt zu keiner Kategorie"-Fall.** Jeder Frame bekommt einen
-der beiden Prioren, auch Formate, auf denen keiner geschätzt wurde:
+Der Seitenverhältnis-Teil trennt auf den gelabelten Daten Webseite und Mobile
+**fehlerfrei** (je 495/495) bei Schwelle 1,5; Telefone liegen bei 1,78–2,17,
+Webseiten bei höchstens 1,11. Der Breiten-Teil ist eine **Design-Pixel**-Regel
+und an UEyes nicht überprüfbar, weil der Datensatz Geräte-Pixel speichert.
 
-| Frame | Ergebnis | Bewertung |
-|---|---|---|
-| Poster / Social 1080 × 1080 | `web` | UEyes *hat* eine Poster-Kategorie — nicht importiert |
-| Desktop-App-UI 1280 × 800 | `web` | UEyes hat `desktop` — nicht importiert |
-| Schmaler Desktop 960 px | `mobile` | schlicht falsch |
-| Tablet 834 × 1194 | `mobile` | vertretbar, ungeprüft |
-| Banner 1920 × 400 | `web` | top-lastiger Prior auf einer Form, für die er nie geschätzt wurde |
+Vorher / nachher für die fünf Formate aus der Analyse:
 
-Der Schaden ist begrenzt — beide Prioren sind top-lastig, es geht um eine
-Verschiebung der Betonung, nicht um Unsinn. Und die beiden gemessenen
-Kategorien sind genau die beiden Zielformate von FigMaps. Aber es ist eine
-stille erzwungene Wahl, kein behandelter Fall.
+| Frame | vorher (Breite ≥ 1024) | nachher | |
+|---|---|---|---|
+| Webpage Desktop 1440 × 900 | `web` | `web` | |
+| Langer Scroll 1440 × 6000 | `web` | `web` | Seitenverhältnis allein hätte hier `mobile` gesagt |
+| Poster / Social 1080 × 1080 | `web` | `web` | jetzt explizit auf `poster` stellbar |
+| Desktop-App-UI 1280 × 800 | `web` | `web` | jetzt explizit auf `desktop` stellbar |
+| **Schmaler Desktop 960 × 600** | **`mobile`** | **`web`** | **Fehlzuordnung behoben** |
+| **Tablet 834 × 1194** | **`mobile`** | **`web`** | **geändert** |
+| Banner 1920 × 400 | `web` | `web` | |
+| Phone 390 × 844 | `mobile` | `mobile` | |
+
+Die 960-px-Fehlzuordnung ist damit weg. Frames, die zu keiner Kategorie passen,
+bekommen weiterhin `web` — aber die Auswahl „Art des Screens" im Panel erlaubt
+jetzt, es zu sagen.
 
 #### Prior bei segmentierten Frames (Epic B)
 
@@ -436,9 +475,27 @@ die zusammengesetzte Map ein Band am Kopf **jedes** Abschnitts, im Abstand von
 weil der Prior dort ein gewichteter Term von sieben mit Gewicht 0,1 war — in
 `hybrid-v1` ist er die Basis der Vorhersage.
 
-Der Test `analyze.test.ts` → „repeats the prior per section" hält das Verhalten
-fest, damit eine Änderung daran sichtbar wird. Er ist Dokumentation, keine
-Billigung.
+**Behoben am 8.8.2026** durch eine Dämpfung mit der Scrolltiefe: Abschnitt *i*
+geht mit `max(0,12; 0,5^i)` in die Gesamtkarte ein
+(`ENGINE_CONFIG.viewport.sectionAttenuation`). Gemessen auf demselben grauen
+Testframe:
+
+| | Peak-Höhen der fünf Abschnitte | über der Render-Schwelle (0,08) |
+|---|---|---:|
+| vorher | 0,50 · 0,50 · 0,50 · 0,50 · 0,50 | 5 von 5 |
+| nachher | 0,50 · 0,25 · 0,13 · 0,06 · 0,06 | 3 von 5 |
+
+Statt fünf gleich heller Bänder halbieren sich die Maxima, und ab dem dritten
+Abschnitt liegen sie unter der Transparenzschwelle des Renderers — auf leeren
+Flächen wird dort nichts mehr gezeichnet. Die Untergrenze von 0,12 liegt bewusst
+knapp darunter: ein echter Blickfang tief in der Seite bleibt schwach sichtbar,
+eine leere Fläche nicht.
+
+> **Das ist eine begründete Annahme, keine Messung.** Dass Aufmerksamkeit mit
+> der Scrolltiefe abnimmt, ist aus Analytics gut belegt; der Verlauf, der Faktor
+> und die Untergrenze sind es nicht. UEyes enthält keine gescrollten Seiten. Der
+> Startwert ist nach dem Erscheinungsbild auf dem Testframe gewählt, nicht nach
+> Vorhersagegüte. Siehe [`NOTICE.md`](NOTICE.md), „Nicht gemessene Annahmen".
 
 ### Messung: hybrid-v1 gegen den Test-Split
 

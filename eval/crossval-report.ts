@@ -87,6 +87,14 @@ export function buildCrossvalReport(result: CrossvalResult, generatedAt: string)
     lines.push('')
   }
 
+  lines.push(
+    '> **Diese Zahlen gelten für einzelne Viewport-Ausschnitte.** Alle Läufe verwenden `segment: false`; die ' +
+      'Referenzbilder sind Einzel-Screenshots. Für **segmentierte Frames** (Epic B, ab 1,5 Viewport-Höhen) ist ' +
+      'nichts davon gemessen: dort wird der Ortsprior je Abschnitt neu gebildet und mit der Scrolltiefe gedämpft, ' +
+      'und UEyes enthält keine gescrollten Seiten, an denen sich das prüfen ließe.',
+  )
+  lines.push('')
+
   // --- 2) the question -----------------------------------------------------
   lines.push('## Ist der Unterschied größer als die Streuung?')
   lines.push('')

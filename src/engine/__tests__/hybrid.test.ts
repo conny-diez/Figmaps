@@ -103,14 +103,54 @@ describe('prior assets', () => {
     }
   })
 
-  it('picks the category from the frame width, matching the viewport rule', () => {
-    const threshold = ENGINE_CONFIG.viewport.desktopMinWidth
-    expect(priorAssetIdFor(1440, 900)).toBe('web')
-    // A long desktop scroll page stays desktop however tall it is.
-    expect(priorAssetIdFor(1440, 6000)).toBe('web')
-    expect(priorAssetIdFor(threshold, 4000)).toBe('web')
-    expect(priorAssetIdFor(390, 844)).toBe('mobile')
-    expect(priorAssetIdFor(threshold - 1, 500)).toBe('mobile')
+  describe('category from geometry', () => {
+    it('needs phone width AND portrait, because either alone fails', () => {
+      // Phone: narrow and tall.
+      expect(priorAssetIdFor(390, 844)).toBe('mobile')
+      // Long mobile page: still narrow, still portrait.
+      expect(priorAssetIdFor(390, 6000)).toBe('mobile')
+      // Standard desktop.
+      expect(priorAssetIdFor(1440, 900)).toBe('web')
+    })
+
+    it('keeps a long desktop scroll page on the web prior', () => {
+      // Aspect ratio alone would call this mobile — it is 4x taller than wide.
+      expect(priorAssetIdFor(1440, 6000)).toBe('web')
+      expect(priorAssetIdFor(1200, 9000)).toBe('web')
+    })
+
+    it('no longer sends a narrow desktop layout to mobile', () => {
+      // The regression the old width-only rule produced: 960 px wide is a
+      // desktop layout, not a phone.
+      expect(priorAssetIdFor(960, 600)).toBe('web')
+      expect(priorAssetIdFor(1023, 500)).toBe('web')
+      expect(priorAssetIdFor(768, 1024)).toBe('web')
+    })
+
+    it('keeps a narrow landscape widget on the web prior', () => {
+      // Width alone would call this mobile; the aspect test catches it.
+      expect(priorAssetIdFor(500, 400)).toBe('web')
+    })
+
+    it('applies the documented thresholds exactly', () => {
+      const { mobileMaxWidth, mobileMinAspect } = ENGINE_CONFIG.viewport
+      expect(priorAssetIdFor(mobileMaxWidth - 1, (mobileMaxWidth - 1) * mobileMinAspect)).toBe('mobile')
+      expect(priorAssetIdFor(mobileMaxWidth, mobileMaxWidth * mobileMinAspect)).toBe('web')
+      expect(priorAssetIdFor(400, 400 * mobileMinAspect - 1)).toBe('web')
+    })
+
+    it('never guesses desktop or poster — those need an explicit choice', () => {
+      const shapes: Array<[number, number]> = [
+        [1080, 1080], [1280, 800], [1920, 400], [834, 1194], [390, 844], [237, 900],
+      ]
+      for (const [w, h] of shapes) {
+        expect(['web', 'mobile']).toContain(priorAssetIdFor(w, h))
+      }
+    })
+
+    it('survives a degenerate frame without dividing by zero', () => {
+      expect(['web', 'mobile']).toContain(priorAssetIdFor(0, 100))
+    })
   })
 })
 

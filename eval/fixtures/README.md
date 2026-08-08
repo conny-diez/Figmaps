@@ -82,6 +82,8 @@ Die Index-Datei heißt je nach Release `info.csv` oder `image_types.csv`; beide 
 |---|---:|---:|---:|---:|---|
 | `web` | 468 | 27 | 27 | 0 | PNG, verlustfrei |
 | `mobile` | 468 | 27 | 27 | 0 | JPEG → PNG transcodiert |
+| `desktop` | 468 | 27 | 27 | 0 | überwiegend PNG, 91 transcodiert |
+| `poster` | 467 | 27 | 27 | 1 | JPEG → PNG, 1 Adam7-PNG nicht konvertierbar |
 
 **Der Test-Split ist mit je 27 Bildern klein.** Das ist die Aufteilung des Datensatzes, nicht unsere. Mittelwerte darüber schwanken entsprechend; solange nichts getunt ist, ist ein Kontrolllauf auf dem Train-Split zur Absicherung zulässig und sinnvoll.
 

@@ -29,7 +29,11 @@ export type SegmentPlan = {
   folds: number[]
 }
 
-type ViewportConfig = typeof ENGINE_CONFIG.viewport
+/**
+ * Mutable view of the viewport settings, so tests can vary one value without
+ * fighting the `as const` literal types of `ENGINE_CONFIG`.
+ */
+export type ViewportConfig = { -readonly [K in keyof typeof ENGINE_CONFIG.viewport]: number }
 
 /**
  * B-1 — desktop frames get a fixed 900 px viewport, narrower frames are treated
@@ -86,9 +90,20 @@ export function planSections(
  * Each section is normalised on its own (that is the point of Epic B), so the
  * composite is a stack of locally scaled maps — not a global ranking.
  */
+/**
+ * Scroll-depth attenuation of section `index` (see `ENGINE_CONFIG.viewport`).
+ *
+ * Monotonically non-increasing, with a floor so a deep section becomes weaker
+ * rather than invisible. A reasoned assumption, not a measurement.
+ */
+export function sectionAttenuation(index: number, cfg: ViewportConfig = ENGINE_CONFIG.viewport): number {
+  return Math.max(cfg.sectionAttenuationFloor, Math.pow(cfg.sectionAttenuation, index))
+}
+
 export function composeSections(
   parts: ReadonlyArray<{ section: Section; map: ScalarMap }>,
   frameHeight: number,
+  cfg: ViewportConfig = ENGINE_CONFIG.viewport,
 ): ScalarMap {
   if (parts.length === 0) throw new Error('composeSections: keine Abschnitte')
   if (parts.length === 1) return parts[0].map
@@ -120,9 +135,13 @@ export function composeSections(
       if (fadeOut > 0) weight = Math.min(weight, (map.height - row - 0.5) / fadeOut)
       if (weight <= 0) weight = 1e-6
 
+      // The section's own amplitude, not its blend weight: `weightSum` must
+      // stay the pure cross-fade, otherwise the attenuation would divide itself
+      // out again in the normalisation below.
+      const amplitude = sectionAttenuation(section.index, cfg)
       const from = row * width
       const to = target * width
-      for (let x = 0; x < width; x++) acc[to + x] += map.values[from + x] * weight
+      for (let x = 0; x < width; x++) acc[to + x] += map.values[from + x] * weight * amplitude
       weightSum[target] += weight
     }
   }
