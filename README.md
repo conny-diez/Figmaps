@@ -29,8 +29,9 @@ Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 | **Befunde** | Ein deterministisches Regelwerk formuliert, was gemessen wurde — mit „Im Canvas zeigen" auf die betroffene Ebene. |
 | **Betrachtungsdauer** | Drei Profile (`glance` 1 s, `scan` 3 s, `read` 7 s). Ausgeliefert wird nur, was der Harness belegt hat; aktuell ist das `scan`. |
 
-**Aktueller Stand:** der Harness läuft, die Zahl für 1.0 gegen ein echtes
-Referenz-Set steht noch aus — siehe [Referenz-Daten](#referenz-daten-a-2).
+**Aktueller Stand:** gemessen gegen UEyes (Webpage-Teilmenge, 3 s). FigMaps 1.0
+schlägt die Center-Bias-Baseline in allen vier Metriken — **S-2 ist erfüllt**.
+Es ist eine Teilmessung: siehe [Erste Messung](#erste-messung-ueyes-webpage-3s).
 
 ---
 
@@ -55,8 +56,11 @@ npm run lint      # eslint inkl. @figma/eslint-plugin-figma-plugins
 Eval-Harness (läuft offline in Node, nicht im Plugin):
 
 ```bash
-npm run eval:fixtures -- --synthetic   # lizenzfreies Set zum Prüfen des Harness
-npm run eval -- --fixtures synthetic --set test --report out/eval.md
+# Referenz-Daten importieren — Pfad als Parameter, nie im Code
+npm run eval:fixtures -- --ueyes /pfad/zum/UEyes_dataset
+# alternativ: UEYES_DIR=/pfad/zum/UEyes_dataset npm run eval:fixtures -- --ueyes
+
+npm run eval -- --fixtures ueyes-web --set test --duration 3 --report out/eval.md
 npm run eval -- --help
 ```
 
@@ -212,12 +216,22 @@ visuelle Fehleranalyse ist wertvoller als die Zahl allein — dort sieht man,
 
 ### Metriken (A-3)
 
-| Metrik | Bedeutung | Richtung |
-|---|---|---|
-| AUC-Judd | Trennschärfe Fixation vs. Nicht-Fixation | höher besser |
-| CC | Pearson-Korrelation der Maps | höher besser |
-| NSS | Normalisierte Saliency an Fixationspunkten | höher besser |
-| KL | Divergenz der Verteilungen | niedriger besser |
+| Metrik | Bedeutung | Ground Truth | Richtung |
+|---|---|---|---|
+| AUC-Judd | Trennschärfe Fixation vs. Nicht-Fixation | Fixationskarte (diskret) | höher besser |
+| CC | Pearson-Korrelation der Maps | Heatmap (kontinuierlich) | höher besser |
+| NSS | Normalisierte Saliency an Fixationspunkten | Fixationskarte (diskret) | höher besser |
+| KL | Divergenz der Verteilungen | Heatmap (kontinuierlich) | niedriger besser |
+
+**Die beiden Ground-Truth-Kanäle werden nicht vermischt.** AUC-Judd und NSS
+brauchen Punkte, CC und KL eine Verteilung. Fixationen aus der Heatmap
+abzuleiten würde beide Seiten aus derselben Quelle speisen und die Zahlen still
+beschönigen; wo das mangels Fixationskarten nötig ist, markiert der Loader es
+als `derived-from-heatmap` und der Report sagt es.
+
+Vorhersage und Ground Truth kommen vor jedem Vergleich auf **das Analyse-Raster
+der Engine** (längere Kante 512 px, Seitenverhältnis erhalten). Die Vorhersage
+wird nie hochskaliert. Die Fixationskarte wird dabei max-gepoolt, nie gemittelt.
 
 Jede Metrik hat einen Unit-Test gegen einen handgerechneten 5×5-Fall mit drei
 Fixationen — inklusive der Fälle, in denen ein plausibel aussehender Mittelwert
@@ -231,8 +245,13 @@ Laufen immer mit:
    Der wichtigste Vergleich der Iteration: schlagen die sieben Feature-Maps das
    nicht deutlich, tun sie nichts. Der Report sagt das in Worten, vor der
    ersten Tabelle.
-2. **Uniform** — konstante Map. Untergrenze und Sanity-Check der Metriken
-   (muss exakt AUC 0,5 / CC 0 / NSS 0 liefern).
+   Damit dieser Vergleich nicht an einer bequemen Wahl hängt, läuft die
+   Baseline über mehrere Breiten (σ 0,15 – 0,8) und das Urteil wird gegen den
+   **besten** Center-Bias je Metrik gefällt.
+2. **Uniform** — konstante Map. Untergrenze und Sanity-Check der Metriken: muss
+   exakt AUC 0,5 / CC 0 / NSS 0 liefern. Tut sie das auf echten Daten nicht,
+   bricht `npm run eval` ab und schreibt keinen Report — dann stimmt der
+   Import, nicht die Engine.
 3. **FigMaps 1.0** — die ausgelieferte Konfiguration, eingefroren.
 
 ### Tuning (A-6)
@@ -256,18 +275,69 @@ schlägt fehl, wenn CC gegenüber `main` um mehr als 0,02 fällt. Der Job
 
 ### Referenz-Daten (A-2)
 
-Fixtures liegen **nicht** im Repo (Größe + Lizenz). Details und die offene
-Lizenzfrage zu UEyes: **[`eval/fixtures/README.md`](eval/fixtures/README.md)**.
+Fixtures liegen **nicht** im Repo (Größe + Lizenz), `.gitignore` deckt
+`eval/fixtures/*` ab. Struktur, Import und Schwellen:
+**[`eval/fixtures/README.md`](eval/fixtures/README.md)**.
 
-Für einen Rauchtest des Harness ohne Datensatz:
+Importiert ist die **Webpage-Teilmenge von UEyes** (CC BY 4.0), 468 Bilder
+`tuning` / 27 Bilder `test` — die Aufteilung stammt aus dem Datensatz, nicht von
+uns. Ground Truth für 1 s, 3 s und 7 s; ausgewertet wird bislang nur 3 s.
+
+Für einen Rauchtest des Harness ohne Datensatz gibt es zusätzlich ein
+synthetisches Set. Es prüft den **Harness**, nicht die Engine — die Ground Truth
+ist konstruiert, Zahlen daraus belegen weder S-2 noch S-3 und werden nicht mit
+UEyes-Läufen gemischt.
+
+---
+
+## Erste Messung (UEyes Webpage, 3 s)
 
 ```bash
-npm run eval:fixtures -- --synthetic
-npm run eval -- --fixtures synthetic --set test --report out/eval-synthetic.md
+npm run eval -- --fixtures ueyes-web --set test --duration 3 --engine heuristic
 ```
 
-Dieses Set prüft den **Harness**, nicht die Engine — die Ground Truth ist
-konstruiert. Zahlen daraus belegen weder S-2 noch S-3.
+27 Bilder (Test-Split des Datensatzes), Betrachtungsdauer 3 s:
+
+| Engine | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
+|---|---:|---:|---:|---:|
+| Center-Bias (bester σ je Metrik) | 0,592 | 0,119 | 0,324 | 1,624 |
+| Uniform | 0,500 | 0,000 | 0,000 | 1,673 |
+| **FigMaps 1.0** | **0,718** | **0,298** | **0,760** | **1,401** |
+
+**S-2 ist erfüllt:** FigMaps 1.0 schlägt die Center-Bias-Baseline in allen vier
+Metriken — auch gegen deren beste Breite. Die Feature-Maps sind keine Dekoration.
+
+Der Sanity-Check ist sauber: Uniform liefert auf echten Daten exakt
+AUC 0,5 / CC 0 / NSS 0.
+
+Kontrolllauf auf dem Train-Split (468 Bilder, auf die nie getunt wurde) bestätigt
+das Bild — 0,733 / 0,340 / 0,825 / 1,294 gegen Center-Bias 0,605 / 0,135 / 0,347
+/ 1,556. Der Befund hängt also nicht an den 27 Test-Bildern.
+
+### Drei Vorbehalte, die zum Ergebnis gehören
+
+1. **Teilmessung.** Ein Screenshot bringt keinen Layer-Baum mit, deshalb sind
+   `textSalience`, `interactiveSalience` und `imageSalience` auf diesem
+   Datensatz konstant null. Das sind **40 % der Engine-Gewichtung**, die hier
+   nicht bewertet sind; gemessen ist die Pixel-Hälfte plus Positions-Prior.
+   Ob die Struktur-Signale tragen, ist mit UEyes grundsätzlich nicht
+   beantwortbar — dafür braucht es das eigene Set aus First-Click-Tests.
+2. **Kleiner Test-Split.** 27 Bilder sind wenig; der Kontrolllauf oben mildert
+   das, ersetzt aber keinen größeren Test-Split.
+3. **Absolut niedrig.** Ein CC von 0,30 ist für Saliency kein schlechter Wert,
+   aber die Literatur erreicht auf UEyes mit trainierten Modellen deutlich mehr.
+   Das ist genau der Vergleich, den Iteration 1.2 führen kann, sobald sie will.
+
+### Was der Kontaktbogen zeigt
+
+Die visuelle Fehleranalyse ist eindeutiger als die Zahl: die Ground Truth besteht
+aus **wenigen, eng begrenzten Hotspots** (Logo, Headline, Gesichter, oben links),
+unsere Vorhersage ist **flächig** und färbt fast die ganze Seite warm ein. Auf
+dichten Webseiten findet die Heuristik überall Kontrast und Kanten und verteilt
+Aufmerksamkeit entsprechend breit.
+
+Der Engpass ist also **Selektivität**, nicht Position. Das ist ein konkreter
+Ansatzpunkt für 1.2 — und eine Hypothese, die der Harness jetzt prüfen kann.
 
 ---
 
@@ -451,41 +521,34 @@ Zusätzlich für 1.1 (M4, M5):
 | ID | Inhalt | Stand |
 |---|---|---|
 | M1 | A-1 Engine-Entkopplung | **fertig** — Engine kennt nur `Bitmap`/`Float32Array`, `ImageOps` mit Canvas- und Node-Implementierung, Parity-Test grün |
-| M2 | A-2 bis A-5 Harness | **Code fertig, Zahl offen** — `npm run eval` läuft End-to-End inkl. Report und Kontaktbogen; die Zahl für 1.0 braucht ein echtes Referenz-Set (siehe unten) |
-| M3 | A-6, A-7 Tuning | **Code fertig, Abnahme offen** — `npm run tune` und das Gate stehen; `heuristic-v2` entsteht erst aus echten Daten |
+| M2 | A-2 bis A-5 Harness | **fertig** — UEyes importiert, `npm run eval` liefert Report und Kontaktbogen, die Zahl für 1.0 liegt auf dem Tisch (S-2 erfüllt) |
+| M3 | A-6, A-7 Tuning | **Code fertig, Abnahme offen** — `npm run tune` und das Gate stehen; `heuristic-v2` ist noch nicht erzeugt |
 | M4 | Epic B | **fertig** |
 | M5 | Epic C | **fertig bis auf die Textabnahme** — sechs Regeln implementiert und getestet, Formulierungen sind noch von einem Menschen freizugeben (C-1) |
 | M6 | Epic D | **Code fertig, Beleg offen** — drei Profile existieren und sind evaluierbar; ausgeliefert wird bis zum Beleg nur `scan` |
 
-### Was ohne Referenz-Datensatz nicht geht
+### Stand der Erfolgskriterien
 
-S-1 bis S-3 sind Aussagen **über Zahlen**, und die Zahlen brauchen Ground Truth.
-Solange UEyes nicht freigegeben und importiert ist, gilt:
+- **S-1** (ein Befehl liefert AUC/CC/NSS) — **erfüllt.** Reproduzierbar,
+  versioniert, Referenz-Set und Metrik-Zuordnung im Report dokumentiert.
+- **S-2** (Engine schlägt Center-Bias) — **erfüllt** für die Pixel-Hälfte der
+  Engine, siehe [Erste Messung](#erste-messung-ueyes-webpage-3s) samt Vorbehalten.
+- **S-3** (+0,04 AUC nach Tuning) — **offen.** In dieser Iteration wurde nicht
+  getunt, `src/engine/tuned.ts` ist leer.
+- **S-4** (abschnittsweise Analyse) — erfüllt, siehe Epic B.
+- **S-5** (3–6 Befunde in verständlichem Deutsch) — erfüllt bis auf die
+  Textabnahme durch einen Menschen.
 
-- **S-1** (ein Befehl liefert AUC/CC/NSS) — Mechanik steht, reproduzierbar und
-  versioniert. Belegt am synthetischen Set.
-- **S-2** (Engine schlägt Center-Bias) — **nicht entschieden.** Der Report sagt
-  das Ergebnis in Worten, sobald echte Daten vorliegen. Am synthetischen Set
-  gewinnt 1.0 in AUC, CC und NSS und verliert in KL — das ist ein Hinweis auf
-  die Mechanik, kein Befund über die Engine.
-- **S-3** (+0,04 AUC nach Tuning) — **offen.** Tuning gegen konstruierte Ground
-  Truth würde die Engine auf unsere eigenen Annahmen kalibrieren, deshalb ist
-  `src/engine/tuned.ts` bewusst leer.
+### Offen
 
-Nächster Schritt liegt beim Product Owner: Lizenzfrage zu UEyes klären
-(PRD §3 A-2), danach `npm run eval:fixtures -- --import …`.
-
-Ein zweiter, unstrittiger Weg steht daneben: 10 eigene meinestadt-Screens mit
-First-Click-Test. Kleiner und lauter, aber ohne Lizenzfrage und domänennah.
-
-### Bekannte Einschränkung des Harness
-
-Ein blanker Screenshot bringt keinen Layer-Baum mit. `textSalience`,
-`interactiveSalience` und `imageSalience` sind auf solchen Bildern konstant
-null — gemessen werden dann nur vier der sieben Feature-Maps. Der Loader liest
-deshalb ein optionales `signals/<id>.json`, und der Report weist aus, für wie
-viele Bilder Struktur-Signale vorlagen. Diese Zeile ist beim Lesen der
-Ergebnisse nicht optional.
+1. **Eigenes Validierungsset** aus First-Click-Tests. Der einzige Weg,
+   `textSalience`, `interactiveSalience` und `imageSalience` überhaupt zu
+   bewerten — auf Screenshots sind sie konstant null. Ohne das bleibt jede
+   Messung eine Teilmessung über 60 % der Gewichtung.
+2. **Tuning (M3)** gegen den Tuning-Split, danach Kontaktbogen durchsehen.
+3. **Textabnahme der Findings (M5)** — C-1 verlangt ausdrücklich, dass keine
+   Regel feuert, deren Text nicht von einem Menschen bestätigt wurde.
+4. **Epic D belegen** — 1 s und 7 s sind importiert, aber noch nicht ausgewertet.
 
 ## Nicht in 1.1
 

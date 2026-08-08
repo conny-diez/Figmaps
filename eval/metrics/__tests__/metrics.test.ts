@@ -4,12 +4,13 @@
  * averages over a real dataset.
  */
 import { describe, expect, it } from 'vitest'
+import type { Bitmap } from '../../../src/engine/ops'
 import type { ScalarMap } from '../../../src/engine/types'
 import { aucJudd } from '../auc'
 import { correlationCoefficient } from '../cc'
 import { klDivergence } from '../kl'
 import { normalizedScanpathSaliency } from '../nss'
-import { fixationsFromMap } from '../types'
+import { fixationsFromMap, fixationsFromMask } from '../types'
 
 const W = 5
 const H = 5
@@ -126,5 +127,47 @@ describe('fixationsFromMap', () => {
 
   it('breaks ties by index, so the result is reproducible', () => {
     expect(fixationsFromMap(map(constant(0.5)), 3)).toEqual([0, 1, 2])
+  })
+})
+
+describe('fixationsFromMask', () => {
+  /** Greyscale bitmap from a 0/255 pattern. */
+  function mask(width: number, height: number, on: Array<[number, number]>): Bitmap {
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let i = 0; i < width * height; i++) data[i * 4 + 3] = 255
+    for (const [x, y] of on) {
+      const p = (y * width + x) * 4
+      data[p] = data[p + 1] = data[p + 2] = 255
+    }
+    return { width, height, data }
+  }
+
+  it('maps fixated pixels onto the corresponding grid cells', () => {
+    // 8x8 -> 4x4: source (0,0) and (7,7) land in grid cells 0 and 15.
+    expect(fixationsFromMask(mask(8, 8, [[0, 0], [7, 7]]), 4, 4)).toEqual([0, 15])
+  })
+
+  it('max-pools rather than averaging — a single lit pixel keeps its cell', () => {
+    // Averaging would give 255/4 = 64 and a threshold would then decide whether
+    // this fixation survives at all. Max pooling has no such free parameter.
+    expect(fixationsFromMask(mask(8, 8, [[3, 3]]), 4, 4)).toEqual([5])
+  })
+
+  it('collapses a dilated blob into the cells it covers, without duplicates', () => {
+    const blob: Array<[number, number]> = []
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) blob.push([x, y])
+    // A 4x4 blob at the origin of an 8x8 map covers exactly the top-left 2x2
+    // cells of a 4x4 grid.
+    expect(fixationsFromMask(mask(8, 8, blob), 4, 4)).toEqual([0, 1, 4, 5])
+  })
+
+  it('ignores pixels below the threshold', () => {
+    const grey = mask(4, 4, [[0, 0]])
+    grey.data[0] = grey.data[1] = grey.data[2] = 100
+    expect(fixationsFromMask(grey, 2, 2)).toEqual([])
+  })
+
+  it('returns an empty list for an empty mask', () => {
+    expect(fixationsFromMask(mask(4, 4, []), 2, 2)).toEqual([])
   })
 })

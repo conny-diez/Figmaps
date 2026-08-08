@@ -15,14 +15,15 @@
  *
  * Fixtures are never committed: size and licence. See fixtures/README.md.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Bitmap } from '../src/engine/ops'
 import { blurField } from '../src/engine/ops-pure'
 import type { NodeSignal } from '../src/messages'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import type { DatasetIndex, DatasetItem } from './dataset'
 import { mulberry32 } from './tune'
+import { importUeyes, resolveDatasetRoot } from './ueyes'
 
 const ROOT = 'eval/fixtures'
 
@@ -189,10 +190,29 @@ function writeSet(name: string, index: DatasetIndex): void {
   writeFileSync(join(ROOT, name, 'index.json'), `${JSON.stringify(index, null, 2)}\n`)
 }
 
+/** Top `share` of the truth field as a binary fixation map (0 or 255). */
+function fixmapFrom(truth: Bitmap, share: number): Bitmap {
+  const count = truth.width * truth.height
+  const values = new Float32Array(count)
+  for (let i = 0; i < count; i++) values[i] = truth.data[i * 4]
+  const sorted = Float32Array.from(values).sort()
+  const cutoff = sorted[Math.min(count - 1, Math.floor(count * (1 - share)))]
+
+  const data = new Uint8ClampedArray(count * 4)
+  for (let i = 0, p = 0; i < count; i++, p += 4) {
+    const on = values[i] >= cutoff && cutoff > 0 ? 255 : 0
+    data[p] = data[p + 1] = data[p + 2] = on
+    data[p + 3] = 255
+  }
+  return { width: truth.width, height: truth.height, data }
+}
+
 function generateSynthetic(counts: { tuning: number; test: number; quick: number }): void {
   const name = 'synthetic'
   const base = join(ROOT, name)
-  for (const dir of ['images', 'maps', 'signals']) mkdirSync(join(base, dir), { recursive: true })
+  for (const dir of ['images', 'signals', 'heatmaps/3s', 'fixmaps/3s']) {
+    mkdirSync(join(base, dir), { recursive: true })
+  }
 
   const items: DatasetItem[] = []
   const random = mulberry32(4711)
@@ -202,13 +222,16 @@ function generateSynthetic(counts: { tuning: number; test: number; quick: number
     const id = `syn-${String(i).padStart(3, '0')}`
     const { image, truth, signals } = makeScreen(i, random)
     writeFileSync(join(base, 'images', `${id}.png`), nodeImageOps.encode(image))
-    writeFileSync(join(base, 'maps', `${id}.png`), nodeImageOps.encode(truth))
+    writeFileSync(join(base, 'heatmaps', '3s', `${id}.png`), nodeImageOps.encode(truth))
+    // A constructed stand-in for measured fixations, so the synthetic set
+    // exercises the same two-channel path as UEyes.
+    writeFileSync(join(base, 'fixmaps', '3s', `${id}.png`), nodeImageOps.encode(fixmapFrom(truth, 0.01)))
     writeFileSync(join(base, 'signals', `${id}.json`), JSON.stringify(signals))
 
     const isTuning = i < counts.tuning
     const split: DatasetItem['split'] =
       isTuning ? 'tuning' : items.filter((item) => item.split !== 'tuning').length < counts.quick ? ['test', 'quick'] : 'test'
-    items.push({ id, split, duration: 3 })
+    items.push({ id, split })
     process.stdout.write(`\r  ${i + 1}/${total}   `)
   }
   process.stdout.write('\r              \r')
@@ -217,6 +240,7 @@ function generateSynthetic(counts: { tuning: number; test: number; quick: number
     name: 'FigMaps synthetic',
     source: 'generiert von npm run eval:fixtures -- --synthetic',
     license: 'keine — vollständig generiert',
+    durations: [3],
     items,
   })
 
@@ -225,48 +249,43 @@ function generateSynthetic(counts: { tuning: number; test: number; quick: number
   console.log('nicht gemessen — Zahlen daraus sind kein Beleg für S-2 oder S-3.')
 }
 
-function importDirectory(from: string, name: string, counts: { tuning: number; test: number; quick: number }): void {
-  const imagesFrom = join(from, 'images')
-  const mapsFrom = join(from, 'maps')
-  if (!existsSync(imagesFrom) || !existsSync(mapsFrom)) {
-    throw new Error(`Erwartet werden ${imagesFrom} und ${mapsFrom} (jeweils PNG, 8 Bit, ohne Interlacing).`)
+function runUeyesImport(explicitPath: string | undefined, name: string, quick: number): void {
+  const root = resolveDatasetRoot(explicitPath, process.env)
+  console.log(`UEyes-Datensatz: ${root}`)
+
+  const summary = importUeyes({
+    root,
+    target: ROOT,
+    setName: name,
+    quick,
+    log: (message) => console.log(message),
+  })
+
+  writeSet(name, summary.index)
+
+  console.log('')
+  console.log(`Importiert nach ${summary.target}`)
+  console.log(`  tuning (Train): ${summary.tuning}`)
+  console.log(`  test   (Test):  ${summary.test}`)
+  console.log(`  davon quick:    ${summary.quick}`)
+  console.log(`  Dauern:         ${summary.index.durations.map((d) => `${d}s`).join(', ')}`)
+  console.log('')
+  console.log('Ground Truth: heatmaps/<d>s (kontinuierlich, für CC und KL)')
+  console.log('              fixmaps/<d>s  (binär, für AUC-Judd und NSS)')
+  console.log('Keine signals/ — ein Screenshot hat keinen Layer-Baum (Teilmessung, siehe Report).')
+
+  if (summary.skipped.length > 0) {
+    console.log('')
+    console.log(`Übersprungen: ${summary.skipped.length}`)
+    for (const entry of summary.skipped.slice(0, 10)) console.log(`  ${entry.id}: ${entry.reason}`)
+    if (summary.skipped.length > 10) console.log(`  … und ${summary.skipped.length - 10} weitere`)
   }
 
-  const base = join(ROOT, name)
-  for (const dir of ['images', 'maps']) mkdirSync(join(base, dir), { recursive: true })
-
-  const ids = readdirSync(imagesFrom)
-    .filter((file) => extname(file).toLowerCase() === '.png')
-    .map((file) => basename(file, '.png'))
-    .sort()
-
-  if (ids.length === 0) throw new Error(`Keine PNGs in ${imagesFrom}. Andere Formate vorher konvertieren (z. B. sips -s format png).`)
-
-  const items: DatasetItem[] = []
-  ids.forEach((id, i) => {
-    const mapPath = join(mapsFrom, `${id}.png`)
-    if (!existsSync(mapPath)) return
-    writeFileSync(join(base, 'images', `${id}.png`), readFileSync(join(imagesFrom, `${id}.png`)))
-    writeFileSync(join(base, 'maps', `${id}.png`), readFileSync(mapPath))
-
-    // Deterministic split by position: tuning first, then test; the quick set
-    // is a prefix of test. Splits stay strictly apart (A-2).
-    const isTuning = i < counts.tuning
-    const testIndex = i - counts.tuning
-    const split: DatasetItem['split'] = isTuning ? 'tuning' : testIndex < counts.quick ? ['test', 'quick'] : 'test'
-    items.push({ id, split })
-  })
-
-  writeSet(name, {
-    name,
-    source: from,
-    license: 'VOR NUTZUNG PRÜFEN — siehe eval/fixtures/README.md',
-    items,
-  })
-  console.log(`${items.length} Bilder importiert nach ${base}`)
-  console.log(`  tuning: ${items.filter((item) => item.split === 'tuning').length}`)
-  console.log(`  test:   ${items.filter((item) => item.split !== 'tuning').length}`)
-  console.log(`  quick:  ${items.filter((item) => Array.isArray(item.split)).length}`)
+  if (summary.test < 40) {
+    console.log('')
+    console.log(`Hinweis: Der Test-Split hat nur ${summary.test} Bilder. Das ist die Aufteilung des`)
+    console.log('Datensatzes, nicht unsere — aber Mittelwerte darüber sind entsprechend unsicher.')
+  }
 }
 
 export function main(argv: readonly string[]): number {
@@ -299,24 +318,31 @@ export function main(argv: readonly string[]): number {
       generateSynthetic(counts)
       return 0
     }
-    const from = args.get('import')
-    if (typeof from === 'string') {
-      importDirectory(from, String(args.get('name') ?? 'ueyes-web'), counts)
+    if (args.has('ueyes')) {
+      const explicit = args.get('ueyes')
+      runUeyesImport(
+        typeof explicit === 'string' ? explicit : undefined,
+        String(args.get('name') ?? 'ueyes-web'),
+        counts.quick,
+      )
       return 0
     }
 
     console.log(
       [
+        'npm run eval:fixtures -- --ueyes <pfad-zum-UEyes_dataset> [--name ueyes-web] [--quick 27]',
+        '    Importiert die Kategorie "web" aus info.csv / image_types.csv.',
+        '    Der Pfad kann auch über die Umgebungsvariable UEYES_DIR kommen.',
+        '    Übernommen wird die Train/Test-Aufteilung des Datensatzes, keine eigene.',
+        '    Ground Truth: heatmaps_<d>s (für CC/KL) und fixmaps_<d>s (für AUC/NSS),',
+        '    Dauern 1s, 3s und 7s. Ausgewertet wird zunächst nur 3s.',
+        '',
         'npm run eval:fixtures -- --synthetic [--tuning 30 --test 30 --quick 12]',
         '    Generiert ein lizenzfreies Set, um den Harness zu prüfen.',
+        '    Nicht in Messungen der Engine einbeziehen — die Ground Truth ist konstruiert.',
         '',
-        'npm run eval:fixtures -- --import <dir> --name ueyes-web [--tuning 150 --test 200 --quick 40]',
-        '    Übernimmt <dir>/images/*.png und <dir>/maps/*.png in die Fixture-Struktur.',
-        '',
-        'UEyes (CHI 2023, Jiang et al.) liegt auf Zenodo. Der Download ist bewusst nicht',
-        'automatisiert: die Lizenzfrage für die interne Nutzung bei meinestadt.de ist laut',
-        'PRD §3 A-2 vom Product Owner mit der Rechtsabteilung zu klären, bevor Daten ins',
-        'Repo-Umfeld gelangen. Siehe eval/fixtures/README.md.',
+        'UEyes steht unter CC BY 4.0. Die Autoren sind in jedem Report zu zitieren;',
+        'das erledigt der Harness automatisch aus index.json.',
       ].join('\n'),
     )
     return 0

@@ -3,10 +3,11 @@
  *
  * Layout under `eval/fixtures/<set>/`:
  *
- *   index.json          { "name", "source", "license", "items": [...] }
- *   images/<id>.png     the screenshot
- *   maps/<id>.png       the ground-truth saliency map (greyscale)
- *   signals/<id>.json   optional NodeSignal[] — see the note below
+ *   index.json                { name, source, license, citation, durations, items }
+ *   images/<id>.png           the screenshot
+ *   heatmaps/<d>s/<id>.png    continuous ground-truth saliency  -> CC, KL
+ *   fixmaps/<d>s/<id>.png     binary fixation map               -> AUC-Judd, NSS
+ *   signals/<id>.json         optional NodeSignal[] — see the note below
  *
  * Fixtures are *not* committed (size + licence). `npm run eval:fixtures`
  * prepares them; `eval/fixtures/README.md` documents where they come from.
@@ -15,34 +16,35 @@
  * `interactiveSalience` and `imageSalience` are all zero on such a sample and
  * only the pixel features and the position prior are actually measured. The
  * loader therefore reads an optional signal sidecar, and the report states how
- * many samples had one — a number that must not be quietly ignored when
- * reading the results.
+ * many samples had one — and what share of the engine weighting that leaves
+ * unmeasured. That number must not be quietly ignored when reading results.
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { ENGINE_CONFIG } from '../src/engine/config'
+import { analysisGridFor } from '../src/engine/analyze'
 import type { Bitmap } from '../src/engine/ops'
-import { fitWithin } from '../src/engine/ops-pure'
 import type { ScalarMap } from '../src/engine/types'
 import type { NodeSignal } from '../src/messages'
 import { nodeImageOps } from '../src/platform/imageops-node'
-import { fixationsFromMap, type GroundTruth } from './metrics/types'
+import { fixationsFromMap, fixationsFromMask, type GroundTruth } from './metrics/types'
 
 export type SplitName = 'tuning' | 'test' | 'quick'
 
 export type DatasetItem = {
   id: string
   split: SplitName | SplitName[]
-  /** UEyes viewing duration this ground-truth map belongs to, in seconds. */
-  duration?: number
 }
 
 export type DatasetIndex = {
   name: string
   source?: string
   license?: string
-  /** Number of top pixels treated as fixation points when none are supplied. */
-  fixationCount?: number
+  /** Full citation, reproduced verbatim in every report. */
+  citation?: string
+  /** Viewing durations present in the set, in seconds. */
+  durations: number[]
+  /** Fraction of grid pixels treated as fixations when no fixation map exists. */
+  fixationShare?: number
   items: DatasetItem[]
 }
 
@@ -50,19 +52,19 @@ export type EvalSample = {
   id: string
   /** Full-resolution screenshot pixels. */
   image: Bitmap
-  /** Dimensions of the analysis grid every prediction is compared on. */
+  /** The grid every prediction and every ground truth is compared on. */
   grid: { width: number; height: number }
   signals: NodeSignal[]
   frameWidth: number
   frameHeight: number
   truth: GroundTruth
-  duration?: number
+  duration: number
   hasSignals: boolean
 }
 
 export const FIXTURES_ROOT = 'eval/fixtures'
 
-/** Fraction of grid pixels treated as fixations when the set has no raw ones. */
+/** Fallback share of grid pixels used as fixations when no fixmap exists. */
 const DEFAULT_FIXATION_SHARE = 0.02
 
 function readPng(path: string): Bitmap {
@@ -84,9 +86,11 @@ function toScalarMap(bitmap: Bitmap): ScalarMap {
   return { width: bitmap.width, height: bitmap.height, values }
 }
 
+/**
+ * Area-averaged rescale of a continuous field, via the shared bitmap
+ * resampler — packing into the red channel keeps one resampler in the repo.
+ */
 function resizeScalarMap(map: ScalarMap, width: number, height: number): ScalarMap {
-  // Reuse the shared bitmap resampler rather than writing a second one: pack
-  // the field into the red channel, resize, unpack.
   const packed = new Uint8ClampedArray(map.width * map.height * 4)
   for (let i = 0, p = 0; i < map.values.length; i++, p += 4) {
     const v = Math.round(map.values[i] * 255)
@@ -109,52 +113,93 @@ export function readIndex(setName: string, root = FIXTURES_ROOT): DatasetIndex {
     throw new Error(
       `Referenz-Set "${setName}" fehlt (${path}).\n` +
         `Fixtures liegen absichtlich nicht im Repo — siehe ${root}/README.md.\n` +
-        `Für einen Rauchtest des Harness: npm run eval:fixtures -- --synthetic`,
+        `UEyes importieren:  npm run eval:fixtures -- --ueyes <pfad-zum-datensatz>\n` +
+        `Rauchtest ohne Datensatz:  npm run eval:fixtures -- --synthetic`,
     )
   }
   return JSON.parse(readFileSync(path, 'utf8')) as DatasetIndex
+}
+
+export type LoadOptions = {
+  limit?: number
+  root?: string
+  /** Viewing duration in seconds. Only this duration is scored. */
+  duration?: number
 }
 
 /**
  * Loads one split. Splits are kept strictly apart: weights are optimised on
  * `tuning` and reported on `test`, never the other way round (A-2).
  */
-export function loadSamples(
-  setName: string,
-  split: SplitName,
-  options: { limit?: number; root?: string } = {},
-): EvalSample[] {
+export function loadSamples(setName: string, split: SplitName, options: LoadOptions = {}): EvalSample[] {
   const root = options.root ?? FIXTURES_ROOT
   const index = readIndex(setName, root)
   const base = join(root, setName)
+  const duration = options.duration ?? 3
+
+  if (!index.durations.includes(duration)) {
+    throw new Error(
+      `Referenz-Set "${setName}" enthält keine Ground Truth für ${duration}s (vorhanden: ${index.durations.join(', ')}s).`,
+    )
+  }
 
   const items = index.items.filter((item) => matchesSplit(item, split))
   if (items.length === 0) throw new Error(`Referenz-Set "${setName}" enthält keine Einträge im Split "${split}"`)
 
   const selected = options.limit ? items.slice(0, options.limit) : items
-  return selected.map((item) => {
-    const image = readPng(join(base, 'images', `${item.id}.png`))
-    const truthBitmap = readPng(join(base, 'maps', `${item.id}.png`))
+  const heatmapDir = join(base, 'heatmaps', `${duration}s`)
+  const fixmapDir = join(base, 'fixmaps', `${duration}s`)
 
-    const grid = fitWithin(image.width, image.height, ENGINE_CONFIG.analysisEdge)
-    const salience = resizeScalarMap(toScalarMap(truthBitmap), grid.width, grid.height)
+  const samples: EvalSample[] = []
+  for (const item of selected) {
+    const image = readPng(join(base, 'images', `${item.id}.png`))
+
+    // The comparison grid is whatever the engine itself would produce for this
+    // image — never a resolution invented by the harness.
+    const grid = analysisGridFor(image.width, image.height)
+
+    const heatmapPath = join(heatmapDir, `${item.id}.png`)
+    if (!existsSync(heatmapPath)) {
+      throw new Error(`Ground-Truth-Heatmap fehlt: ${heatmapPath}`)
+    }
+    const salience = resizeScalarMap(toScalarMap(readPng(heatmapPath)), grid.width, grid.height)
+
+    // AUC-Judd and NSS want discrete fixations, CC and KL the continuous map.
+    const fixmapPath = join(fixmapDir, `${item.id}.png`)
+    let fixations: number[]
+    let fixationSource: GroundTruth['fixationSource']
+    if (existsSync(fixmapPath)) {
+      fixations = fixationsFromMask(readPng(fixmapPath), grid.width, grid.height)
+      fixationSource = 'measured'
+    } else {
+      const share = index.fixationShare ?? DEFAULT_FIXATION_SHARE
+      fixations = fixationsFromMap(salience, Math.round(grid.width * grid.height * share))
+      fixationSource = 'derived-from-heatmap'
+    }
+
+    // A sample whose fixations cover everything (or nothing) carries no signal
+    // for AUC — dropping it beats letting it drag the mean somewhere arbitrary.
+    if (fixations.length === 0 || fixations.length >= grid.width * grid.height) {
+      console.warn(`  übersprungen: ${item.id} (${fixations.length} Fixationspunkte auf ${grid.width}x${grid.height})`)
+      continue
+    }
 
     const signalsPath = join(base, 'signals', `${item.id}.json`)
     const hasSignals = existsSync(signalsPath)
-    const signals = hasSignals ? (JSON.parse(readFileSync(signalsPath, 'utf8')) as NodeSignal[]) : []
 
-    const fixationCount = index.fixationCount ?? Math.round(grid.width * grid.height * DEFAULT_FIXATION_SHARE)
-
-    return {
+    samples.push({
       id: item.id,
       image,
       grid,
-      signals,
+      signals: hasSignals ? (JSON.parse(readFileSync(signalsPath, 'utf8')) as NodeSignal[]) : [],
       frameWidth: image.width,
       frameHeight: image.height,
-      truth: { salience, fixations: fixationsFromMap(salience, fixationCount) },
-      duration: item.duration,
+      truth: { salience, fixations, fixationSource },
+      duration,
       hasSignals,
-    }
-  })
+    })
+  }
+
+  if (samples.length === 0) throw new Error(`Referenz-Set "${setName}" / "${split}": kein einziges Bild verwertbar.`)
+  return samples
 }

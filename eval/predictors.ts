@@ -24,6 +24,16 @@ export type Predictor = {
 /** Baseline 1 — an isotropic Gaussian at the image centre. No image analysis. */
 export const CENTER_BIAS_SIGMA = 0.28
 
+/**
+ * Widths the center-bias baseline is additionally swept over.
+ *
+ * The sigma is a free parameter, and picking a convenient one would turn the
+ * most important comparison of the iteration into a straw man. The report
+ * therefore states the verdict against the *strongest* center-bias per metric,
+ * not against this module's default.
+ */
+export const CENTER_BIAS_SIGMAS: readonly number[] = [0.15, 0.2, 0.25, 0.28, 0.35, 0.45, 0.6, 0.8]
+
 export function centerBiasMap(width: number, height: number, sigma = CENTER_BIAS_SIGMA): ScalarMap {
   const values = new Float32Array(width * height)
   for (let y = 0; y < height; y++) {

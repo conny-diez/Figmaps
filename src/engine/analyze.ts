@@ -66,6 +66,20 @@ export function prepareSource(ops: ImageOps, source: Bitmap): Bitmap {
   return ops.resize(source, size.width, size.height)
 }
 
+/**
+ * Dimensions of the map an unsegmented frame of this size produces.
+ *
+ * The eval harness must bring the ground truth onto exactly this grid — the two
+ * steps (bound the source width, then fit the analysis edge) do not compose
+ * into a single `fitWithin`, and guessing produces an off-by-one that would
+ * make CC and KL compare mismatched shapes.
+ */
+export function analysisGridFor(width: number, height: number): { width: number; height: number } {
+  const cfg = ENGINE_CONFIG.analysisSource
+  const source = analysisSourceSize(width, height, cfg.maxWidth, cfg.maxPixels)
+  return fitWithin(source.width, source.height, ENGINE_CONFIG.analysisEdge)
+}
+
 export async function analyzeFrame(
   engine: AttentionEngine,
   ops: ImageOps,

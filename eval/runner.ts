@@ -6,8 +6,8 @@ import type { ScalarMap } from '../src/engine/types'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import type { EvalSample } from './dataset'
 import { meanScores, scoreAll } from './metrics'
-import type { MetricScores } from './metrics/types'
-import type { Predictor } from './predictors'
+import { METRIC_DIRECTION, METRIC_IDS, type MetricScores } from './metrics/types'
+import { centerBiasMap, type Predictor } from './predictors'
 
 export type SampleResult = {
   sampleId: string
@@ -59,6 +59,35 @@ export async function runEvaluation(
   }
 
   return { results, samples: [...samples], primaryPredictions }
+}
+
+export type SigmaSweepEntry = { sigma: number; mean: MetricScores }
+
+/**
+ * Scores the center-bias baseline at several widths, so the S-2 verdict can be
+ * stated against the strongest form of the baseline rather than a convenient
+ * one. Cheap: the baseline does no image analysis.
+ */
+export function sweepCenterBias(samples: readonly EvalSample[], sigmas: readonly number[]): SigmaSweepEntry[] {
+  return sigmas.map((sigma) => ({
+    sigma,
+    mean: meanScores(samples.map((sample) => scoreAll(centerBiasMap(sample.grid.width, sample.grid.height, sigma), sample.truth))),
+  }))
+}
+
+/** Best value per metric across the sweep — the hardest baseline to beat. */
+export function bestOfSweep(sweep: readonly SigmaSweepEntry[]): MetricScores {
+  const out = {} as MetricScores
+  for (const id of METRIC_IDS) {
+    let best = Number.NaN
+    for (const entry of sweep) {
+      const value = entry.mean[id]
+      if (!Number.isFinite(value)) continue
+      if (!Number.isFinite(best) || (value - best) * METRIC_DIRECTION[id] > 0) best = value
+    }
+    out[id] = best
+  }
+  return out
 }
 
 /** The `count` samples the given predictor did worst on, by CC (A-5). */
