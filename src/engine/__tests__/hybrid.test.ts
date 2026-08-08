@@ -5,7 +5,16 @@ import { describe, expect, it } from 'vitest'
 import { combineFeatures, HeuristicAttentionEngine } from '../heuristic'
 import { deviationOf, deviationScore, correlation } from '../deviation'
 import { ENGINE_CONFIGS, HYBRID_BLEND_ALPHA, resolveParams } from '../params'
-import { decodeBase64, hasPriorAsset, priorAssetIdFor, priorMap, shipsPriorAsset, PRIOR_ASSETS } from '../priors'
+import {
+  availablePriorCategories,
+  decodeBase64,
+  hasPriorAsset,
+  priorAssetIdFor,
+  priorMap,
+  shipsPriorAsset,
+  PRIOR_ASSETS,
+  PRIOR_DURATIONS,
+} from '../priors'
 import { ENGINE_CONFIG } from '../config'
 import type { FeatureMaps } from '../types'
 
@@ -73,6 +82,22 @@ describe('prior assets', () => {
     for (const asset of Object.values(PRIOR_ASSETS)) {
       expect(decodeBase64(asset.data).length).toBe(asset.width * asset.height)
     }
+  })
+
+  it('ships one prior per category and viewing duration (Epic D)', () => {
+    for (const id of availablePriorCategories()) {
+      for (const duration of PRIOR_DURATIONS) expect(hasPriorAsset(id, duration)).toBe(true)
+    }
+  })
+
+  it('produces different priors for different durations', () => {
+    // If 1 s and 7 s were identical, three profiles would be three switches
+    // doing the same thing — the measurement says they are not.
+    const glance = priorMap('web', 32, 32, 1)!
+    const read = priorMap('web', 32, 32, 7)!
+    expect(Array.from(glance)).not.toEqual(Array.from(read))
+    expect(correlation(glance, read)).toBeGreaterThan(0.8)
+    expect(correlation(glance, read)).toBeLessThan(0.999)
   })
 
   it('resamples onto any grid, normalised to [0,1]', () => {

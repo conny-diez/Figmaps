@@ -9,7 +9,7 @@
 import { ENGINE_CONFIG } from './config'
 import type { Bitmap, ImageOps } from './ops'
 import { analysisSourceSize, cropBitmap, fitWithin } from './ops-pure'
-import { composeSections, peakOfSection, planSections, type SegmentPlan, type Section } from './segments'
+import { composeSections, planSections, sectionSalience, type SegmentPlan, type Section } from './segments'
 import type { AttentionEngine, ScalarMap } from './types'
 import type { NodeSignal } from '../messages'
 
@@ -27,13 +27,27 @@ export type AnalyzeInput = {
 }
 
 export type AnalyzeResult = {
-  /** Attention over the whole frame; composed from the sections when segmented. */
+  /**
+   * Attention over the whole frame, composed from the sections.
+   *
+   * This is the **only** place the scroll-depth attenuation acts. The section
+   * maps below stay untouched, so the hierarchy inside one viewport reads the
+   * same however deep it sits.
+   */
   attention: ScalarMap
+  /**
+   * The individual section maps, each normalised in itself and **not**
+   * attenuated. `sections[0]` is the above-the-fold map.
+   */
+  sections: ScalarMap[]
   /** B-2 — the first section on its own. `null` when the frame is not segmented. */
   aboveFold: ScalarMap | null
   plan: SegmentPlan
-  /** Peak intensity per section, in section order. */
-  sectionPeaks: number[]
+  /**
+   * How concentrated each section's attention is (see `sectionSalience`).
+   * Comparable across sections, unlike the peak, which is 1 everywhere.
+   */
+  sectionSalience: number[]
 }
 
 export type AnalyzeHooks = {
@@ -141,9 +155,11 @@ export async function analyzeFrame(
   }
 
   return {
+    // Attenuation lives here and nowhere else.
     attention: composeSections(parts, input.frameHeight),
+    sections: parts.map((part) => part.map),
     aboveFold: plan.segmented ? parts[0].map : null,
     plan,
-    sectionPeaks: parts.map((part) => peakOfSection(part.map)),
+    sectionSalience: parts.map((part) => sectionSalience(part.map)),
   }
 }

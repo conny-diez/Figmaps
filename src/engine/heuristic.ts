@@ -4,9 +4,9 @@ import { luminanceContrast } from './features/luminance'
 import { positionPrior } from './features/prior'
 import { imageSalience, interactiveSalience, textSalience } from './features/structure'
 import { applyGamma, luminanceChannel, normalize01, percentileClipNormalize, weightedSum, yieldToUi } from './imageops'
-import { priorAssetIdFor, priorMap, type PriorAssetId } from './priors'
+import { priorAssetIdFor, priorMap, type PriorAssetId, type PriorDuration } from './priors'
 import { blurField } from './ops-pure'
-import { ACTIVE_CONFIG_ID, DEFAULT_PROFILE, resolveParams, type EngineParams, type ProfileId } from './params'
+import { ACTIVE_CONFIG_ID, DEFAULT_PROFILE, PROFILE_DURATIONS, resolveParams, type EngineParams, type ProfileId } from './params'
 import type { AttentionEngine, AttentionInput, FeatureMaps } from './types'
 
 export type EngineOptions = {
@@ -92,7 +92,14 @@ export class HeuristicAttentionEngine implements AttentionEngine {
     const prior =
       this.params.priorSource === 'data'
         ? (this.priorProvider?.(width, height) ??
-          priorMap(this.priorAsset ?? priorAssetIdFor(frameWidth, frameHeight), width, height) ??
+          // Epic D: the profile picks the viewing duration the prior was
+          // estimated from. Measured — a matched prior beats the 3 s one.
+          priorMap(
+            this.priorAsset ?? priorAssetIdFor(frameWidth, frameHeight),
+            width,
+            height,
+            PROFILE_DURATIONS[this.profile] as PriorDuration,
+          ) ??
           positionPrior(width, height, this.params.prior))
         : positionPrior(width, height, this.params.prior)
 

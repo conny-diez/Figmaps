@@ -16,10 +16,12 @@ import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { renderContactSheet, type Triptych } from './contact-sheet'
 import { iterateSamples, loadSamples, readIndex, type SplitName } from './dataset'
-import { PRIOR_ASSET_IDS, type PriorAssetId } from '../src/engine/priors'
+import { PRIOR_ASSET_IDS, PRIOR_DURATIONS, type PriorAssetId } from '../src/engine/priors'
 import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
-import { crossValidate, ENGINE_LABELS } from './crossval'
+import { crossValidate, ENGINE_LABELS, FOLDS } from './crossval'
+import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { buildCrossvalReport } from './crossval-report'
+import { buildEpicDReport } from './epic-d-report'
 import { diagnose } from './diagnose'
 import { buildDiagnoseReport } from './diagnose-report'
 import { METRIC_IDS, METRIC_LABELS } from './metrics/types'
@@ -271,6 +273,66 @@ async function runEval(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// epic-d — is viewing duration a prior effect?
+// ---------------------------------------------------------------------------
+
+async function runEpicD(args: Args): Promise<number> {
+  const setName = str(args, 'fixtures', 'ueyes-web')
+  console.log(`Epic D auf "${setName}" — Prior je Dauer, ${FOLDS} Folds, out-of-sample.`)
+
+  let last = 0
+  const result = await measureEpicD({
+    setName,
+    onProgress: (done, total) => {
+      if (done - last >= 25 || done === total) {
+        last = done
+        process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+      }
+    },
+  })
+  process.stdout.write(`\r  ${result.imageCount} Bilder bewertet          \n\n`)
+
+  console.log('Ähnlichkeit der drei Prioren untereinander (CC):')
+  for (const entry of result.priorSimilarity) {
+    console.log(`  ${entry.a}s ↔ ${entry.b}s   ${entry.cc.toFixed(4)}`)
+  }
+  console.log('')
+
+  console.log('CC — Zeile = Ground-Truth-Dauer, Spalte = verwendeter Prior:')
+  console.log('          ' + DURATIONS.map((d) => `${d}s-Prior`.padStart(11)).join(''))
+  for (const truth of DURATIONS) {
+    const cells = DURATIONS.map((prior) => {
+      const cell = result.cells.find((entry) => entry.truth === truth && entry.prior === prior)!
+      const best = truth === prior ? '*' : ' '
+      return `${cell.mean.cc.toFixed(4)}${best}`.padStart(11)
+    }).join('')
+    console.log(`  GT ${truth}s  ` + cells)
+  }
+  console.log('  (* = Prior passt zur Ground-Truth-Dauer)')
+  console.log('')
+
+  console.log(`Gepaart gegen den ${REFERENCE_DURATION}s-Prior, CC (+ = besser):`)
+  for (const entry of result.comparisons.filter((c) => c.metric === 'cc')) {
+    const flag = entry.ci95[0] > 0 ? 'belastbar besser' : entry.ci95[1] < 0 ? 'belastbar schlechter' : 'nicht unterscheidbar'
+    console.log(
+      `  GT ${entry.truth}s mit ${entry.prior}s-Prior: ${entry.mean >= 0 ? '+' : ''}${entry.mean.toFixed(4)} ` +
+        `[${entry.ci95[0].toFixed(4)}, ${entry.ci95[1].toFixed(4)}]  t=${entry.tStatistic.toFixed(1)}  → ${flag}`,
+    )
+  }
+  console.log('')
+  console.log(
+    result.durationMatters
+      ? 'BEFUND: Ein dauerspezifischer Prior schlägt den 3s-Prior auf der eigenen Dauer. Drei Profile sind gerechtfertigt.'
+      : 'BEFUND: Kein dauerspezifischer Prior schlägt den 3s-Prior auf der eigenen Dauer. Epic D ist zu streichen.',
+  )
+
+  const reportPath = str(args, 'report', `out/epic-d-${setName}.md`)
+  writeFile(reportPath, buildEpicDReport(result, timestamp()))
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // crossval — k-fold over the whole category, both data-dependent parts refit
 // ---------------------------------------------------------------------------
 
@@ -331,7 +393,6 @@ async function runCrossval(args: Args): Promise<number> {
 const PRIOR_SIZE_BUDGET_BYTES = 50 * 1024
 
 function runBuildPrior(args: Args): number {
-  const duration = num(args, 'duration', 3)
   const size = num(args, 'size', 64)
   // One prior per UI type. `desktop` and `poster` ship too, even though the
   // geometric rule never picks them — they are reachable by explicit choice.
@@ -340,25 +401,30 @@ function runBuildPrior(args: Args): number {
     setName: str(args, `${id}-set`, `ueyes-${id}`),
   }))
 
-  console.log(`Ortsprioren aus dem **Tuning**-Split, ${size}x${size}, ${duration}s`)
+  // Epic D: one prior per category *and* viewing duration. Measured to be a
+  // real effect, so all three durations ship.
+  console.log(`Ortsprioren aus dem **Tuning**-Split, ${size}x${size}, Dauern ${PRIOR_DURATIONS.join('/')}s`)
   const builds: PriorBuild[] = []
+  let totalBytes = 0
   for (const set of sets) {
     if (!existsSync(join('eval', 'fixtures', set.setName, 'index.json'))) {
       console.log(`  ${set.id.padEnd(7)} übersprungen — ${set.setName} nicht importiert`)
       continue
     }
-    const build = buildPrior(set.id, set.setName, duration, size, (bytes) => Buffer.from(bytes).toString('base64'))
-    const kilobytes = build.bytes / 1024
-    console.log(
-      `  ${set.id.padEnd(7)} ${build.count} Bilder aus ${set.setName}  →  ${kilobytes.toFixed(1)} kB` +
-        (build.bytes > PRIOR_SIZE_BUDGET_BYTES ? '  ÜBER BUDGET' : ''),
-    )
-    if (build.bytes > PRIOR_SIZE_BUDGET_BYTES) {
-      console.error(`Budget von ${PRIOR_SIZE_BUDGET_BYTES / 1024} kB pro Map überschritten — kleineres --size wählen.`)
-      return 2
+    const sizes: string[] = []
+    for (const duration of PRIOR_DURATIONS) {
+      const build = buildPrior(set.id, set.setName, duration, size, (bytes) => Buffer.from(bytes).toString('base64'))
+      if (build.bytes > PRIOR_SIZE_BUDGET_BYTES) {
+        console.error(`Budget von ${PRIOR_SIZE_BUDGET_BYTES / 1024} kB pro Map überschritten — kleineres --size wählen.`)
+        return 2
+      }
+      sizes.push(`${duration}s ${(build.bytes / 1024).toFixed(1)} kB`)
+      totalBytes += build.bytes
+      builds.push(build)
     }
-    builds.push(build)
+    console.log(`  ${set.id.padEnd(7)} ${sizes.join(' · ')}`)
   }
+  console.log(`  Summe: ${(totalBytes / 1024).toFixed(1)} kB über ${builds.length} Maps`)
 
   const target = join('src', 'engine', 'priors', 'generated.ts')
   writeFile(target, renderPriorModule(builds))
@@ -541,6 +607,9 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --sheet <n>         Anzahl Gewinner im Kontaktbogen                               (default: 12)',
         '  --report <path>     Zielpfad des Markdown-Reports',
         '',
+        'npm run epic-d -- [options]      misst, ob Betrachtungsdauer ein Prior-Effekt ist',
+        '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
+        '',
         'npm run crossval -- [options]    k-fache Kreuzvalidierung über Tuning + Test',
         '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
         '  --folds <k>         Anzahl Folds                                                  (default: 5)',
@@ -558,6 +627,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   }
 
   try {
+    if (args['epic-d']) return await runEpicD(args)
     if (args.crossval) return await runCrossval(args)
     if (args['build-prior']) return runBuildPrior(args)
     if (args.diagnose) return await runDiagnose(args)

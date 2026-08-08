@@ -308,7 +308,16 @@ export const ENGINE_CONFIG = {
     flatSpreadThreshold: 0.25,
     /** `dead-cta`: mean attention percentile below which an element is "cold". */
     deadCtaQuartile: 25,
-    /** `cold-fold`: a later section must beat the first one by this much. */
+    /**
+     * `cold-fold`: **relative** margin by which a later section's attention
+     * concentration must exceed the first section's — 0,08 means 8 % more.
+     *
+     * Relative, not absolute, because the measure is a concentration share
+     * (see `segments.ts` → `sectionSalience`) whose useful range is narrow:
+     * a featureless page sits at 0,163 and a page with a strong eye-catcher
+     * deep down at 0,182. An absolute margin on the old 0..1 peak scale could
+     * never be reached — which is why this rule was silently inert.
+     */
     coldFoldMargin: 0.08,
     /** `cta-rank`: a primary candidate below this rank is worth reporting. */
     ctaRankThreshold: 1,

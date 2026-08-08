@@ -194,10 +194,18 @@ const HYBRID_PARAMS: EngineParams = {
 const HYBRID_CONFIG: EngineConfigEntry = {
   id: 'hybrid-v1',
   label: 'FigMaps 1.1 (datengeschätzter Ortsprior + Bildanalyse)',
+  // Identical parameters on purpose: Epic D turned out to be a *prior* effect,
+  // not a weighting one. The profile selects which viewing duration the
+  // location prior was estimated from (see `priors/index.ts`), the feature
+  // weights stay the same.
   profiles: { glance: HYBRID_PARAMS, scan: HYBRID_PARAMS, read: HYBRID_PARAMS },
-  // Epic D is untouched by this: the three profiles are identical until the
-  // harness has something to say about 1 s and 7 s.
-  shipped: { glance: false, scan: true, read: false },
+  /**
+   * All three ship. Measured out-of-sample on 495 images per UI category: a
+   * prior matched to the viewing duration beats the 3 s prior on its own
+   * ground truth — web +0.012 CC (1 s, t=7.9) and +0.018 (7 s, t=7.4), mobile
+   * +0.008 (t=6.3) and +0.021 (t=8.0), every interval clear of zero.
+   */
+  shipped: { glance: true, scan: true, read: true },
 }
 
 /** All configurations the harness and the plugin know about, by id. */

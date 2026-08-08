@@ -32,7 +32,7 @@ Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 | **Eval-Harness** | `npm run eval` misst die Engine gegen ein Referenz-Set (AUC-Judd, CC, NSS, KL) und immer gegen Center-Bias, Uniform und die eingefrorene 1.0-Konfiguration. Ohne diese Zahl ist jede weitere Arbeit an der Engine Glaubenssache. |
 | **Abschnittsweise Analyse** | Frames über 1,5 Viewport-Höhen werden in überlappende Abschnitte geschnitten und einzeln analysiert. Saliency ist relativ zum sichtbaren Ausschnitt, nicht zum Gesamtdokument. |
 | **Befunde** | Ein deterministisches Regelwerk formuliert, was gemessen wurde — mit „Im Canvas zeigen" auf die betroffene Ebene. |
-| **Betrachtungsdauer** | Drei Profile (`glance` 1 s, `scan` 3 s, `read` 7 s). Ausgeliefert wird nur, was der Harness belegt hat; aktuell ist das `scan`. |
+| **Betrachtungsdauer** | Drei Profile (`glance` 1 s, `scan` 3 s, `read` 7 s), **gemessen belegt**: sie tauschen den Ortsprior, nicht die Gewichte. |
 
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
 `hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt in
@@ -475,7 +475,8 @@ die zusammengesetzte Map ein Band am Kopf **jedes** Abschnitts, im Abstand von
 weil der Prior dort ein gewichteter Term von sieben mit Gewicht 0,1 war — in
 `hybrid-v1` ist er die Basis der Vorhersage.
 
-**Behoben am 8.8.2026** durch eine Dämpfung mit der Scrolltiefe: Abschnitt *i*
+**Behoben am 8.8.2026** durch eine Dämpfung mit der Scrolltiefe, die
+**ausschließlich in der zusammengesetzten Gesamt-Map** wirkt: Abschnitt *i*
 geht mit `max(0,12; 0,5^i)` in die Gesamtkarte ein
 (`ENGINE_CONFIG.viewport.sectionAttenuation`). Gemessen auf demselben grauen
 Testframe:
@@ -491,11 +492,34 @@ Flächen wird dort nichts mehr gezeichnet. Die Untergrenze von 0,12 liegt bewuss
 knapp darunter: ein echter Blickfang tief in der Seite bleibt schwach sichtbar,
 eine leere Fläche nicht.
 
+Die **Abschnitts-Maps selbst bleiben unberührt**: jede ist für sich auf
+`[0,1]` normiert, `analyzeFrame` gibt sie als `sections[]` heraus, und die
+Above-the-fold-Map ist `sections[0]`. Die Hierarchie innerhalb eines
+Ausschnitts liest sich damit gleich, egal wie tief er liegt — gemessen auf
+demselben Testframe: alle sechs Abschnitts-Maps spannen 0,000 bis 1,000,
+während die Gesamt-Map von 0,50 auf 0,01 abfällt.
+
 > **Das ist eine begründete Annahme, keine Messung.** Dass Aufmerksamkeit mit
 > der Scrolltiefe abnimmt, ist aus Analytics gut belegt; der Verlauf, der Faktor
 > und die Untergrenze sind es nicht. UEyes enthält keine gescrollten Seiten. Der
 > Startwert ist nach dem Erscheinungsbild auf dem Testframe gewählt, nicht nach
 > Vorhersagegüte. Siehe [`NOTICE.md`](NOTICE.md), „Nicht gemessene Annahmen".
+
+### Nebenbefund: `cold-fold` war wirkungslos
+
+Beim Trennen von Dämpfung und Darstellung fiel auf, dass die Regel `cold-fold`
+seit ihrer Einführung **nie feuern konnte**. Sie verglich die Spitzenwerte der
+Abschnitte — und weil jede Abschnitts-Map für sich normiert wird, ist dieser
+Spitzenwert per Konstruktion immer exakt 1,0. Gemessen auf einem Testframe mit
+absichtlich viel stärkerem Blickfang in Abschnitt 4: `1.0000 1.0000 1.0000
+1.0000 1.0000 1.0000`.
+
+Die Regel vergleicht jetzt die **Konzentration** der Aufmerksamkeit — den
+Anteil der Masse in den stärksten 5 % der Pixel. Der übersteht die Normierung,
+weil er die Form misst, nicht die Amplitude. Da diese Größe in einem engen Band
+liegt (0,153 bis 0,182 auf dem Testframe), ist der Schwellwert
+`coldFoldMargin` jetzt **relativ**: ein späterer Abschnitt muss 8 % stärker
+bündeln als der erste.
 
 ### Messung: hybrid-v1 gegen den Test-Split
 
@@ -870,18 +894,51 @@ Sprachregeln (C-2), von den Tests erzwungen:
 
 ---
 
-## Betrachtungsdauer (Epic D)
+## Betrachtungsdauer (Epic D) — gemessen
 
-Drei Profile in `src/engine/params.ts`: `glance` (1 s), `scan` (3 s), `read`
-(7 s). Startwerte sind eine **Hypothese** — kurze Dauer stärker von
-Positions-Prior und Roh-Kontrast dominiert, lange Dauer stärker von Text- und
-Interaktions-Signalen — die der Harness prüfen und ersetzen soll.
+```bash
+npm run epic-d -- --fixtures ueyes-web
+npm run epic-d -- --fixtures ueyes-mobile
+```
 
-Ein Profil wird erst ausgeliefert, wenn es die Center-Bias-Baseline schlägt
-(Flag `shipped` in `params.ts` bzw. `tuned.ts`). Aktuell erfüllt das nur `scan`
-— das ist die 1.0-Konfiguration —, deshalb zeigt das Panel **keinen** Umschalter.
-Drei Profile anzubieten, von denen eines Rauschen ist, ist schlechter als eines
-anzubieten.
+Die ursprüngliche Hypothese war, Betrachtungsdauer verschiebe die **Gewichte**
+(kurz = Kontrast, lang = Text). Die neue Hypothese war, sie verschiebe den
+**Ort**. Gemessen wurde die zweite — je ein Ortsprior aus der Ground Truth für
+1 s, 3 s und 7 s, mit derselben 5-fachen Kreuzvalidierung, alle Prioren pro
+Fold aus den übrigen vier geschätzt.
+
+**Ergebnis: Es ist ein Ortseffekt, und er ist belastbar.**
+
+CC, Zeile = Ground-Truth-Dauer, Spalte = verwendeter Prior (Webpage):
+
+| Ground Truth | 1 s-Prior | 3 s-Prior | 7 s-Prior |
+|---|---:|---:|---:|
+| 1 s | **0,4039** | 0,3916 | 0,3680 |
+| 3 s | 0,4337 | **0,4444** | 0,4164 |
+| 7 s | 0,4099 | 0,4165 | **0,4342** |
+
+Die Diagonale gewinnt in jeder Zeile, in beiden Kategorien. Gepaart gegen den
+ausgelieferten 3 s-Prior:
+
+| | Δ CC | 95-%-Intervall | t |
+|---|---:|---|---:|
+| Webpage, 1 s-GT mit 1 s-Prior | **+0,0123** | [0,0093 – 0,0154] | 7,9 |
+| Webpage, 7 s-GT mit 7 s-Prior | **+0,0177** | [0,0130 – 0,0224] | 7,4 |
+| Mobile, 1 s-GT mit 1 s-Prior | **+0,0075** | [0,0052 – 0,0099] | 6,3 |
+| Mobile, 7 s-GT mit 7 s-Prior | **+0,0208** | [0,0157 – 0,0259] | 8,0 |
+
+Alle Intervalle klar über null. Die drei Prioren unterscheiden sich auch direkt
+messbar (CC 1 s↔7 s: 0,909 Webpage, 0,929 Mobile) — sie sind nicht dieselbe Map.
+
+**Konsequenz: Epic D wird ausgeliefert**, aber anders als geplant. Die drei
+Profile tauschen den **Ortsprior**, nicht die Feature-Gewichte; die Gewichte
+sind in allen drei identisch. Die Hypothese aus dem PRD („kurze Dauer stärker
+von Positions-Prior und Roh-Kontrast dominiert") war in ihrer Gewichts-Lesart
+falsch und in ihrer Orts-Lesart richtig.
+
+Die fertigen Vorhersagen der drei Profile korrelieren untereinander mit
+0,909 bis 0,966 — verwandt, aber unterscheidbar. Drei Schalter, die dasselbe
+tun, wären es nicht geworden.
 
 ---
 
@@ -1046,7 +1103,8 @@ Zusätzlich für 1.1 (M4, M5):
   Ortsprior, nicht aus einer Gewichtssuche.
 - **S-4** (abschnittsweise Analyse) — erfüllt, siehe Epic B.
 - **S-5** (3–6 Befunde in verständlichem Deutsch) — erfüllt bis auf die
-  Textabnahme durch einen Menschen.
+  Textabnahme durch einen Menschen. `cold-fold` war bis zum 8.8. wirkungslos
+  und ist jetzt repariert.
 
 ### Offen
 
@@ -1068,8 +1126,7 @@ Zusätzlich für 1.1 (M4, M5):
    Messung eine Teilmessung über 60 % der Gewichtung.
 5. **Textabnahme der Findings (M5)** — C-1 verlangt ausdrücklich, dass keine
    Regel feuert, deren Text nicht von einem Menschen bestätigt wurde.
-6. **Epic D belegen** — 1 s und 7 s sind importiert, aber noch nicht ausgewertet.
-7. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
+6. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
    für FigMaps nicht die relevanten UI-Typen.
 
 ## Nicht in 1.1

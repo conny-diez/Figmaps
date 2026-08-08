@@ -12,13 +12,14 @@
  * Generator schreibt beides in den Kopf des erzeugten Moduls, `NOTICE.md` und
  * das Plugin-Panel tragen es sichtbar.
  */
-import type { PriorAssetId } from '../src/engine/priors'
+import type { PriorAssetId, PriorDuration } from '../src/engine/priors'
 import { resizeScalarMap } from './dataset'
 import { computeMeanMapAccumulator, MEAN_MAP_GRID } from './mean-map'
 import type { ScalarMap } from '../src/engine/types'
 
 export type PriorBuild = {
   id: PriorAssetId
+  duration: PriorDuration
   width: number
   height: number
   base64: string
@@ -32,7 +33,7 @@ export type PriorBuild = {
 export function buildPrior(
   id: PriorAssetId,
   setName: string,
-  duration: number,
+  duration: PriorDuration,
   size: number,
   encodeBase64: (bytes: Uint8Array) => string,
 ): PriorBuild {
@@ -55,6 +56,7 @@ export function buildPrior(
   const base64 = encodeBase64(bytes)
   return {
     id,
+    duration,
     width: size,
     height: size,
     base64,
@@ -90,13 +92,13 @@ const HEADER = `/**
  * the maps ship inside the plugin.
  * ---------------------------------------------------------------------------
  */
-import type { PriorAsset, PriorAssetId } from './index'
+import type { PriorAsset } from './index'
 `
 
 export function renderPriorModule(builds: readonly PriorBuild[]): string {
   const entries = builds
     .map(
-      (build) => `  ${build.id}: {
+      (build) => `  '${build.id}@${build.duration}s': {
     width: ${build.width},
     height: ${build.height},
     count: ${build.count},
@@ -108,7 +110,7 @@ export function renderPriorModule(builds: readonly PriorBuild[]): string {
     .join('\n')
 
   return `${HEADER}
-export const PRIOR_ASSETS: Partial<Record<PriorAssetId, PriorAsset>> = {
+export const PRIOR_ASSETS: Record<string, PriorAsset> = {
 ${entries}
 }
 `

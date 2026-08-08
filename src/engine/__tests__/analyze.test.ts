@@ -62,7 +62,7 @@ describe('analyzeFrame', () => {
     expect(result?.plan.segmented).toBe(false)
     expect(result?.plan.sections).toHaveLength(1)
     expect(result?.aboveFold).toBeNull()
-    expect(result?.sectionPeaks).toHaveLength(1)
+    expect(result?.sectionSalience).toHaveLength(1)
   })
 
   it('segments a tall frame and returns an above-the-fold map', async () => {
@@ -79,7 +79,7 @@ describe('analyzeFrame', () => {
     expect(result?.plan.segmented).toBe(true)
     expect(result?.plan.sections.length).toBeGreaterThan(1)
     expect(result?.aboveFold).not.toBeNull()
-    expect(result?.sectionPeaks).toHaveLength(result?.plan.sections.length ?? 0)
+    expect(result?.sectionSalience).toHaveLength(result?.plan.sections.length ?? 0)
 
     // The composed map covers the whole frame at the sections' own scale.
     const map = result!.attention

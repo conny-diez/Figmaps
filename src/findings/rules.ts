@@ -189,20 +189,23 @@ const competition: Rule = {
 const coldFold: Rule = {
   id: 'cold-fold',
   evaluate(input) {
-    if (!input.plan.segmented || input.sectionPeaks.length < 2) return null
+    if (!input.plan.segmented || input.sectionSalience.length < 2) return null
 
-    const aboveFold = input.sectionPeaks[0]
+    const aboveFold = input.sectionSalience[0]
     let bestIndex = 0
-    for (let i = 1; i < input.sectionPeaks.length; i++) {
-      if (input.sectionPeaks[i] > input.sectionPeaks[bestIndex]) bestIndex = i
+    for (let i = 1; i < input.sectionSalience.length; i++) {
+      if (input.sectionSalience[i] > input.sectionSalience[bestIndex]) bestIndex = i
     }
     if (bestIndex === 0) return null
-    if (input.sectionPeaks[bestIndex] - aboveFold < cfg.coldFoldMargin) return null
+    // Relative: the concentration measure lives in a narrow band, so an
+    // absolute margin would either never fire or fire always.
+    if (!(aboveFold > 0)) return null
+    if (input.sectionSalience[bestIndex] / aboveFold - 1 < cfg.coldFoldMargin) return null
 
     return {
       id: 'cold-fold',
       severity: 'problem',
-      text: `Der stärkste vorhergesagte Blickfang liegt in Abschnitt ${bestIndex + 1} und damit außerhalb des ersten sichtbaren Bereichs.`,
+      text: `Die Aufmerksamkeit bündelt sich in Abschnitt ${bestIndex + 1} deutlich stärker als im ersten sichtbaren Bereich.`,
     }
   },
 }

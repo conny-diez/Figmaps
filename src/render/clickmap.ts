@@ -10,6 +10,8 @@ import { drawFoldLines } from './folds'
 import { drawFooter, FONT_STACK, uiScale } from './legend'
 
 export type ClickmapOptions = {
+  /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
+  priorLabel?: string
   /** Blob opacity, `0..1`. */
   opacity: number
   /** Frame size in frame pixels — candidates carry frame-pixel geometry. */
@@ -85,7 +87,7 @@ export function renderClickmap(
   }
 
   drawTitle(ctx, canvas.width, canvas.height, 'Clickmap — vorhergesagte Klickwahrscheinlichkeit')
-  drawFooter(ctx, canvas.width, canvas.height)
+  drawFooter(ctx, canvas.width, canvas.height, { priorLabel: options.priorLabel })
   return canvas
 }
 

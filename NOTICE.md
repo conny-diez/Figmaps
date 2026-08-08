@@ -25,6 +25,15 @@ Darstellung, nicht für die Vorhersagegüte.
 **Wie es überprüfbar würde:** Eye-Tracking oder Scroll-Analytics auf gescrollten
 Seiten. Das eigene First-Click-Set könnte den Anfang liefern.
 
+### Was inzwischen doch gemessen ist
+
+Die **Betrachtungsdauer** (Epic D) stand hier ursprünglich als Hypothese. Sie
+ist seit dem 8.8.2026 gemessen: ein Ortsprior, der zur Betrachtungsdauer passt,
+sagt die Aufmerksamkeit dieser Dauer belastbar besser vorher als der 3 s-Prior
+(alle 95-%-Intervalle klar über null, beide UI-Kategorien). Die drei Profile
+tauschen deshalb den Prior und nicht die Gewichte. Siehe README, „Betrachtungs-
+dauer (Epic D)".
+
 ### Alle Messzahlen gelten für einzelne Viewport-Ausschnitte
 
 Sämtliche Reports (`npm run eval`, `crossval`, `diagnose`) laufen mit
@@ -45,9 +54,9 @@ Bildern fehlerfrei.
 
 ## UEyes — Ortsprioren in `src/engine/priors/generated.ts`
 
-FigMaps liefert zwei kleine Graustufen-Maps mit, die als **Ortsprior** der
-Konfiguration `hybrid-v1` dienen. Sie sind ein **abgeleitetes Werk** des
-Datensatzes UEyes.
+FigMaps liefert zwölf kleine Graustufen-Maps mit (vier UI-Kategorien × drei
+Betrachtungsdauern, je 1,3 kB), die als **Ortsprior** der Konfiguration
+`hybrid-v1` dienen. Sie sind ein **abgeleitetes Werk** des Datensatzes UEyes.
 
 > Jiang, Yue, Luis A. Leiva, Hamed Rezazadegan Tavakoli, Paul R. B. Houssel,
 > Julia Kylmälä und Antti Oulasvirta. „UEyes: Understanding Visual Saliency
@@ -59,11 +68,12 @@ Datensatzes UEyes.
 <https://creativecommons.org/licenses/by/4.0/>
 
 **Vorgenommene Änderungen** (CC BY verlangt, Bearbeitungen kenntlich zu machen):
-Die Saliency-Maps des Tuning-Splits der Kategorien *webpage* und *mobile UI*
-wurden auf ein gemeinsames quadratisches Raster skaliert, gemittelt, normiert
-und auf 8 Bit bei 32 × 32 quantisiert. Es werden **keine Einzelbilder und keine
-Einzel-Maps** des Datensatzes ausgeliefert — nur der Mittelwert über 468 Maps je
-Kategorie.
+Die Saliency-Maps des Tuning-Splits **aller vier Kategorien** (webpage,
+mobile UI, desktop UI, poster) wurden je Betrachtungsdauer (1 s, 3 s, 7 s) auf
+ein gemeinsames quadratisches Raster skaliert, gemittelt, normiert und auf
+8 Bit bei 32 × 32 quantisiert. Es werden **keine Einzelbilder und keine
+Einzel-Maps** des Datensatzes ausgeliefert — nur Mittelwerte über je 467–468
+Maps.
 
 ### Wo die Namensnennung stehen muss
 

@@ -12,6 +12,8 @@ import { drawFoldLines } from './folds'
 import { drawFooter } from './legend'
 
 export type FocusmapOptions = {
+  /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
+  priorLabel?: string
   /** Percentile threshold, 60–95 (FR-10). */
   threshold: number
   /** B-2 — fold positions in frame pixels. */
@@ -80,6 +82,6 @@ export function renderFocusmap(
     drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
   }
 
-  drawFooter(ctx, canvas.width, canvas.height)
+  drawFooter(ctx, canvas.width, canvas.height, { priorLabel: options.priorLabel })
   return canvas
 }

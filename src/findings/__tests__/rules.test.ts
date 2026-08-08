@@ -55,7 +55,7 @@ function input(overrides: Partial<FindingsInput> = {}): FindingsInput {
   const plan: SegmentPlan = planSections(FRAME.width, FRAME.height)
   return {
     attention: flatMap(),
-    sectionPeaks: [1],
+    sectionSalience: [1],
     candidates: [],
     signals: [],
     plan,
@@ -147,18 +147,32 @@ describe('competition', () => {
 describe('cold-fold', () => {
   const tall = planSections(1440, 4000)
 
-  it('fires when a later section peaks higher than the first', () => {
-    const finding = evaluateRule('cold-fold', input({ plan: tall, sectionPeaks: [0.5, 0.6, 0.95, 0.4] }))
+  it('fires when a later section concentrates attention more than the first', () => {
+    const finding = evaluateRule('cold-fold', input({ plan: tall, sectionSalience: [0.16, 0.16, 0.19, 0.15] }))
     expect(finding?.text).toContain('Abschnitt 3')
   })
 
   it('stays silent when the first section is the strongest', () => {
-    expect(evaluateRule('cold-fold', input({ plan: tall, sectionPeaks: [0.95, 0.6, 0.5] }))).toBeNull()
+    expect(evaluateRule('cold-fold', input({ plan: tall, sectionSalience: [0.19, 0.16, 0.15] }))).toBeNull()
   })
 
-  it('stays silent inside the margin', () => {
+  it('stays silent inside the relative margin', () => {
     const margin = ENGINE_CONFIG.findings.coldFoldMargin
-    expect(evaluateRule('cold-fold', input({ plan: tall, sectionPeaks: [0.9, 0.9 + margin / 2] }))).toBeNull()
+    expect(evaluateRule('cold-fold', input({ plan: tall, sectionSalience: [0.16, 0.16 * (1 + margin / 2)] }))).toBeNull()
+  })
+
+  it('fires just past the relative margin', () => {
+    const margin = ENGINE_CONFIG.findings.coldFoldMargin
+    expect(evaluateRule('cold-fold', input({ plan: tall, sectionSalience: [0.16, 0.16 * (1 + margin * 1.5)] }))).not.toBeNull()
+  })
+
+  it('works on the concentration range the engine actually produces', () => {
+    // Measured on a synthetic 1440x4000 page: featureless sections land at
+    // 0.163, a section with a strong eye-catcher at 0.182.
+    expect(evaluateRule('cold-fold', input({ plan: tall, sectionSalience: [0.163, 0.163, 0.163, 0.153, 0.168, 0.182] })))
+      .not.toBeNull()
+    expect(evaluateRule('cold-fold', input({ plan: tall, sectionSalience: new Array(6).fill(0.163) as number[] })))
+      .toBeNull()
   })
 })
 
@@ -202,7 +216,7 @@ describe('collectFindings', () => {
         frameWidth: 1440,
         frameHeight: 4000,
         attention: flatMap(0.5),
-        sectionPeaks: [0.4, 0.9, 0.5],
+        sectionSalience: [0.4, 0.9, 0.5],
         signals: [makeSignal({ id: 'x', name: 'Headline' })],
         candidates: [
           candidate({ id: 'a', name: 'Alle Angebote', y: 2400 }),
@@ -239,7 +253,7 @@ describe('C-2 — language rules', () => {
       frameWidth: 1440,
       frameHeight: 4000,
       attention: flatMap(0.5),
-      sectionPeaks: [0.3, 0.95],
+      sectionSalience: [0.3, 0.95],
       signals: [makeSignal({ id: 'x', name: 'Headline' })],
       candidates: [candidate({ id: 'a', name: 'Alle Angebote', y: 2400 }), candidate({ id: 'b', name: 'CTA', y: 2600 })],
     }),

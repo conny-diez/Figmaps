@@ -157,9 +157,31 @@ export function composeSections(
   return { width, height, values }
 }
 
-/** Mean value of one image row band — used by the `cold-fold` finding. */
-export function peakOfSection(map: ScalarMap): number {
-  let peak = 0
-  for (let i = 0; i < map.values.length; i++) if (map.values[i] > peak) peak = map.values[i]
-  return peak
+/** Share of the strongest pixels that `sectionSalience` concentrates on. */
+const SALIENCE_TOP_SHARE = 0.05
+
+/**
+ * How *concentrated* a section's attention is — the share of its total mass
+ * held by the strongest 5 % of pixels.
+ *
+ * Deliberately not the peak. Every section map is normalised on its own (that
+ * is the point of Epic B), so its maximum is 1 by construction and carries no
+ * information: comparing peaks across sections always yields a tie. That made
+ * the `cold-fold` rule unable to fire at all.
+ *
+ * Concentration survives per-section normalisation: a section with one strong
+ * eye-catcher piles its mass into few pixels, an evenly busy section spreads it.
+ * That is what "the strongest eye-catcher sits further down" actually means.
+ */
+export function sectionSalience(map: ScalarMap, topShare = SALIENCE_TOP_SHARE): number {
+  const sorted = Float32Array.from(map.values).sort()
+  const cut = Math.floor(sorted.length * (1 - topShare))
+
+  let top = 0
+  let all = 0
+  for (let i = 0; i < sorted.length; i++) {
+    all += sorted[i]
+    if (i >= cut) top += sorted[i]
+  }
+  return all > 0 ? top / all : 0
 }

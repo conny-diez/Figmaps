@@ -34,8 +34,12 @@ export const SEVERITY_LABELS: Record<Severity, string> = {
 export type FindingsInput = {
   /** Composed attention map over the whole frame. */
   attention: ScalarMap
-  /** Per-section peak intensity, in section order (Epic B). */
-  sectionPeaks: number[]
+  /**
+   * Per-section attention *concentration*, in section order (Epic B).
+   * Not the peak — every section map is normalised on its own, so its peak is
+   * always 1. See `engine/segments.ts` → `sectionSalience`.
+   */
+  sectionSalience: number[]
   /** Ranked click candidates, strongest first. */
   candidates: readonly ClickCandidate[]
   signals: readonly NodeSignal[]

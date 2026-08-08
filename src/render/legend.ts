@@ -57,8 +57,22 @@ export function drawLegend(ctx: CanvasRenderingContext2D, width: number, height:
   ctx.restore()
 }
 
+export type FooterOptions = {
+  /**
+   * Which location prior produced this map, and whether it was derived from
+   * the frame geometry or chosen. Two maps of the same screen can differ only
+   * in this, so it belongs on the image rather than only in the panel.
+   */
+  priorLabel?: string
+}
+
 /** Full-width footer bar: engine version + disclaimer. */
-export function drawFooter(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+export function drawFooter(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  options: FooterOptions = {},
+): void {
   const font = uiScale(width, height)
   const barHeight = Math.round(font * 2.6)
   const y = height - barHeight
@@ -76,7 +90,10 @@ export function drawFooter(ctx: CanvasRenderingContext2D, width: number, height:
   ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
   ctx.font = `400 ${Math.round(font * 0.85)}px ${FONT_STACK}`
   ctx.textAlign = 'right'
-  ctx.fillText(`FigMaps · ${ENGINE_VERSION}`, width - Math.round(font), y + barHeight / 2)
+  const right = options.priorLabel
+    ? `FigMaps · ${ENGINE_VERSION} · ${options.priorLabel}`
+    : `FigMaps · ${ENGINE_VERSION}`
+  ctx.fillText(right, width - Math.round(font), y + barHeight / 2)
   ctx.restore()
 }
 

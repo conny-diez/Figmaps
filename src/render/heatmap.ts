@@ -10,6 +10,8 @@ import { drawFoldLines } from './folds'
 import { drawFooter, drawLegend } from './legend'
 
 export type HeatmapOptions = {
+  /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
+  priorLabel?: string
   /** Overlay opacity, `0..1`. */
   opacity: number
   /** Title of the legend box — differs for the above-the-fold map (B-2). */
@@ -67,6 +69,6 @@ export function renderHeatmap(
   }
 
   drawLegend(ctx, canvas.width, canvas.height, options.title ?? 'Heatmap — vorhergesagte Aufmerksamkeit')
-  drawFooter(ctx, canvas.width, canvas.height)
+  drawFooter(ctx, canvas.width, canvas.height, { priorLabel: options.priorLabel })
   return canvas
 }

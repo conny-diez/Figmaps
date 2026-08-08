@@ -47,6 +47,20 @@ export type PriorAsset = {
   count: number
 }
 
+/**
+ * Viewing durations a prior exists for, in seconds (Epic D).
+ *
+ * Measured on both UI categories: a prior matched to the viewing duration
+ * predicts that duration's attention better than the 3 s prior does
+ * (web +0.012/+0.018 CC, mobile +0.008/+0.021, all intervals clear of zero).
+ * Duration is therefore a *location* effect, not a feature-weighting one —
+ * which is why the profiles swap the prior rather than the weights.
+ */
+export const PRIOR_DURATIONS = [1, 3, 7] as const
+export type PriorDuration = (typeof PRIOR_DURATIONS)[number]
+
+export const DEFAULT_PRIOR_DURATION: PriorDuration = 3
+
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
 /** Minimal base64 decoder — no `atob`, no `Buffer`, works in every realm. */
@@ -118,8 +132,13 @@ export function priorAssetIdFor(frameWidth: number, frameHeight: number): PriorA
  */
 export const PRIOR_SELECTION_NOTE = 'automatisch nur web/mobile; desktop und poster nur bei expliziter Wahl'
 
-export function hasPriorAsset(id: PriorAssetId): boolean {
-  return PRIOR_ASSETS[id] !== undefined
+export function hasPriorAsset(id: PriorAssetId, duration: PriorDuration = DEFAULT_PRIOR_DURATION): boolean {
+  return PRIOR_ASSETS[assetKey(id, duration)] !== undefined
+}
+
+/** Key into the generated table: category and viewing duration. */
+export function assetKey(id: PriorAssetId, duration: PriorDuration): string {
+  return `${id}@${duration}s`
 }
 
 /**
@@ -132,6 +151,17 @@ export function shipsPriorAsset(): boolean {
   return Object.keys(PRIOR_ASSETS).length > 0
 }
 
+/** Categories that have a prior for every shipped duration. */
+export function availablePriorCategories(): PriorAssetId[] {
+  return PRIOR_ASSET_IDS.filter((id) => PRIOR_DURATIONS.every((duration) => hasPriorAsset(id, duration) === true))
+}
+
+/** Durations that have a prior for every available category. */
+export function availablePriorDurations(): PriorDuration[] {
+  const categories = PRIOR_ASSET_IDS.filter((id) => hasPriorAsset(id) === true)
+  return PRIOR_DURATIONS.filter((duration) => categories.every((id) => hasPriorAsset(id, duration) === true))
+}
+
 /**
  * Decodes a prior and resamples it onto the analysis grid.
  *
@@ -139,8 +169,13 @@ export function shipsPriorAsset(): boolean {
  * smooth field, and area averaging would only reproduce the coarse steps.
  * Result is normalised to `[0,1]`.
  */
-export function priorMap(id: PriorAssetId, width: number, height: number): Float32Array | null {
-  const asset = PRIOR_ASSETS[id]
+export function priorMap(
+  id: PriorAssetId,
+  width: number,
+  height: number,
+  duration: PriorDuration = DEFAULT_PRIOR_DURATION,
+): Float32Array | null {
+  const asset = PRIOR_ASSETS[assetKey(id, duration)] ?? PRIOR_ASSETS[assetKey(id, DEFAULT_PRIOR_DURATION)]
   if (!asset) return null
 
   const bytes = decodeBase64(asset.data)

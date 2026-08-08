@@ -15,6 +15,7 @@ import { analysisSourceSize } from '../engine/ops-pure'
 import type { ScalarMap } from '../engine/types'
 import { collectFindings } from '../findings'
 import type { ClickRanking, FindingPayload, MainToUi, RenderedMap, SegmentInfo, Settings } from '../messages'
+import { priorAssetIdFor, PRIOR_ASSET_LABELS } from '../engine/priors'
 import { canvasImageOps } from '../platform/imageops-canvas'
 import { canvasToPngBytes, decodePng, fitWithin } from '../render/canvas'
 import { renderClickmap } from '../render/clickmap'
@@ -114,6 +115,11 @@ export async function generateMaps(
     const opacity = settings.overlayOpacity / 100
     const foldOptions = segments.segmented ? { folds: segments.folds, frameHeight: data.height } : {}
 
+    // Two maps of the same screen can differ only in which prior was used, so
+    // the choice belongs on the image, not just in the panel.
+    const resolvedPrior = settings.uiType === 'auto' ? priorAssetIdFor(data.width, data.height) : settings.uiType
+    const priorLabel = `Ortsprior: ${PRIOR_ASSET_LABELS[resolvedPrior]}${settings.uiType === 'auto' ? ' (automatisch)' : ''}`
+
     let ranking: ClickRanking[] = []
     let candidates: ClickCandidate[] = []
 
@@ -121,7 +127,7 @@ export async function generateMaps(
       if (cancelled()) return { ...empty(), ranking, segments }
       hooks.onStep?.('Heatmap wird gezeichnet', 0.5)
       await yieldToUi()
-      const canvas = renderHeatmap(bitmap, attention, output.width, output.height, { opacity, ...foldOptions })
+      const canvas = renderHeatmap(bitmap, attention, output.width, output.height, { opacity, priorLabel, ...foldOptions })
       maps.push({ kind: 'heat', png: await canvasToPngBytes(canvas) })
 
       // B-2 — the first section on its own: the part practically every user sees.
@@ -133,6 +139,7 @@ export async function generateMaps(
         const foldHeight = Math.max(1, Math.round(foldShare * output.height))
         const foldCanvas = renderHeatmap(bitmap, analysis.aboveFold, output.width, foldHeight, {
           opacity,
+          priorLabel,
           title: 'Above the Fold — vorhergesagte Aufmerksamkeit',
           // Crop the screenshot to the first section instead of squashing the
           // whole page into a shorter canvas.
@@ -160,6 +167,7 @@ export async function generateMaps(
         ranking = toRanking(candidates)
         const canvas = renderClickmap(bitmap, candidates, output.width, output.height, {
           opacity,
+          priorLabel,
           frameWidth: data.width,
           frameHeight: data.height,
           ...foldOptions,
@@ -177,6 +185,7 @@ export async function generateMaps(
       await yieldToUi()
       const canvas = renderFocusmap(bitmap, attention, output.width, output.height, {
         threshold: settings.focusThreshold,
+        priorLabel,
         ...foldOptions,
       })
       maps.push({ kind: 'focus', png: await canvasToPngBytes(canvas) })
@@ -185,7 +194,7 @@ export async function generateMaps(
     hooks.onStep?.('Befunde werden abgeleitet', 0.95)
     const findings = collectFindings({
       attention,
-      sectionPeaks: analysis.sectionPeaks,
+      sectionSalience: analysis.sectionSalience,
       candidates,
       signals: data.signals,
       plan: analysis.plan,

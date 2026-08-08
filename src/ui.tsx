@@ -8,7 +8,7 @@ import { render } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { ENGINE_CONFIG, ENGINE_VERSION } from './engine/config'
 import { PROFILE_LABELS, shippedProfiles, type ProfileId } from './engine/params'
-import { hasPriorAsset, PRIOR_ASSET_IDS, PRIOR_ASSET_LABELS, shipsPriorAsset } from './engine/priors'
+import { availablePriorCategories, PRIOR_ASSET_LABELS, shipsPriorAsset } from './engine/priors'
 import { SEVERITY_LABELS } from './findings/types'
 import {
   DEFAULT_SETTINGS,
@@ -56,7 +56,7 @@ const PRIOR_ATTRIBUTION = shipsPriorAsset()
  * `web` or `mobile`; desktop-app UIs and posters are geometrically
  * indistinguishable from web pages, so they need to be stated.
  */
-const AVAILABLE_UI_TYPES = PRIOR_ASSET_IDS.filter(hasPriorAsset)
+const AVAILABLE_UI_TYPES = availablePriorCategories()
 
 function send(message: UiToMain): void {
   parent.postMessage({ pluginMessage: message }, '*')
