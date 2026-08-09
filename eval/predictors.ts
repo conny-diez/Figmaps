@@ -132,7 +132,7 @@ export function baselinePredictors(): Predictor[] {
     centerBias,
     uniform,
     heuristicPredictor('heuristic-v1', 'scan', {
-      label: 'FigMaps 1.0 (eingefrorene Referenz)',
+      label: 'Figmaps 1.0 (eingefrorene Referenz)',
       baseline: true,
     }),
   ]

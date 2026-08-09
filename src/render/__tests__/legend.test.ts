@@ -1,7 +1,7 @@
 /**
  * F4 — the footer must not overprint itself.
  *
- * The 1.1 footer drew the disclaimer left-aligned and „FigMaps · 1.1.0 ·
+ * The 1.1 footer drew the disclaimer left-aligned and „Figmaps · 1.1.0 ·
  * Ortsprior: …" right-aligned on the same line. On a phone-shaped export the
  * two together are wider than the image, so the second string was painted over
  * the first and the prior category became unreadable — which is why it read as
@@ -123,7 +123,7 @@ describe('drawFooter', () => {
   it('wraps instead of clipping when even the smallest type does not fit', () => {
     const { ctx, drawn } = recorder()
     drawFooter(ctx, 400, 900, LABELS)
-    const details = drawn.filter((entry) => entry.text !== DISCLAIMER_TEXT && !entry.text.startsWith('FigMaps'))
+    const details = drawn.filter((entry) => entry.text !== DISCLAIMER_TEXT && !entry.text.startsWith('Figmaps'))
     expect(details.length).toBeGreaterThan(1)
     expect(details.map((entry) => entry.text).join(' ')).toContain('Betrachtungsdauer')
   })

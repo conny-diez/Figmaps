@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-<title>FigMaps</title>
+<title>Figmaps</title>
 <defs><clipPath id="inner"><rect x="28.5" y="26.5" width="71" height="57" rx="7"/></clipPath></defs>
 <g transform="translate(0,7)">
 <g clip-path="url(#inner)"><rect x="28.5" y="26.5" width="71" height="57" rx="7" fill="#FFF0A0"/><rect x="28.5" y="26.5" width="71" height="19" fill="#FFDD00"/><rect x="28.5" y="45.5" width="71" height="19" fill="#FFB300"/><rect x="28.5" y="64.5" width="71" height="19" fill="#FF8A00"/></g>

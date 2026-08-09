@@ -131,7 +131,7 @@ export function buildCrossvalReport(result: CrossvalResult, generatedAt: string)
 
   for (const [title, comparisons] of [
     ['hybrid-v1 gegen Mean Map', result.hybridVsMeanMap],
-    ['hybrid-v1 gegen FigMaps 1.0', result.hybridVsHeuristic],
+    ['hybrid-v1 gegen Figmaps 1.0', result.hybridVsHeuristic],
   ] as const) {
     lines.push(`#### ${title}`)
     lines.push('')

@@ -231,7 +231,7 @@ export function drawFooter(
   ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
   ctx.font = `400 ${Math.round(font * 0.85)}px ${FONT_STACK}`
   ctx.textAlign = 'right'
-  const version = `FigMaps · ${ENGINE_VERSION}`
+  const version = `Figmaps · ${ENGINE_VERSION}`
   if (disclaimerWidth + ctx.measureText(version).width + margin <= available) {
     ctx.fillText(version, width - margin, firstLineY)
   } else if (disclaimerWidth + ctx.measureText(ENGINE_VERSION).width + margin <= available) {

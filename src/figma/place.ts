@@ -90,7 +90,7 @@ export async function placeMaps(
   const font = await loadTitleFont()
 
   const wrapper = figma.createFrame()
-  wrapper.name = `[FigMaps] ${node.name} — ${timestamp(new Date())}`
+  wrapper.name = `[Figmaps] ${node.name} — ${timestamp(new Date())}`
   wrapper.layoutMode = 'HORIZONTAL'
   wrapper.primaryAxisSizingMode = 'AUTO'
   wrapper.counterAxisSizingMode = 'AUTO'

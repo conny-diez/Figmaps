@@ -54,7 +54,7 @@ export type EngineId = 'hybrid-v1' | 'mean-map' | 'heuristic-v1' | 'center-bias'
 export const ENGINE_LABELS: Record<EngineId, string> = {
   'hybrid-v1': 'hybrid-v1',
   'mean-map': 'Mean Map',
-  'heuristic-v1': 'FigMaps 1.0',
+  'heuristic-v1': 'Figmaps 1.0',
   'center-bias': 'Center-Bias',
   uniform: 'Uniform',
 }

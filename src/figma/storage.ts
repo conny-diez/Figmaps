@@ -1,12 +1,20 @@
 /**
  * FR-10 — settings persistence via `figma.clientStorage`. Main thread only.
  */
-import { DEFAULT_SETTINGS, type MapKind, type Settings } from '../messages'
+import {
+  DEFAULT_PANEL_SIZE,
+  DEFAULT_SETTINGS,
+  PANEL_SIZE,
+  type MapKind,
+  type PanelSize,
+  type Settings,
+} from '../messages'
 import { ENGINE_CONFIG } from '../engine/config'
 import { DEFAULT_PROFILE, shippedProfiles } from '../engine/params'
 import { hasPriorAsset, PRIOR_ASSET_IDS } from '../engine/priors'
 
 const STORAGE_KEY = 'figmaps.settings.v1'
+const PANEL_SIZE_KEY = 'figmaps.panelSize.v1'
 
 function clamp(value: number, min: number, max: number, fallback: number): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
@@ -36,7 +44,6 @@ export function normaliseSettings(raw: unknown): Settings {
     focusThreshold: Math.round(
       clamp(input.focusThreshold as number, focus.minPercentile, focus.maxPercentile, DEFAULT_SETTINGS.focusThreshold),
     ),
-    exportScale: input.exportScale === 1 ? 1 : 2,
     profile,
     // A stored UI type whose prior is not in this build falls back to `auto`.
     uiType:
@@ -61,4 +68,38 @@ export async function loadSettings(): Promise<Settings> {
 
 export async function saveSettings(settings: Settings): Promise<void> {
   await figma.clientStorage.setAsync(STORAGE_KEY, normaliseSettings(settings))
+}
+
+// ---------------------------------------------------------------------------
+// Panel geometry
+// ---------------------------------------------------------------------------
+
+/**
+ * The single authority over what the panel may be sized to. The iframe clamps
+ * too, for a cursor that stops where the panel stops, but it is untrusted: a
+ * `resize` to a negative height throws in the Figma API and would take the
+ * plugin down with it.
+ */
+export function normalisePanelSize(raw: unknown): PanelSize {
+  const input = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<PanelSize>
+  return {
+    width: Math.round(
+      clamp(input.width as number, PANEL_SIZE.minWidth, PANEL_SIZE.maxWidth, DEFAULT_PANEL_SIZE.width),
+    ),
+    height: Math.round(
+      clamp(input.height as number, PANEL_SIZE.minHeight, PANEL_SIZE.maxHeight, DEFAULT_PANEL_SIZE.height),
+    ),
+  }
+}
+
+export async function loadPanelSize(): Promise<PanelSize> {
+  try {
+    return normalisePanelSize(await figma.clientStorage.getAsync(PANEL_SIZE_KEY))
+  } catch {
+    return { ...DEFAULT_PANEL_SIZE }
+  }
+}
+
+export async function savePanelSize(size: PanelSize): Promise<void> {
+  await figma.clientStorage.setAsync(PANEL_SIZE_KEY, normalisePanelSize(size))
 }

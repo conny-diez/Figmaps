@@ -53,7 +53,7 @@ export function buildDiagnoseReport(result: DiagnoseResult, generatedAt: string,
   lines.push('')
   lines.push(`| | ${METRIC_IDS.map((id) => METRIC_LABELS[id]).join(' | ')} |`)
   lines.push(`|---|${METRIC_IDS.map(() => '---:').join('|')}|`)
-  lines.push(`| FigMaps 1.0 | ${cells(engineV1)} |`)
+  lines.push(`| Figmaps 1.0 | ${cells(engineV1)} |`)
   lines.push(`| Mean Map (leave-one-out) | ${cells(meanMapAlone)} |`)
   lines.push('')
 
@@ -78,7 +78,7 @@ export function buildDiagnoseReport(result: DiagnoseResult, generatedAt: string,
   const closed = (best.mean.cc - engineV1.cc) / (meanMapAlone.cc - engineV1.cc)
   lines.push(
     `Bester Punkt der Kurve: Prior-Gewicht **${best.weight.toFixed(1)}** mit CC ${fmt(best.mean.cc)} ` +
-      `(FigMaps 1.0: ${fmt(engineV1.cc)}, Mean Map: ${fmt(meanMapAlone.cc)}). ` +
+      `(Figmaps 1.0: ${fmt(engineV1.cc)}, Mean Map: ${fmt(meanMapAlone.cc)}). ` +
       `Das schließt **${Math.round(closed * 100)} %** der Lücke zur Mean Map.`,
   )
   lines.push('')
@@ -105,7 +105,7 @@ export function buildDiagnoseReport(result: DiagnoseResult, generatedAt: string,
 
   for (const [title, sweep, what] of [
     ['Nur Pixel-Features (Luminanz, Farbe, Kanten)', result.hybridPixel, 'Pixel-Features'],
-    ['Vollständige FigMaps-1.0-Vorhersage', result.hybridEngine, 'FigMaps 1.0'],
+    ['Vollständige Figmaps-1.0-Vorhersage', result.hybridEngine, 'Figmaps 1.0'],
   ] as const) {
     lines.push(`### ${title}`)
     lines.push('')
@@ -212,7 +212,7 @@ export function buildDiagnoseReport(result: DiagnoseResult, generatedAt: string,
   lines.push('')
 
   // --- Winners -------------------------------------------------------------
-  lines.push('## Die Screens, auf denen FigMaps die Mean Map schlägt')
+  lines.push('## Die Screens, auf denen Figmaps die Mean Map schlägt')
   lines.push('')
   lines.push(
     `**${result.winCount} von ${result.sampleCount}** Bildern (${Math.round((result.winCount / result.sampleCount) * 100)} %), ` +
@@ -238,7 +238,7 @@ export function buildDiagnoseReport(result: DiagnoseResult, generatedAt: string,
     lines.push('')
   }
 
-  lines.push(`| # | Bild | CC FigMaps | CC Mean Map | Vorsprung |`)
+  lines.push(`| # | Bild | CC Figmaps | CC Mean Map | Vorsprung |`)
   lines.push('|---:|---|---:|---:|---:|')
   result.winners.slice(0, 20).forEach((entry, index) => {
     lines.push(

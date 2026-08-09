@@ -15,6 +15,7 @@ import {
   isMainToUi,
   MAP_DESCRIPTIONS,
   MAP_LABELS,
+  PANEL_SIZE,
   SELECTABLE_MAP_KINDS,
   type ClickRanking,
   type FindingPayload,
@@ -157,6 +158,84 @@ function Dropdown({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** Arrow-key step of the resize grip, in px. */
+const RESIZE_STEP = 24
+
+function clampSize(width: number, height: number): { width: number; height: number } {
+  return {
+    width: Math.round(Math.min(PANEL_SIZE.maxWidth, Math.max(PANEL_SIZE.minWidth, width))),
+    height: Math.round(Math.min(PANEL_SIZE.maxHeight, Math.max(PANEL_SIZE.minHeight, height))),
+  }
+}
+
+/**
+ * Corner grip that resizes the plugin window.
+ *
+ * Figma owns the iframe's size, so the panel's current size is exactly
+ * `window.innerWidth/innerHeight`. The grab offset is taken once on pointerdown
+ * — without it the panel would jump so that its corner lands under the cursor.
+ * The main thread clamps again; this clamp only exists so the panel stops
+ * growing under the cursor at the limits instead of silently ignoring the drag.
+ */
+function Resizer(): preact.JSX.Element {
+  const grab = useRef<{ dx: number; dy: number } | null>(null)
+
+  const requestSize = useCallback((width: number, height: number) => {
+    send({ type: 'RESIZE', size: clampSize(width, height) })
+  }, [])
+
+  return (
+    <div
+      class="resizer"
+      role="separator"
+      aria-label="Panelgröße ändern"
+      tabIndex={0}
+      title="Ziehen, um das Panel zu skalieren"
+      onPointerDown={(event: PointerEvent) => {
+        if (event.button !== 0) return
+        grab.current = {
+          dx: window.innerWidth - event.clientX,
+          dy: window.innerHeight - event.clientY,
+        }
+        ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+        event.preventDefault()
+      }}
+      onPointerMove={(event: PointerEvent) => {
+        const offset = grab.current
+        if (!offset) return
+        // The pointer can leave the iframe mid-drag (the panel is a separate
+        // document), and the `pointerup` then never arrives here. Without this
+        // check, moving back over the grip would resume the drag with no button
+        // held down.
+        if (event.buttons === 0) {
+          grab.current = null
+          return
+        }
+        requestSize(event.clientX + offset.dx, event.clientY + offset.dy)
+      }}
+      onPointerUp={(event: PointerEvent) => {
+        grab.current = null
+        ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
+      }}
+      onPointerCancel={() => {
+        grab.current = null
+      }}
+      onKeyDown={(event: KeyboardEvent) => {
+        const dx = event.key === 'ArrowRight' ? RESIZE_STEP : event.key === 'ArrowLeft' ? -RESIZE_STEP : 0
+        const dy = event.key === 'ArrowDown' ? RESIZE_STEP : event.key === 'ArrowUp' ? -RESIZE_STEP : 0
+        if (dx === 0 && dy === 0) return
+        event.preventDefault()
+        requestSize(window.innerWidth + dx, window.innerHeight + dy)
+      }}
+      onDblClick={() => requestSize(PANEL_SIZE.defaultWidth, PANEL_SIZE.defaultHeight)}
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+        <path d="M11 1 1 11M11 5.5 5.5 11M11 10l-1 1" stroke="currentColor" stroke-width="1.25" fill="none" />
+      </svg>
     </div>
   )
 }
@@ -328,7 +407,7 @@ function App(): preact.JSX.Element {
     <div class="app">
       <header class="app__header">
         <Logo size={18} />
-        <h1 class="app__title">FigMaps</h1>
+        <h1 class="app__title">Figmaps</h1>
         <p class="app__subtitle">{ENGINE_VERSION}</p>
       </header>
 
@@ -521,27 +600,6 @@ function App(): preact.JSX.Element {
               )}
             </p>
           </div>
-
-          <div class="control-row">
-            <span class="slider__name">Export-Skalierung</span>
-            <div
-              class="segmented segmented--sm"
-              style={{ '--seg-count': '2', '--seg-index': settings.exportScale === 1 ? '0' : '1' }}
-            >
-              <span class="segmented__thumb" aria-hidden="true" />
-              {([1, 2] as const).map((scale) => (
-                <button
-                  key={scale}
-                  type="button"
-                  aria-pressed={settings.exportScale === scale}
-                  disabled={phase === 'working'}
-                  onClick={() => patchSettings({ exportScale: scale })}
-                >
-                  {scale}×
-                </button>
-              ))}
-            </div>
-          </div>
         </section>
 
         <section class="section section--cta">
@@ -682,6 +740,8 @@ function App(): preact.JSX.Element {
           )}
         </div>
       </footer>
+
+      <Resizer />
     </div>
   )
 }

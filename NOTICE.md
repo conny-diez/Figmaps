@@ -2,7 +2,7 @@
 
 ## Nicht gemessene Annahmen
 
-Alles, was FigMaps über Aufmerksamkeit behauptet, ist entweder an UEyes
+Alles, was Figmaps über Aufmerksamkeit behauptet, ist entweder an UEyes
 gemessen oder steht hier. Diese Liste ist kurz zu halten.
 
 ### Scrolltiefen-Dämpfung (`ENGINE_CONFIG.viewport.sectionAttenuation`)
@@ -54,7 +54,7 @@ Bildern fehlerfrei.
 
 ## UEyes — Ortsprioren in `src/engine/priors/generated.ts`
 
-FigMaps liefert zwölf kleine Graustufen-Maps mit (vier UI-Kategorien × drei
+Figmaps liefert zwölf kleine Graustufen-Maps mit (vier UI-Kategorien × drei
 Betrachtungsdauern, je 1,3 kB), die als **Ortsprior** der Konfiguration
 `hybrid-v1` dienen. Sie sind ein **abgeleitetes Werk** des Datensatzes UEyes.
 
