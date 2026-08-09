@@ -537,6 +537,37 @@ export const ENGINE_CONFIG = {
     /** Never show more than this many findings (C-1). */
     maxShown: 6,
     /**
+     * Unterhalb dieses Frame-Mittelwerts des Bildanalyse-Anteils sagt das Panel
+     * dazu, dass die Karte überwiegend die Positionsannahme zeigt.
+     *
+     * **Ein Hinweis, keine Änderung an der Karte.** Die Unterscheidung
+     * „inhaltsarm" ist pro Pixel nachweislich unmöglich — eine Schwelle auf dem
+     * Bildanteil löscht auf echten Screens 1,3 bis 3,8 % der sichtbaren Fläche
+     * (`eval/band-gate.ts`). Pro **Frame** ist sie möglich, weil die
+     * Perzentil-Normierung auf einer strukturlosen Fläche keinen Wertebereich
+     * findet und exakt null liefert.
+     *
+     * **Gemessen, nicht geschätzt** (`npm run band-gate`). Die beiden
+     * Populationen liegen zwei Größenordnungen auseinander:
+     *
+     *   grauer 1440 x 4000-Testframe, ohne Inhalt   0,000000
+     *   niedrigster der 40 Gate-Bilder              0,228585
+     *   Median der Gate-Bilder                      0,4516
+     *
+     * Dazwischen liegt in dieser Stichprobe **nichts**. 0,02 ist eine
+     * Größenordnung unter dem kleinsten beobachteten echten Wert und liegt
+     * damit sicher in der Lücke; auf keinem der 40 Gate-Bilder erscheint der
+     * Hinweis. Der Lauf prüft diese Bedingung bei jedem Aufruf mit.
+     *
+     * Was das nicht heißt: dass zwischen 0,02 und 0,23 nie ein echter Frame
+     * liegt. 40 Bilder zeigen keine Population. Die Wahl ist deshalb bewusst
+     * konservativ — ein *dünn* gefüllter Frame löst den Hinweis **nicht** aus,
+     * obwohl er ihn vielleicht verdiente. Das ist die richtige Richtung für
+     * einen Fehler: ein fehlender Hinweis kostet nichts, ein falscher erzählt
+     * dem Nutzer, seine Datei sei leer.
+     */
+    lowContentLevel: 0.02,
+    /**
      * `competition`: Anteil des Maximums, den eine Region erreichen muss, um
      * als zweiter Hotspot zu zählen.
      *

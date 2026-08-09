@@ -218,6 +218,21 @@ export async function generateMaps(
       }
     }
 
+    // Hinweis auf einen Frame ohne eigene Struktur.
+    //
+    // Steht bei den Warnungen und **nicht** bei den Befunden: ein Befund sagt
+    // etwas über den Entwurf, dieser Satz sagt etwas über die Karte. Er ändert
+    // an der Karte nichts — die Unterscheidung „inhaltsarm" ist pro Pixel
+    // nachweislich unmöglich (siehe `eval/band-gate.ts`), pro Frame ist sie es
+    // nicht. Damit steht der Satz genau dort, wo er hingehört: neben dem Bild,
+    // nicht im Bild.
+    if (Number.isFinite(analysis.contentLevel) && analysis.contentLevel < ENGINE_CONFIG.findings.lowContentLevel) {
+      warnings.push(
+        'Dieser Frame enthält kaum Inhalt — die Karte zeigt überwiegend die Positionsannahme. ' +
+          'Die wiederkehrenden Bänder sind der Ortsprior je Abschnitt, keine Aussage über den Entwurf.',
+      )
+    }
+
     hooks.onStep?.('Befunde werden abgeleitet', 0.95)
     // Same function the end-to-end tests exercise — see `findings/derive.ts`.
     const findings = deriveFindings({

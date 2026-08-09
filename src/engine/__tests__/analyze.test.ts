@@ -127,6 +127,22 @@ describe('analyzeFrame', () => {
     expect(result).toBeNull()
   })
 
+  it('meldet contentLevel 0 auf einer strukturlosen Fläche und deutlich mehr mit Inhalt', async () => {
+    // Die Größe, auf der der Hinweis „kaum Inhalt" beruht. Sie geht in keine
+    // Karte ein — geprüft wird nur, dass sie die beiden Fälle trennt, und zwar
+    // mit Abstand: die Schwelle liegt eine Größenordnung unter dem kleinsten
+    // gemessenen echten Wert (0,229 auf den Gate-Bildern, siehe `config.ts`).
+    const empty = solidImage(360, 640, [180, 180, 180])
+    const emptyResult = await analyzeFrame(engine, ops, { source: empty, signals: [], frameWidth: 720, frameHeight: 1280 })
+    expect(emptyResult!.contentLevel).toBe(0)
+    expect(emptyResult!.contentLevel).toBeLessThan(ENGINE_CONFIG.findings.lowContentLevel)
+
+    const filled = solidImage(360, 640, [246, 247, 249])
+    for (let y = 40; y < 600; y += 80) fillRect(filled, { x: 30, y, width: 300, height: 40 }, [20, 20, 24])
+    const filledResult = await analyzeFrame(engine, ops, { source: filled, signals: [], frameWidth: 720, frameHeight: 1280 })
+    expect(filledResult!.contentLevel).toBeGreaterThan(ENGINE_CONFIG.findings.lowContentLevel * 5)
+  })
+
   /**
    * The prior is still rebuilt per section, so a featureless page still shows
    * one local maximum per section. What the scroll-depth attenuation changes is

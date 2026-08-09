@@ -2273,12 +2273,89 @@ wird von einer Seite mit Hero und viel Inhalt wieder gekippt.
 Erreichbarkeitstest bleibt (beide Richtungen), Zahlen stehen im Kommentar,
 Grund steht hier.
 
+### Hinweis auf inhaltsarme Frames
+
+```bash
+npm run band-gate      # prüft die Schwelle bei jedem Lauf mit
+```
+
+Aus dem verworfenen Renderer-Vorschlag folgt eine, die trägt: **die
+Unterscheidung, die pro Pixel unmöglich ist, ist pro Frame möglich.** Der
+Bildanalyse-Anteil kann nicht sagen, ob *diese Stelle* leer ist — Weißraum auf
+einem vollen Screen sieht aus wie Fläche auf einem leeren. Über den ganzen
+Frame gemittelt kann er es sehr wohl, weil die Perzentil-Normierung auf einer
+strukturlosen Fläche gar keinen Wertebereich findet und exakt null liefert.
+
+| | Frame-Mittelwert des Bildanteils |
+|---|---:|
+| grauer 1440 × 4000-Testframe, ohne Inhalt | **0,000000** |
+| niedrigster der 40 Gate-Bilder | **0,228585** |
+| Median der 40 Gate-Bilder | 0,4516 |
+
+Zwei Größenordnungen Abstand, dazwischen in dieser Stichprobe nichts. Die
+Schwelle liegt bei **0,02**, eine Größenordnung unter dem kleinsten echten
+Wert; auf keinem der 40 Gate-Bilder erscheint der Hinweis, und `npm run
+band-gate` prüft das bei jedem Lauf nach.
+
+Statt der Karte ändert sich der Text daneben:
+
+> Dieser Frame enthält kaum Inhalt — die Karte zeigt überwiegend die
+> Positionsannahme. Die wiederkehrenden Bänder sind der Ortsprior je Abschnitt,
+> keine Aussage über den Entwurf.
+
+Er steht bei den **Warnungen**, nicht bei den Befunden: ein Befund sagt etwas
+über den Entwurf, dieser Satz sagt etwas über die Karte.
+
+**Was die Schwelle nicht leistet.** 40 Bilder zeigen keine Population — dass
+zwischen 0,02 und 0,23 nie ein echter Frame liegt, ist nicht bewiesen. Die Wahl
+ist deshalb bewusst konservativ: ein *dünn* gefüllter Frame löst den Hinweis
+nicht aus, obwohl er ihn vielleicht verdiente. Das ist die richtige Richtung
+für einen Fehler — ein fehlender Hinweis kostet nichts, ein falscher erzählt dem
+Nutzer, seine Datei sei leer.
+
 ### Bekannte Einschränkungen — bewusst nicht in diesem Schritt behoben
 
-Zwei Befunde aus dem Audit bleiben stehen. Beide sind belegt, beide sind
-**keine offenen Bugs ohne Notiz**, und beide werden hier absichtlich nicht
-angefasst: eine Korrektur ohne neue Kalibrierung wäre derselbe Fehler, um den
-es in diesem Abschnitt geht.
+Drei Befunde bleiben stehen. Alle drei sind belegt, alle drei sind **keine
+offenen Bugs ohne Notiz**, und alle drei werden absichtlich nicht angefasst:
+eine Korrektur ohne neue Kalibrierung wäre derselbe Fehler, um den es in diesem
+Abschnitt geht.
+
+**Der erste ist ein sichtbarer Defekt, und er ist der einzige seiner Art.** Die
+anderen beiden sind Regeln, die zu selten oder falsch skaliert feuern — das
+merkt niemand, der das Plugin benutzt. Diesen hier sieht man.
+
+#### Abschnittsbänder auf inhaltsarmen Flächen (sichtbar, ausgeliefert)
+
+Auf einem Frame ohne Inhalt zeichnet die Karte pro Abschnitt ein Band — den
+Ortsprior, der sich je Abschnitt wiederholt. Gemessen auf dem grauen
+1440 × 4000-Testframe, an dem die Scroll-Dämpfung 1.1 eingeführt wurde:
+
+| Band | y | Wert | Deckkraft heute | Deckkraft vor 1.2 A8 |
+|---|---:|---:|---:|---:|
+| 1 | 180 px | 0,4048 | 100 % | 100 % |
+| 2 | 900 px | 0,2024 | 100 % | 100 % |
+| 3 | 1620 px | 0,1012 | **100 %** | 18 % |
+| 4 | 2340 px | 0,0506 | **~51 %** | 0 % |
+| 5 | 3060 px | 0,0486 | **~48 %** | 0 % |
+
+Vor 1.2 waren die Bänder 4 und 5 unsichtbar und Band 3 kaum zu sehen — nicht
+weil die Dämpfung sie wegbekommen hätte, sondern weil die Transparenzschwelle
+des Renderers zufällig darüber lag. Mit der auf die neue Verteilung
+nachgezogenen Schwelle (A8) liegt sie darunter, und das Artefakt ist zurück.
+
+**Warum es bleibt.** Die Dämpfung steiler zu stellen wäre die einzige direkte
+Abhilfe, und sie ist eine ausdrücklich nicht gemessene Annahme
+([`NOTICE.md`](NOTICE.md)) — sie zu verstellen, damit ein Bild ruhiger aussieht,
+ist dieselbe Bewegung, die dieses Projekt sich bei den Regeln verboten hat. Die
+naheliegende Alternative, im Renderer unterhalb eines sehr kleinen
+Bildanalyse-Anteils nicht zu zeichnen, ist **gemessen und verworfen**: sie
+löscht auf echten Screens 1,3 bis 3,8 % der sichtbaren Fläche, siehe
+[A8](#b-wurde-gemessen-bevor-sie-gebaut-wurde--und-ist-damit-erledigt).
+
+Was stattdessen passiert: das Panel **sagt es**, statt die Karte zu ändern —
+siehe [Hinweis auf inhaltsarme Frames](#hinweis-auf-inhaltsarme-frames).
+
+#### Die beiden übrigen
 
 | Was | Beleg | warum jetzt nicht |
 |---|---|---|

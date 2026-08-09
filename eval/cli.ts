@@ -48,6 +48,7 @@ import { measureCutoff } from './cutoff'
 import { buildGateFixtures } from './gate-fixtures'
 import { measureBandGate, type ThresholdCandidate } from './band-gate'
 import { measureColdFold } from './cold-fold'
+import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -1099,6 +1100,7 @@ async function runBandGate(args: Args): Promise<number> {
 
   console.log('Inhaltsschwelle im Renderer — verändert sie die Ausgabe auf echten Screens?')
   console.log('Das ist eine Falsifikation: wenn ja, ist der Vorschlag erledigt.')
+  const allContentLevels: number[] = []
   for (const set of [{ setName: 'gate-web', priorAsset: 'web' as const }, { setName: 'gate-mobile', priorAsset: 'mobile' as const }]) {
     const result = await measureBandGate({ ...set, candidates })
     console.log('')
@@ -1114,7 +1116,33 @@ async function runBandGate(args: Args): Promise<number> {
           `${String(entry.imagesAffected).padStart(7)}/${result.imageCount}`,
       )
     }
+    allContentLevels.push(...result.contentLevels)
+    console.log(
+      `  Frame-Mittelwert des Bildanteils: min ${Math.min(...result.contentLevels).toFixed(4)}, ` +
+        `p25 ${result.contentLevels[Math.floor(result.contentLevels.length * 0.25)].toFixed(4)}, ` +
+        `Median ${result.contentLevels[Math.floor(result.contentLevels.length * 0.5)].toFixed(4)}`,
+    )
   }
+
+  // Der Gegenpol: ein Frame ohne jeden Inhalt. Ohne diesen Wert sagt die
+  // Verteilung oben nichts darüber, ob eine Schwelle überhaupt trennt.
+  const grey = solidImage(720, 2000, [180, 180, 180])
+  const greyAnalysis = await analyzeFrame(new HeuristicAttentionEngine(), nodeImageOps, {
+    source: grey,
+    signals: [],
+    frameWidth: 1440,
+    frameHeight: 4000,
+  })
+  console.log('')
+  console.log(`Grauer Testframe (1440 x 4000, ohne Inhalt): ${greyAnalysis?.contentLevel.toFixed(6)}`)
+  console.log(`Niedrigster Wert unter den 40 Gate-Bildern:  ${Math.min(...allContentLevels).toFixed(6)}`)
+  console.log(`Ausgelieferte Schwelle:                      ${ENGINE_CONFIG.findings.lowContentLevel}`)
+  const wouldFire = allContentLevels.filter((value) => value < ENGINE_CONFIG.findings.lowContentLevel).length
+  console.log(
+    wouldFire === 0
+      ? `Der Hinweis erscheint auf keinem der ${allContentLevels.length} Gate-Bilder. Bedingung erfüllt.`
+      : `ACHTUNG: der Hinweis erschiene auf ${wouldFire} der ${allContentLevels.length} Gate-Bilder.`,
+  )
   return 0
 }
 

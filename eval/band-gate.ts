@@ -57,6 +57,14 @@ export type BandGateResult = {
   }>
   /** Verteilung des Bildanteils — zeigt, wo eine Schwelle überhaupt greifen kann. */
   imageTermQuantiles: number[]
+  /**
+   * Der **Frame**-Mittelwert des Bildanteils, je Bild.
+   *
+   * Die Größe, die pro Frame funktioniert, wo die Schwelle pro Pixel gescheitert
+   * ist. Für den Hinweis auf inhaltsarme Frames braucht es den Abstand zwischen
+   * diesen Werten und dem, was ein leerer Frame liefert.
+   */
+  contentLevels: number[]
 }
 
 export type BandGateOptions = {
@@ -84,6 +92,7 @@ export async function measureBandGate(options: BandGateOptions): Promise<BandGat
   let visiblePixels = 0
   let imageCount = 0
   const imageTermSamples: number[] = []
+  const contentLevels: number[] = []
 
   for (const sample of iterateSamples(options.setName, 'quick', { duration })) {
     const analysis = await analyzeFrame(engine, nodeImageOps, {
@@ -135,6 +144,7 @@ export async function measureBandGate(options: BandGateOptions): Promise<BandGat
     }
     for (let c = 0; c < touched.length; c++) if (touched[c]) stats[c].imagesAffected++
 
+    contentLevels.push(analysis.contentLevel)
     imageCount++
     options.onProgress?.(imageCount)
   }
@@ -154,5 +164,6 @@ export async function measureBandGate(options: BandGateOptions): Promise<BandGat
       imagesAffected: stats[c].imagesAffected,
     })),
     imageTermQuantiles: [0.01, 0.05, 0.1, 0.25, 0.5].map(quantile),
+    contentLevels: contentLevels.sort((a, b) => a - b),
   }
 }
