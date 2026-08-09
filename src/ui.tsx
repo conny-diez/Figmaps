@@ -13,6 +13,7 @@ import { SEVERITY_LABELS } from './findings/types'
 import {
   DEFAULT_SETTINGS,
   isMainToUi,
+  MAP_DESCRIPTIONS,
   MAP_LABELS,
   SELECTABLE_MAP_KINDS,
   type ClickRanking,
@@ -431,7 +432,10 @@ function App(): preact.JSX.Element {
                 <span class="maptoggle__track" aria-hidden="true">
                   <span class="maptoggle__knob" />
                 </span>
-                <span class="maptoggle__label">{MAP_LABELS[kind]}</span>
+                <span class="maptoggle__text">
+                  <span class="maptoggle__label">{MAP_LABELS[kind]}</span>
+                  <span class="maptoggle__desc">{MAP_DESCRIPTIONS[kind]}</span>
+                </span>
                 <span class={`maptoggle__swatch maptoggle__swatch--${kind}`} aria-hidden="true" />
               </label>
             ))}

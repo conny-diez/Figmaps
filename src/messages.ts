@@ -34,6 +34,17 @@ export const MAP_LABELS: Record<MapKind, string> = {
 }
 
 /**
+ * One line per map, shown under its label in the panel. Kept short enough to
+ * fit on a single line at 320 px panel width — the row truncates rather than
+ * wraps.
+ */
+export const MAP_DESCRIPTIONS: Record<Exclude<MapKind, 'fold'>, string> = {
+  heat: 'Wohin die Aufmerksamkeit zuerst wandert',
+  click: 'Die wahrscheinlichsten Klickziele',
+  focus: 'Was scharf bleibt, wenn der Rest abfällt',
+}
+
+/**
  * Structural signal extracted per visible descendant node (FR-3).
  * All geometry is expressed in *root frame pixels* (unscaled), with the
  * root frame's top-left corner as origin.
