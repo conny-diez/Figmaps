@@ -48,7 +48,7 @@ C Contrastmap). **Fertig ist A.**
 | **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
 | **Schärfe: Blur 0,035 + `blendGamma` 1,6** | Der A1-Befund ist zu gut einem Drittel behoben, bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Nicht 2,0, obwohl der Mittelwert dafür spräche: dieser Wert lässt die Gruppe stehen, für die das Plugin existiert. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis) und [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften). |
 | **Transparenzschwelle nachgezogen** | 0,08 → 0,02. Dieselbe Schwelle hätte auf der neuen Karte 37,5 % statt 18,0 % verdeckt — ein Gutteil von „das Overlay ist leerer" war der Renderer, nicht die Vorhersage. |
-| **CI zum ersten Mal grün** | Sechs von sechs Läufen waren an `npm ci` gescheitert. Damit hat auch das Eval-Gate aus A-7 nie ausgeführt — und beim ersten echten Lauf kam heraus, dass es die **eingefrorene** 1.0-Referenz bewacht hätte statt der ausgelieferten Engine. |
+| **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. |
 | **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
 | **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
 | **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.1" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
@@ -1266,14 +1266,20 @@ weniger ankommt. Gekostet wird das mit Konzentration — 0,188/0,207 statt
 0,221/0,253 — und damit schließt sich die Lücke zur Ground Truth zu **gut einem
 Drittel** statt zur Hälfte: Faktor 3,6 → 2,6 (Webpage), 2,8 → 1,9 (Mobile).
 
-**Ein Nebenbefund, der eine gängige Beschreibung kippt.** Die Gewinner-Gruppe
-wird gern „hero-dominiert" genannt. Die Konzentration ihrer **Ground Truth**
-stützt das nicht: 0,479 gegen 0,488 (Webpage) und 0,390 gegen 0,362 (Mobile) —
-praktisch gleich, auf Webpage sogar in die falsche Richtung. Die beiden Gruppen
-unterscheiden sich nachweislich in der Wirkung dieses Parameters, aber **nicht**
-darin, wie scharf ihre gemessene Aufmerksamkeit ist. Woran sie sich
-unterscheiden, ist offen — und die bisherige Erklärung ist damit hinfällig,
-nicht bestätigt.
+**Woran sich die Gruppen wirklich unterscheiden.** „Hero-dominiert" ist ein
+Etikett aus der visuellen Lesung des Kontaktbogens, nicht aus einer Messung —
+siehe [Wo Figmaps die Mean Map schlägt](#wo-figmaps-die-mean-map-schlägt).
+Gemessen trennt sie **die vertikale Lage der Aufmerksamkeit**: Schwerpunkt y
+0,382 gegen 0,296, Masse im oberen Drittel 45,1 % gegen 62,7 %. Die
+Konzentration ihrer Ground Truth trennt sie **nicht** (0,479 gegen 0,488 hier
+nachgemessen, 47,3 % gegen 48,5 % in der Diagnose vom 8.8.), das
+Seitenverhältnis auch nicht.
+
+Das passt zum Befund oben, statt ihm zu widersprechen: der Ortsprior ist
+oben-lastig, und `blendGamma` zieht die Karte in Richtung ihrer stärksten
+Stellen — also nach oben. Genau dort steht bei der Gewinner-Gruppe **nicht**,
+worauf geschaut wird. Deshalb kostet ein zu großes Gamma sie ihren Gewinn,
+während es der anderen Gruppe hilft.
 
 γ unter 1 ist nebenbei eindeutig erledigt: 0,3 kostet rund 0,05 CC in jeder
 Gruppe und Kategorie. Der 1.1 wegen KL ausgebaute Wert war ein solcher.
@@ -1417,6 +1423,49 @@ Bei der dunklen Kachel war es umgekehrt: 100 % gegen 87 % Deckkraft, der
 Renderer trägt wenig bei. Ihr Rückgang von 0,591 auf 0,469 ist echt — und
 kleiner als die 0,388, die `blendGamma` 2,0 ergeben hätte.
 
+### Die Streifen aus 1.1 sind zurück — gemessen
+
+Auf einem inhaltsfreien grauen 1440 × 4000-Frame, dem Testbild, an dem die
+Scroll-Dämpfung 1.1 eingeführt wurde:
+
+![Abschnittsbänder auf einem leeren Frame](assets/messungen/a8-baender-grauer-frame.png)
+
+| Band | y | Wert | Deckkraft neu (0,02) | Deckkraft alt (0,08) |
+|---|---:|---:|---:|---:|
+| 1 | 180 px | 0,4048 | 100 % | 100 % |
+| 2 | 900 px | 0,2024 | 100 % | 100 % |
+| 3 | 1620 px | 0,1012 | 100 % | **18 %** |
+| 4 | 2340 px | 0,0506 | **51 %** | **0 %** |
+| 5 | 3060 px | 0,0486 | **48 %** | **0 %** |
+
+Täler dazwischen: 0,019 / 0,009 / 0,005 / 0,002 / 0,000 — die Bänder sind also
+sauber getrennt und einzeln sichtbar. **Ja, das Artefakt ist zurück**, und zwar
+deutlicher, als die eine Zahl 0,0506 vermuten ließ: nicht nur Band 4, auch Band
+3 springt von 18 % auf volle Deckkraft.
+
+**Die Dämpfung wird dafür nicht angefasst.** Sie ist eine ausdrücklich nicht
+gemessene Annahme (`config.ts`), und sie zu verstellen, damit ein Bild ruhiger
+aussieht, ist dieselbe Bewegung, die dieses Projekt sich bei den Regeln verboten
+hat. `sectionAttenuationFloor` scheidet ohnehin aus: von 0,12 bis 0,03
+nachgemessen bleibt Band 4 unverändert, weil dort noch `sectionAttenuation³`
+greift und nicht der Boden.
+
+#### Optionen, die weder Dämpfung noch Vorhersage anfassen
+
+| Option | was sie tut | was sie kostet |
+|---|---|---|
+| **(a) Schwelle wieder höher** | zurück Richtung 0,08 | Direkter Tausch: 0,08 verdeckt auf echten Screens 37,5 % der Karte statt 18,0 %. Der A8-Gewinn ist weg, der CTA aus dem Prüffall fällt auf 41 % Deckkraft zurück. Ehrlich, aber es ist ein Rückschritt, keine Lösung. |
+| **(b) Deckkraft am Bildanteil koppeln** | Der Renderer multipliziert die Overlay-Deckkraft mit einer Funktion des **Bildanalyse-Anteils**, der bereits berechnet ist (`AnalyzeResult.imageTerms`). Auf einer leeren Fläche ist er null, die Bänder verschwinden von selbst; auf echtem Inhalt ändert sich fast nichts. | Die Karte zeigt dann nicht mehr die Vorhersage, sondern die Vorhersage *gewichtet danach, wie viel dieser Screen selbst beiträgt*. Ein Element, das allein durch seine **Position** Aufmerksamkeit bekommt, würde blasser — und das ist eine echte Aussage, die man wegblendet. Braucht eine eigene Messung und eine Entscheidung, ob die Karte das noch sagen darf, was sie behauptet. |
+| **(c) Lokaler Kontrast statt absolutem Wert** | Gezeichnet wird, wo die Karte sich von ihrer *Umgebung* abhebt, nicht wo sie über einer festen Zahl liegt. Ein breiter, glatter Hügel — genau die Form der Bänder — fällt damit weg, ein Blickfang nicht. | Neue Heuristik im Renderer mit eigener Fehlerrate und eigenen Konstanten. Am ehesten das, was das Auge ohnehin tut, aber es ist eine Neuentwicklung, keine Justierung. |
+| **(d) Nichts tun, benennen** | Der Fall betrifft Flächen **ohne jeden Inhalt**; echter Inhalt dominiert den Prior lokal. | Der erste Frame, den jemand zum Ausprobieren auswählt, ist oft ein halbleerer. Das Artefakt trifft damit ausgerechnet den ersten Eindruck. |
+
+Meine Einschätzung, ohne sie umzusetzen: **(b) ist die einzige Option, die das
+Problem an der Ursache trifft** — die Bänder *sind* der Prior ohne Inhalt, und
+der Bildanteil ist genau die Größe, die „hier ist kein Inhalt" weiß. Sie ist
+aber auch die einzige, die ändert, was die Karte aussagt, und das ist keine
+Renderer-Entscheidung mehr. (a) ist sofort verfügbar und ein Rückschritt, (c)
+ist eine Neuentwicklung, (d) ist der Status quo.
+
 ### Was offen bleibt
 
 1. **Die Schärfe ist zu gut einem Drittel geschlossen, nicht ganz.** Faktor
@@ -1434,17 +1483,7 @@ kleiner als die 0,388, die `blendGamma` 2,0 ergeben hätte.
    18 % der richtige Anteil sind, ist eine Annahme aus 1.0, nicht eine Messung.
    Diese Frage hat keine Ground Truth und gehört an einen Menschen mit echten
    Screens vor sich.
-3. **Die tiefen Abschnittsbänder sind auf leeren Flächen wieder schwach
-   sichtbar.** Die Scroll-Dämpfung sollte sie unsichtbar machen, und das tat sie
-   nur zusammen mit der alten Transparenzschwelle: auf einem inhaltsfreien
-   1440 × 4000-Frame liegt das vierte Band bei 0,0506, die neue Schwelle bei
-   0,02. Der Boden `sectionAttenuationFloor` ist daran unbeteiligt —
-   nachgemessen von 0,12 bis 0,03 bleibt das Band unverändert, weil dort noch
-   `sectionAttenuation³` greift. Wegzubekommen wäre es nur über eine steilere
-   Dämpfung, und die ist eine ausdrücklich nicht gemessene Annahme; sie zu
-   verstellen, damit ein Bild ruhiger aussieht, ist genau die Bewegung, die
-   dieses Projekt sich anderswo verboten hat. Der Fall betrifft nur Flächen ohne
-   jeden Inhalt — echter Inhalt dominiert den Prior.
+3. **Die Streifen aus 1.1 sind zurück** — siehe unten, eigener Abschnitt.
 4. **`competition` neu kalibrieren**, nach dem Umbau in B1, auf der
    ausgelieferten Karte, getrennt je Frame-Form.
 5. **`cold-fold` braucht eine Schwelle je UI-Typ.** 0,08 liegt auf Webseiten
@@ -1547,13 +1586,25 @@ Kategorien derselbe:
 Konzentration und Seitenverhältnis unterscheiden sich **nicht** — der einzige
 Trennfaktor ist die vertikale Lage der Aufmerksamkeit.
 
-Der Kontaktbogen bestätigt es: die Gewinner sind durchweg
-**Hero-dominierte Landingpages** — ein großes Bild oder eine
-kontrastreiche Grafik mit einer fetten Headline in der **Bildmitte**, nicht in
-der Kopfzeile. Also genau die Screens, auf denen der generische
-Ortsdurchschnitt danebenliegt und Luminanz-Kontrast und Kantendichte etwas
-finden. Verlierer sind dichte, konventionell aufgebaute Seiten mit starker
-Navigation oben, wo der Durchschnitt schon fast alles erklärt.
+**Das Etikett „hero-dominiert" ist hier entstanden — und es ist eine
+Lesart, keine Messung.** Auf dem Kontaktbogen sehen die Gewinner nach
+Landingpages mit großem Bild und fetter Headline in der Bildmitte aus, die
+Verlierer nach dichten Seiten mit starker Navigation oben. Das ist eine
+plausible Beschreibung von zwölf Bildern, und sie hat sich als Kurzform
+festgesetzt.
+
+Belegt ist sie nicht. Gemessen unterscheiden sich die beiden Gruppen **allein in
+der vertikalen Lage der Aufmerksamkeit** — Schwerpunkt y 0,382 gegen 0,296,
+Masse im oberen Drittel 45,1 % gegen 62,7 %. In der Konzentration der Ground
+Truth unterscheiden sie sich **nicht** (47,3 % gegen 48,5 %), im
+Seitenverhältnis auch nicht. „Hero" ist eine mögliche Ursache dafür, dass
+Aufmerksamkeit tiefer liegt; die Daten sagen nur, *dass* sie tiefer liegt.
+
+Der Unterschied ist nicht akademisch: die Gruppe taucht in 1.2 als
+Entscheidungsgrundlage wieder auf (siehe [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften)),
+und wer dort „hero-dominiert" liest, sucht die Erklärung im falschen Merkmal.
+Deshalb ab hier: **Gewinner = Screens, deren Aufmerksamkeit tiefer liegt, als
+der Ortsdurchschnitt erwartet.**
 
 ### Was daraus folgt
 
@@ -2285,8 +2336,27 @@ Drei Regeln, die ohne Folds und ohne Abschnitte auskommen:
 | **CTA in der ruhigsten Zone** — der primäre Kandidat liegt dort, wo die Karte kalt ist | `meanInRect` über die Kandidatengeometrie, `percentile` über die ganze Karte, `isPrimaryCandidate` | Die Entscheidungsgröße muss der Rang des CTA **innerhalb der Kartenverteilung** sein (z. B. „unter dem 30. Perzentil aller Pixel"), nicht relativ zu den anderen Kandidaten — genau der Fehler, an dem `dead-cta` hängt. Schwelle aus Daten |
 | **Kopfbereich stärker als Inhalt** — die Aufmerksamkeit bleibt im oberen Band hängen | Die Karte selbst, `sectionSalience` als Konzentrationsmaß, Geometrie aller Knoten | Bandaufteilung (z. B. obere 25 % gegen Rest) und ein Verhältnismaß. Dieselbe Vorsicht wie bei `flat`: die Größe darf nicht auf die *Menge* an Inhalt reagieren |
 
-**Der entscheidende Vorteil dieser drei:** sie lesen nur die Karte und die
-Geometrie, nicht die Abschnittsstruktur — und damit sind sie **an UEyes
+**Vierter Punkt, in 1.2 A dazugekommen: `cold-fold` braucht eine Schwelle je
+UI-Typ.** Die Regel ist eine von nur zwei belastbaren, und ihre einzige
+Konstante — `coldFoldMargin` = 0,08 — stammt aus der Webseiten-Verteilung. Auf
+Telefon-Screens (Viewport erzwungen, 495 Bilder) liegt sie **unter** dem Median
+der Entscheidungsgröße:
+
+| Population | p5 | Median | p95 | Rate | Schwelle 0,08 |
+|---|---:|---:|---:|---:|---|
+| UEyes Webseiten, segmentiert | −0,172 | 0,037 | 0,318 | 40,0 % | über dem Median |
+| UEyes Telefon, segmentiert | −0,129 | 0,131 | 0,502 | 61,6 % | **unter** dem Median |
+
+Auf Telefon-Screens sagt die Regel damit häufiger ja als nein. Das ist dieselbe
+Fehlerklasse wie bei `flat` — eine Schwelle, in einer Population geschätzt und
+in einer anderen angewandt —, nur dass sie diesmal zwischen **UI-Typen**
+wandert statt zwischen Konfigurationen. `flat` hat die Schwelle je UI-Typ schon
+(`flatConcentrationThreshold`); `cold-fold` braucht dieselbe Form, und danach
+eine gemessene Feuerrate je Typ. Gehört zu B, weil B ohnehin auf der
+komponierten Karte kalibriert.
+
+**Der entscheidende Vorteil der drei Regel-Ideen oben:** sie lesen nur die Karte
+und die Geometrie, nicht die Abschnittsstruktur — und damit sind sie **an UEyes
 kalibrierbar**. Der Datensatz besteht aus 1.980 Einzel-Viewport-Screenshots,
 also genau der Population, um die es hier geht. Nur der CTA-Teil der zweiten
 Regel braucht Layer-Bäume (PRD Set 2); die anderen beiden nicht. Das ist der
@@ -2729,14 +2799,10 @@ Zusätzlich für 1.1 (M4, M5):
    nächste `npm install` schreibt die Hosts zurück. Der dauerhafte Ort für
    diese Entscheidung ist eine Repo-`.npmrc` oder die Benutzerkonfiguration —
    beides berührt, wie intern gebaut wird, und liegt bei Security.
-8. **Das Eval-Gate ist grün und misst trotzdem nichts.** Der Job läuft, aber
-   das Referenz-Set liegt nicht im Actions-Cache (`figmaps-fixtures-v1`), also
-   überspringt er den eigentlichen Vergleich und meldet „übersprungen". Damit
-   ist A-7 formal erfüllt und praktisch weiterhin unwirksam. Was fehlt, ist
-   eine Entscheidung darüber, wo die Fixtures liegen dürfen — Größe und
-   CC-BY-Pflicht, siehe `eval/fixtures/README.md`. Bis dahin ist das Gate ein
-   grüner Haken ohne Messung, und das ist genau die Sorte Prüfung, die dieses
-   Projekt schon zweimal in die Irre geführt hat.
+8. **Das Gate misst 40 Bilder, nicht 990.** Das eingecheckte Set ist klein
+   genug fürs Repo und groß genug, um eine grobe Regression zu fangen — eine
+   Verschlechterung von 0,065 CC fällt auf, eine von 0,005 nicht zuverlässig.
+   Es ersetzt keinen Messlauf auf dem vollen Set.
 
 ## Nicht in 1.1
 
