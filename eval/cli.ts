@@ -31,6 +31,8 @@ import {
 import { buildAlphaReport, buildTestConfirmationSection, decisionFor, DECISION_METRICS } from './alpha-report'
 import { runVisualCheck } from './visual-check'
 import { buildSideEffectReport, measureSideEffects, SHIPPED_RULES } from './side-effects'
+import { sharpnessSweep, stageOneVariants, stageTwoVariants, type SharpnessResult, type Variant } from './sharpness'
+import { buildSharpnessReport, verdictOf } from './sharpness-report'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -644,6 +646,83 @@ function printAlpha(result: AlphaSweepResult): void {
 }
 
 // ---------------------------------------------------------------------------
+// sharpness — 1.2 A6: die Nachbearbeitung, nicht das Mischungsverhältnis
+//
+//   npm run sharpness                 Stufe 1 und Stufe 2 nacheinander
+//   npm run sharpness -- --stage 1    nur die Einzelhebel
+// ---------------------------------------------------------------------------
+
+async function runSharpness(args: Args): Promise<number> {
+  const duration = num(args, 'duration', 3)
+  const folds = num(args, 'folds', 5)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+  const stage = num(args, 'stage', 0)
+  const sets = typeof args.fixtures === 'string'
+    ? ALPHA_SETS.filter((entry) => (args.fixtures as string).split(',').includes(entry.setName))
+    : ALPHA_SETS
+
+  const runStage = async (variants: readonly Variant[], title: string): Promise<SharpnessResult[]> => {
+    const out: SharpnessResult[] = []
+    for (const set of sets) {
+      console.log(`${title} — "${set.setName}", ${variants.length} Varianten, ${folds} Folds.`)
+      let last = 0
+      const result = await sharpnessSweep({
+        setName: set.setName,
+        duration,
+        folds,
+        variants,
+        ...(limit ? { limit } : {}),
+        onProgress: (done, total) => {
+          if (done - last >= 25 || done === total) {
+            last = done
+            process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+          }
+        },
+      })
+      process.stdout.write(`\r  ${result.imageCount} Bilder out-of-sample bewertet     \n`)
+      printSharpness(result)
+      out.push(result)
+    }
+    return out
+  }
+
+  const stageOne = await runStage(stageOneVariants(), 'Stufe 1')
+  writeFile(str(args, 'report', 'out/schaerfe-stufe1.md'), buildSharpnessReport(stageOne, 'Stufe 1 — ein Hebel nach dem anderen', timestamp()))
+  console.log(`Report: ${str(args, 'report', 'out/schaerfe-stufe1.md')}`)
+  if (stage === 1) return 0
+
+  const two = stageTwoVariants(stageOne)
+  if (two.length <= 1) {
+    console.log('')
+    console.log('Kein Hebel hat Stufe 1 überstanden — keine Kombination zu prüfen. Das ist ein Ergebnis.')
+    return 0
+  }
+  console.log('')
+  const stageTwo = await runStage(two, 'Stufe 2')
+  const path2 = str(args, 'report2', 'out/schaerfe-stufe2.md')
+  writeFile(path2, buildSharpnessReport(stageTwo, 'Stufe 2 — Kombinationen', timestamp()))
+  console.log(`Report: ${path2}`)
+  return 0
+}
+
+function printSharpness(result: SharpnessResult): void {
+  const basis = result.points.find((point) => point.variant.id === 'basis')
+  console.log('')
+  console.log(`  Konzentration Ground Truth ${result.truthConcentration.mean.toFixed(3)}`)
+  console.log(`  ${'Hebel'.padEnd(12)}${'Wert'.padEnd(24)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(9)).join('')}${'Konz.'.padStart(9)}   Urteil`)
+  for (const point of result.points) {
+    const cells = METRIC_IDS.map((id) => point.metrics[id].mean.toFixed(3).padStart(9)).join('')
+    const verdict = point.variant.id === 'basis' ? '—' : verdictOf(point)
+    console.log(
+      `  ${point.variant.lever.padEnd(12)}${point.variant.label.slice(0, 23).padEnd(24)}${cells}` +
+        `${point.concentration.mean.toFixed(3).padStart(9)}   ${verdict}`,
+    )
+  }
+  if (basis) console.log(`  (Ist-Zustand Konzentration ${basis.concentration.mean.toFixed(3)})`)
+  console.log('')
+}
+
+// ---------------------------------------------------------------------------
 // visual-check — 1.2 A4: die zwei Prüffälle am Onboarding-Screen
 //
 //   npm run visual-check -- --alphas 0.3,0.5
@@ -1015,6 +1094,10 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --chosen <α>        überschreibt, welcher Wert bestätigt wird',
         '  --reference <α>     Vergleichswert für --confirm-only              (default: 0.3)',
         '',
+        'npm run sharpness -- [options]   1.2 A6 — Nachbearbeitung: Blur, Gamma, Clip, blendGamma',
+        '  --stage 1           nur die Einzelhebel, ohne die Kombinationen',
+        '  --fixtures <liste>  Kommaliste der Sets                (default: ueyes-web,ueyes-mobile)',
+        '',
         'npm run visual-check -- [options]  1.2 A4 — der Onboarding-Prüffall, je Alpha ein Bild',
         '  --alphas <liste>    Kommaliste der Alpha-Werte                    (default: 0.3,0.5,0.8,1.2)',
         '  --out <pfad>        Zielpfad des PNG                        (default: out/a4-onboarding.png)',
@@ -1042,6 +1125,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   try {
     if (args['findings-audit']) return await runFindingsAudit(args)
     if (args.alpha) return await runAlpha(args)
+    if (args.sharpness) return await runSharpness(args)
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)

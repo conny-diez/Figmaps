@@ -178,11 +178,22 @@ export function combineFeatureParts(
     const blended = new Float32Array(length)
     for (let i = 0; i < length; i++) blended[i] = prior[i] + params.blendAlpha * image[i]
 
-    // Only a linear rescale into [0,1] — deliberately no second gamma. Gamma is
-    // non-linear, so applying it again after the blend changes the *shape* of
-    // the distribution and measurably worsens KL (web: 1.115 instead of 1.078).
-    // The tone curve the renderer needs already sits inside the image term.
-    return { attention: normalize01(blended), imageTerm: image }
+    // Linearer Rescale nach [0,1] — und optional ein Gamma darüber.
+    //
+    // GESCHICHTE, WEIL SIE DEN DEFAULT ERKLÄRT: beim Einbau von `hybrid-v1`
+    // wurde das zweite Gamma entfernt, weil es KL verschlechterte (web 1,115
+    // statt 1,078). Das war eine Entscheidung nach genau der Metrik, die
+    // Zuspitzung bestraft — und Zuspitzung ist seit 1.2 A die offene Frage
+    // (die Ground Truth ist um Faktor 3,4 konzentrierter als unsere Karte).
+    // Der Hebel ist deshalb wieder da, als Parameter statt als Entweder-Oder,
+    // und wird in `eval/sharpness.ts` an AUC/CC/NSS gemessen. `undefined`
+    // (und 1) ist exakt das Verhalten von 1.1.
+    const normalised = normalize01(blended)
+    const gamma = params.blendGamma
+    return {
+      attention: gamma === undefined || gamma === 1 ? normalised : applyGamma(normalised, gamma),
+      imageTerm: image,
+    }
   }
 
   // heuristic-v1: one weighted sum over all seven maps.

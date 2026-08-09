@@ -52,6 +52,20 @@ export type EngineParams = {
    * attention usually goes, the image analysis says how this screen deviates.
    */
   blendAlpha?: number
+  /**
+   * Exponent über der **fertigen**, gemischten Karte — `map^blendGamma`.
+   *
+   * Nur im Hybrid-Pfad wirksam. `undefined` oder 1 heißt „kein zweites Gamma",
+   * also das Verhalten von 1.1; Werte über 1 spitzen zu (schwache Werte fallen
+   * stärker als starke), Werte darunter glätten.
+   *
+   * Getrennt von `post.gamma`: das sitzt **innerhalb** des Bildanteils, vor der
+   * Mischung mit dem Ortsprior, und formt damit nur, was die Bildanalyse
+   * beiträgt. `blendGamma` formt die Verteilung, die am Ende gezeichnet wird —
+   * inklusive des Priors, der den Sockel stellt. Für die Konzentration der
+   * ausgelieferten Karte ist das der wirksamere der beiden.
+   */
+  blendGamma?: number
 }
 
 /** Epic D — viewing duration the prediction is calibrated for. */
@@ -89,6 +103,7 @@ function cloneParams(params: EngineParams): EngineParams {
     post: { ...params.post },
     ...(params.priorSource ? { priorSource: params.priorSource } : {}),
     ...(params.blendAlpha !== undefined ? { blendAlpha: params.blendAlpha } : {}),
+    ...(params.blendGamma !== undefined ? { blendGamma: params.blendGamma } : {}),
   }
 }
 

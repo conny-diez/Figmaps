@@ -2234,7 +2234,7 @@ blockiert (NFR-3).
 npm test
 ```
 
-152 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
+401 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
 Bild ⇒ flache Feature-Map, schwarzes Quadrat ⇒ Peak an dessen Position,
 Prototype-Hotspot schlägt Namens-Treffer, gleiche Eingabe ⇒ identische Ausgabe.
 Echte Screens haben keine bekannte Wahrheit und eignen sich nicht für
@@ -2251,6 +2251,47 @@ Die für 1.1 tragenden Gruppen:
 | `eval/metrics/__tests__/metrics.test.ts` | A-3 — jede Metrik gegen einen handgerechneten 5×5-Fall |
 | `src/findings/__tests__/rules.test.ts` | C-1 — je Regel Auslöser *und* Nicht-Auslöser; C-2 — die Sprachregeln maschinell erzwungen |
 | `src/engine/__tests__/params.test.ts` | Epic D — Profile normalisiert, `scan` identisch zu 1.0, nur Belegtes wird ausgeliefert |
+| `src/findings/__tests__/end-to-end.test.ts` | C-1 — jede Regel ist über den **echten** Analysepfad auslösbar *und* zum Schweigen zu bringen |
+| `src/findings/__tests__/robustness.test.ts` | 1.2 — dieselben zwölf Fälle noch einmal unter verstellten Engine-Parametern |
+| `eval/__tests__/alpha.test.ts` | 1.2 — die Abkürzung im Alpha-Sweep rechnet dasselbe wie `combineFeatureParts` |
+
+### Die Erreichbarkeitsfälle halten auch, wenn jemand an der Engine dreht
+
+Beim Umstieg auf `blendAlpha` 0,5 fiel der Erreichbarkeitstest von
+`cta-below-fold` um — nicht, weil die Regel falsch war, sondern weil der Fall
+auf der Kippe stand: 0,5227 gegen 0,4773 im Score, und das Verhältnis dreht
+sich schon bei α ≈ 0,35. Ein Fall, der nur bei genau den heutigen Konstanten
+das Erwartete tut, belegt nichts über die Regel.
+
+Die anderen elf wurden daraufhin unter denselben Störungen nachgemessen. Zwei
+weitere waren genauso zerbrechlich, beide bei `competition`:
+
+| Fall | kippte unter | Ursache |
+|---|---|---|
+| `competition` feuert | `blendGamma` | Ein Gamma über der fertigen Karte drückt alle Werte außer dem Maximum nach unten; das zweite Maximum fiel von 0,709 auf 0,502, unter die Schwelle 0,65. |
+| `competition` schweigt | `post.gamma` | Die steilere Tonkurve machte einen abseits stehenden Textknoten zu einer zweiten Region. |
+| `cta-below-fold` feuert | `blendAlpha` | Der Gegenspieler stand oben links statt dort, wo ein Impressum-Link wirklich steht. |
+
+Alle drei sind repariert — größere Blöcke und eine größere Lücke bei
+`competition`, der Textknoten näher am Block, der Gegenspieler in die ruhigste
+Ecke des ersten Viewports. Danach halten **elf von zwölf** Fällen über alle
+fünf geprüften Parameter-Ränder (`blendAlpha` 0,3, `blendGamma` 2, `post.gamma`
+2, `blurSigmaRatio` 0,035, `clipLowPercentile` 40).
+
+**Der zwölfte hält nicht, und das ist ein Befund über die Regel.** `flat` feuert
+nicht mehr, sobald `clipLowPercentile` angehoben wird. Der Grund ist nicht der
+Testfall: die Entscheidungsgröße ist die Konzentration des Bildanteils, und der
+Clip ist genau dessen Sockel — was darunter liegt, wird 0 und trägt keine Masse
+mehr, also steigt die gemessene Konzentration mechanisch, auf einem
+gleichmäßigen Screen wie auf einem mit Blickfang. Das ist dieselbe Schwäche der
+Größe, an der `flat` schon dreimal gescheitert ist. Die Ausnahme steht als
+begründeter Eintrag im Szenario, und der Test prüft, dass die Liste dieser
+Ausnahmen **genau einen** Eintrag hat: eine Ausnahmeliste, die wächst, ist ein
+Feigenblatt.
+
+Was der Test ausdrücklich **nicht** behauptet: dass die Regeln unter diesen
+Parametern gleich *häufig* feuern. Das tun sie nachweislich nicht — siehe A5.
+Geprüft wird nur, dass ein Fall mit bekannter Antwort diese Antwort behält.
 
 ---
 
@@ -2368,6 +2409,29 @@ Zusätzlich für 1.1 (M4, M5):
    Regel feuert, deren Text nicht von einem Menschen bestätigt wurde.
 6. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
    für Figmaps nicht die relevanten UI-Typen.
+7. **Die CI ist rot, und zwar seit dem ersten Lauf — `package-lock.json` zeigt
+   auf eine interne Registry.** Alle 211 `resolved`-URLs im Lockfile verweisen
+   auf `repository.meinestadt.de`, keine einzige auf `registry.npmjs.org`. Ein
+   GitHub-Runner kommt an diesen Host nicht heran und bekommt `503 Service
+   Temporarily Unavailable`; `npm ci` bricht ab, `npm run lint` und
+   `npm run verify` laufen gar nicht erst an, und das Eval-Gate wird
+   übersprungen, weil es `needs: verify` hat. **`npm run verify` lokal grün
+   heißt deshalb nichts über den Zustand der Action.**
+
+   **Die Ursache liegt nicht im Lockfile, sondern in der npm-Konfiguration, die
+   es erzeugt hat.** Es gibt keine `.npmrc` im Repo — der Registry-Eintrag kommt
+   aus der Benutzerkonfiguration der Maschine, auf der zuletzt installiert
+   wurde (`npm config get registry`), und `npm install` schreibt ihn in jedes
+   `resolved`-Feld. Das Lockfile hier zu reparieren wäre folgenlos: der nächste
+   `npm install` auf derselben Maschine schriebe die Hosts zurück. Der Fix ist
+   entweder eine Repo-`.npmrc`, die auf die öffentliche Registry zeigt, oder
+   ein Schritt in der Action, der die Registry vor `npm ci` setzt — beides
+   berührt, wie intern gebaut wird, und ist deshalb keine Entscheidung, die im
+   Vorbeigehen getroffen wird. **Bewusst nicht angefasst**, liegt bei Security.
+
+   Zweite, unabhängige Meldung aus demselben Lauf, kein Fehler: `actions/checkout@v4`
+   und `actions/setup-node@v4` laufen auf Node 20, das auf GitHub-Runnern
+   abgekündigt ist.
 
 ## Nicht in 1.1
 
