@@ -214,9 +214,34 @@ describe('combineFeatures — blend path', () => {
   it('returns the prior alone when the image analysis is flat', () => {
     const prior = ramp(0, 1)
     const out = combineFeatures(features({ positionPrior: prior }), W, H, hybrid)
-    // A constant image term shifts everything equally; after normalisation the
-    // prior's shape must survive unchanged.
-    expect(correlation(out, prior)).toBeCloseTo(1, 5)
+    // Ein konstanter Bildanteil verschiebt alles gleich weit; die **Ordnung**
+    // des Priors muss die Mischung unverändert überstehen.
+    //
+    // Geprüft wird die Ordnung, nicht mehr die lineare Korrelation: seit 1.2 A6
+    // liegt ein Gamma über der fertigen Karte (`blendGamma`, siehe
+    // `config.ts` → `hybrid`), und das ist eine gewollte, nichtlineare
+    // Umformung der Werte. Was es nicht tun darf, ist die Reihenfolge
+    // anzutasten — eine Stelle, die vorher heißer war, muss heißer bleiben.
+    for (let i = 1; i < out.length; i++) {
+      if (prior[i] > prior[i - 1]) expect(out[i]).toBeGreaterThan(out[i - 1])
+      if (prior[i] === prior[i - 1]) expect(out[i]).toBeCloseTo(out[i - 1], 6)
+    }
+  })
+
+  it('applies the tone curve of `blendGamma` and nothing else', () => {
+    // Die Kurve ist als Parameter dokumentiert; dieser Test hält fest, dass sie
+    // wirklich `map^blendGamma` auf der normierten Karte ist und nicht
+    // versehentlich zweimal oder an der falschen Stelle wirkt.
+    const prior = ramp(0, 1)
+    const withGamma = combineFeatures(features({ positionPrior: prior }), W, H, hybrid)
+    const withoutGamma = combineFeatures(features({ positionPrior: prior }), W, H, {
+      ...hybrid,
+      blendGamma: 1,
+    })
+    const gamma = ENGINE_CONFIG.hybrid.blendGamma
+    for (let i = 0; i < withGamma.length; i++) {
+      expect(withGamma[i]).toBeCloseTo(Math.pow(withoutGamma[i], gamma), 5)
+    }
   })
 
   it('moves the result towards the image analysis when the two disagree', () => {
@@ -224,7 +249,7 @@ describe('combineFeatures — blend path', () => {
     const image = ramp(1, 0)
     const out = combineFeatures(features({ positionPrior: prior, luminanceContrast: image }), W, H, hybrid)
     expect(correlation(out, prior)).toBeLessThan(1)
-    // ...but the prior still dominates at alpha 0.3.
+    // …aber der Prior dominiert weiterhin.
     expect(correlation(out, prior)).toBeGreaterThan(0)
   })
 

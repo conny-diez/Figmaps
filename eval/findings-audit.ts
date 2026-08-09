@@ -24,7 +24,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { analyzeFrame, type AnalyzeResult } from '../src/engine/analyze'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
-import { cloneParams, resolveParams } from '../src/engine/params'
+import { resolveParams, type EngineParams } from '../src/engine/params'
 import { sectionSalience } from '../src/engine/segments'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import type { NodeSignal } from '../src/messages'
@@ -38,6 +38,20 @@ import type { Bitmap } from '../src/engine/ops'
 import type { PriorAssetId } from '../src/engine/priors'
 
 export type RuleOutcome = 'fired' | 'silent' | 'blocked'
+
+/**
+ * Kurzbeschreibung eines Parametersatzes, für die Kopfzeile jeder Quote.
+ *
+ * Nur die Größen, die die Karte formen — Gewichte und Prior stehen ohnehin in
+ * der Konfiguration. Eine Quote ohne diese Zeile ist eine Zahl ohne Bezug.
+ */
+export function describeParams(params: EngineParams): string {
+  const parts = [`α ${params.blendAlpha ?? '—'}`]
+  if (params.blendGamma !== undefined && params.blendGamma !== 1) parts.push(`blendGamma ${params.blendGamma}`)
+  parts.push(`Blur ${params.post.blurSigmaRatio}`, `Gamma ${params.post.gamma}`)
+  parts.push(`Clip p${params.post.clipLowPercentile}/p${params.post.clipHighPercentile}`)
+  return parts.join(', ')
+}
 
 export type RuleStats = {
   id: string
@@ -62,13 +76,14 @@ export type AuditResult = {
   setName: string
   imageCount: number
   /**
-   * Der Mischungsanteil der Bildanalyse, mit dem gemessen wurde.
+   * Wie die Karte erzeugt wurde, auf der gemessen wurde.
    *
-   * Steht hier, weil eine Feuerrate nur für die Karte gilt, auf der sie
-   * gemessen wurde — und `blendAlpha` ändert genau diese Karte. Drei der
-   * Schwellen sind auf α = 0,3 kalibriert; wer α verstellt, misst neu.
+   * Steht hier, weil eine Feuerrate **nur für ihre Karte gilt**. `blendAlpha`,
+   * `blendGamma` und die Nachbearbeitung ändern genau diese Karte, ohne eine
+   * Zeile in `rules.ts` anzufassen — und die Schwellen der Regeln sind auf
+   * einer bestimmten Fassung kalibriert. Wer hier etwas verstellt, misst neu.
    */
-  blendAlpha: number
+  configuration: string
   viewportOverride: number | undefined
   /** The configuration the rates below are valid for — never leave it implicit. */
   priorAsset: PriorAssetId | 'aus der Geometrie abgeleitet'
@@ -268,8 +283,10 @@ export type AuditOptions = {
    * otherwise.
    */
   segment?: boolean
-  /** Overrides `blendAlpha` — see `AuditResult.blendAlpha`. */
-  blendAlpha?: number
+  /** Overrides the engine parameters — see `AuditResult.configuration`. */
+  params?: EngineParams
+  /** Wie diese Konfiguration im Report heißt. */
+  configuration?: string
 }
 
 /** One frame to score, whatever it came from. */
@@ -283,8 +300,8 @@ type AuditCase = {
   category?: string
   viewportOverride?: number
   segment?: boolean
-  /** Overrides `blendAlpha` of `hybrid-v1` — see `AuditResult.blendAlpha`. */
-  blendAlpha?: number
+  /** Overrides the engine parameters — see `AuditResult.configuration`. */
+  params?: EngineParams
 }
 
 const VARIABLE_NAMES: Record<string, string> = {
@@ -332,17 +349,12 @@ async function tally(
 
   for await (const item of cases) {
     if (item.signals.length > 0) withSignals++
-    // A rate belongs to the map it was measured on, and `blendAlpha` *is* the
-    // map — so the override goes through the same parameter object the plugin
-    // resolves, not through a second code path.
-    let params
-    if (item.blendAlpha !== undefined) {
-      params = cloneParams(resolveParams())
-      params.blendAlpha = item.blendAlpha
-    }
+    // A rate belongs to the map it was measured on — so an override goes
+    // through the same parameter object the plugin resolves, not through a
+    // second code path.
     const engine = new HeuristicAttentionEngine({
       ...(item.priorAsset ? { priorAsset: item.priorAsset } : {}),
-      ...(params ? { params } : {}),
+      ...(item.params ? { params: item.params } : {}),
     })
 
     const analysis: AnalyzeResult | null = await analyzeFrame(engine, nodeImageOps, {
@@ -403,7 +415,7 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
         ...(options.priorAsset ? { priorAsset: options.priorAsset, category: options.priorAsset } : {}),
         ...(options.viewportOverride ? { viewportOverride: options.viewportOverride } : {}),
         ...(options.segment === false ? { segment: false } : {}),
-        ...(options.blendAlpha !== undefined ? { blendAlpha: options.blendAlpha } : {}),
+        ...(options.params ? { params: options.params } : {}),
       }
     }
   }
@@ -422,7 +434,7 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
   return {
     setName,
     imageCount: count,
-    blendAlpha: options.blendAlpha ?? resolveParams().blendAlpha ?? Number.NaN,
+    configuration: options.configuration ?? describeParams(options.params ?? resolveParams()),
     viewportOverride: options.viewportOverride,
     priorAsset: options.priorAsset ?? 'aus der Geometrie abgeleitet',
     // Read off the plans, not off the option: `--viewport` only *requests*
@@ -436,8 +448,10 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
 export type ConstructedAuditOptions = {
   /** Layout variants per shape. Each varies hierarchy, hero, CTA position, card count. */
   variants?: number
-  /** Overrides `blendAlpha` — see `AuditResult.blendAlpha`. */
-  blendAlpha?: number
+  /** Overrides the engine parameters — see `AuditResult.configuration`. */
+  params?: EngineParams
+  /** Wie diese Konfiguration im Report heißt. */
+  configuration?: string
   onProgress?: (done: number, total: number) => void
 }
 
@@ -466,7 +480,7 @@ export async function auditConstructed(options: ConstructedAuditOptions = {}): P
           frameHeight: shape.frameHeight,
           priorAsset: shape.prior,
           category: shape.category,
-          ...(options.blendAlpha !== undefined ? { blendAlpha: options.blendAlpha } : {}),
+          ...(options.params ? { params: options.params } : {}),
         }
       }
     }
@@ -475,7 +489,7 @@ export async function auditConstructed(options: ConstructedAuditOptions = {}): P
     out.push({
       setName: shape.label,
       imageCount: result.count,
-      blendAlpha: options.blendAlpha ?? resolveParams().blendAlpha ?? Number.NaN,
+      configuration: options.configuration ?? describeParams(options.params ?? resolveParams()),
       viewportOverride: undefined,
       priorAsset: shape.prior,
       segmented: result.segmented > 0,

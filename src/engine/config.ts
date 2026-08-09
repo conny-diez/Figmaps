@@ -242,13 +242,74 @@ export const ENGINE_CONFIG = {
     mirrorHorizontally: false,
   },
 
-  /** Post-processing of the weighted sum. */
+  /**
+   * Post-processing of the weighted sum.
+   *
+   * Diese Werte sind die von 1.0 und bleiben es: `HEURISTIC_V1` liest sie, und
+   * das ist die **eingefrorene Referenz** des Harness (A-4). Was `hybrid-v1`
+   * abweichend macht, steht in `hybrid` darunter — sonst würde eine Messung an
+   * der aktiven Konfiguration die Vergleichsbasis mitverschieben.
+   */
   post: {
     /** Gaussian blur sigma as a fraction of the longer analysis edge. */
     blurSigmaRatio: 0.025,
     clipLowPercentile: 1,
     clipHighPercentile: 99,
     gamma: 0.8,
+  },
+
+  /**
+   * Was `hybrid-v1` an der Nachbearbeitung anders macht (1.2 A6).
+   *
+   * Anlass ist der A1-Befund: die Ground Truth hält 48,2 % ihrer Masse in den
+   * stärksten 5 % der Pixel, unsere Karte 13,3 %. `blendAlpha` ist dafür der
+   * falsche Hebel — ein höheres α macht die Karte weicher. Gemessen wurde
+   * stattdessen über die vier Größen, die die *Form* der Verteilung bestimmen
+   * (`npm run sharpness`, kreuzvalidiert auf dem Tuning-Split, 468 Bilder je
+   * Kategorie). Zwei davon tragen, und zwar zusammen:
+   *
+   *                          AUC     CC      NSS     KL      Konzentration
+   *   Ist-Zustand 1.1        0,783   0,447   1,061   1,091   0,133
+   *   nur blendGamma 2       0,783   0,454   1,080   1,055   0,225
+   *   nur Blur 0,035         0,784   0,449   1,063   1,094   0,131
+   *   **beide**              0,784   0,456   1,083   1,049   0,221
+   *                                                          (Webpage)
+   *
+   * Auf Mobile derselbe Befund: CC 0,552 → 0,557, NSS 1,091 → 1,115,
+   * KL 0,785 → 0,728, Konzentration 0,138 → 0,247. **Alle vier Metriken
+   * verbessern sich, KL eingeschlossen** — die Zuspitzung wird hier nicht mit
+   * Vorhersagegüte bezahlt, sondern bringt welche mit.
+   *
+   * Der Mechanismus ist gegenläufig und deshalb erklärungsbedürftig: die
+   * Bildanalyse wird **weicher** gezeichnet und das Ergebnis **härter**
+   * angezogen. Ein glatterer Bildanteil passt besser zu einer Ground Truth, die
+   * selbst aus überlagerten Blickpunkten besteht; die Schärfe kommt danach aus
+   * der Tonkurve über der fertigen Karte, wo sie den Ortsprior mitnimmt.
+   */
+  hybrid: {
+    /**
+     * Weichzeichnung des Bildanteils — 0,035 statt 0,025.
+     *
+     * Die Richtung ist die überraschende: **schärfer zeichnen hilft nicht.**
+     * 0,006 bis 0,020 verlieren in allen drei Hauptmetriken, monoton, in beiden
+     * Kategorien (web CC 0,440 bei 0,006 gegen 0,447 im Ist-Zustand). Der
+     * Bildanteil ist kein Detailkanal.
+     */
+    blurSigmaRatio: 0.035,
+    /**
+     * Tonkurve über der **fertigen**, gemischten Karte — `map^2`.
+     *
+     * Dieser Hebel war in 1.1 ausgebaut, **weil er KL verschlechterte**
+     * (1,115 statt 1,078). Der ausgebaute war aber ein Gamma *unter* 1, also
+     * ein glättendes; ein zuspitzendes hat nie jemand gemessen. Es verbessert
+     * KL (1,091 → 1,055) statt es zu verschlechtern.
+     *
+     * 2,0 ist der größte Wert, der in **beiden** Kategorien keine der drei
+     * Hauptmetriken kostet: bei 2,5 hält Webpage noch (Konzentration 0,270),
+     * Mobile verliert CC belastbar (0,538 gegen 0,552). Die Grenze ist
+     * gemessen, nicht gewählt.
+     */
+    blendGamma: 2.0,
   },
 
   /** Clickmap scoring (FR-5). */

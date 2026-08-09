@@ -16,7 +16,7 @@ import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { meanInRect } from '../src/engine/imageops'
 import type { Bitmap } from '../src/engine/ops'
 import { resizeBitmap } from '../src/engine/ops-pure'
-import { cloneParams, resolveParams } from '../src/engine/params'
+import { cloneParams, resolveParams, type EngineParams } from '../src/engine/params'
 import type { ScalarMap } from '../src/engine/types'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { heatmapToRgba } from '../src/render/heatmap'
@@ -55,8 +55,9 @@ export type RegionMeasurement = {
   bandOfMax: string
 }
 
-export type AlphaPicture = {
-  alpha: number
+export type Picture = {
+  /** Wie diese Spalte im Bild und in der Tabelle heißt. */
+  label: string
   /** Das fertige Overlay, in Bildschirmauflösung. */
   overlay: Bitmap
   /** Rang des CTA unter den Klick-Kandidaten — bewegt sich das mit? */
@@ -123,15 +124,27 @@ function composite(base: Bitmap, map: ScalarMap, width: number, height: number, 
   return { width, height, data: out }
 }
 
+/** Eine Spalte des Prüfbogens: ein Parametersatz mit Namen. */
+export type CheckVariant = { label: string; params: EngineParams }
+
 export type VisualCheckOptions = {
-  alphas: readonly number[]
+  variants: readonly CheckVariant[]
   /** Deckkraft des Overlays — die Voreinstellung des Panels. */
   opacity?: number
   tileWidth?: number
 }
 
+/** Die Spalten des A4-Prüfbogens für einen Alpha-Sweep. */
+export function alphaVariants(alphas: readonly number[]): CheckVariant[] {
+  return alphas.map((alpha) => {
+    const params = cloneParams(resolveParams('hybrid-v1'))
+    params.blendAlpha = alpha
+    return { label: `α = ${String(alpha).replace('.', ',')}`, params }
+  })
+}
+
 export type VisualCheckResult = {
-  pictures: AlphaPicture[]
+  pictures: Picture[]
   /** Original links, danach je Alpha eine Spalte. */
   sheet: Uint8Array
   regions: Region[]
@@ -143,12 +156,10 @@ export async function runVisualCheck(options: VisualCheckOptions): Promise<Visua
   const tileWidth = options.tileWidth ?? 320
   const tileHeight = Math.round((tileWidth * frame.frameHeight) / frame.frameWidth)
 
-  const pictures: AlphaPicture[] = []
+  const pictures: Picture[] = []
 
-  for (const alpha of options.alphas) {
-    const params = cloneParams(resolveParams('hybrid-v1'))
-    params.blendAlpha = alpha
-    const engine = new HeuristicAttentionEngine({ configId: 'hybrid-v1', params, priorAsset: 'mobile' })
+  for (const variant of options.variants) {
+    const engine = new HeuristicAttentionEngine({ configId: 'hybrid-v1', params: variant.params, priorAsset: 'mobile' })
     const analysis = await analyzeFrame(engine, nodeImageOps, {
       source: frame.image,
       signals: frame.signals,
@@ -161,7 +172,7 @@ export async function runVisualCheck(options: VisualCheckOptions): Promise<Visua
     const ctaIndex = candidates.findIndex((candidate) => candidate.name.toLowerCase().includes('jetzt'))
 
     pictures.push({
-      alpha,
+      label: variant.label,
       overlay: composite(frame.image, analysis.attention, tileWidth, tileHeight, opacity),
       ctaRank: ctaIndex < 0 ? null : ctaIndex + 1,
       candidateCount: candidates.length,

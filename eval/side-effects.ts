@@ -23,10 +23,23 @@
  *   - UEyes-Telefon-Screens als ein Viewport — die Population, um die es in
  *     1.2 B geht.
  */
-import { auditConstructed, auditFindings, type AuditResult, type RuleStats } from './findings-audit'
+import type { EngineParams } from '../src/engine/params'
+import { ALL_RULES } from '../src/findings/rules'
+import { auditConstructed, auditFindings, describeParams, type AuditResult, type RuleStats } from './findings-audit'
 
 /** Die drei ausgelieferten Regeln — die, deren Schwellen jetzt wackeln. */
 export const SHIPPED_RULES: readonly string[] = ['cta-rank', 'competition', 'cold-fold']
+
+/**
+ * Alle implementierten Regeln, auch die stillgelegten.
+ *
+ * Nötig, seit die Nachbearbeitung des Bildanteils zur Debatte steht: `flat`
+ * liest genau diesen Bildanteil, ist also von `post.gamma` und
+ * `post.clipLowPercentile` direkt betroffen — auch wenn es nicht ausgeliefert
+ * wird. Eine abgeschaltete Regel, deren Schwelle im Stillen veraltet, ist beim
+ * Wiedereinschalten eine Falle.
+ */
+export const ALL_RULE_IDS: readonly string[] = ALL_RULES.map((rule) => rule.id)
 
 export type PopulationId = 'konstruiert' | 'ueyes-web-segmentiert' | 'ueyes-mobile-1vp'
 
@@ -45,7 +58,10 @@ export type RateEntry = {
 }
 
 export type SideEffectSide = {
-  alpha: number
+  /** Wie diese Seite heißt, z. B. „ohne blendGamma (heute)". */
+  label: string
+  /** Die Parameter, mit denen gemessen wurde, ausgeschrieben. */
+  configuration: string
   entries: RateEntry[]
 }
 
@@ -56,6 +72,7 @@ export type SideEffectResult = {
   realImageCount: Record<string, number>
   constructedVariants: number
   webViewport: number
+  ruleIds: readonly string[]
 }
 
 function quantilesOf(samples: readonly number[], points = [0.05, 0.25, 0.5, 0.75, 0.95]): number[] {
@@ -64,8 +81,8 @@ function quantilesOf(samples: readonly number[], points = [0.05, 0.25, 0.5, 0.75
   return points.map((q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))])
 }
 
-function entriesOf(result: AuditResult, populationId: PopulationId, label: string): RateEntry[] {
-  return SHIPPED_RULES.map((ruleId) => {
+function entriesOf(result: AuditResult, populationId: PopulationId, label: string, ruleIds: readonly string[]): RateEntry[] {
+  return ruleIds.map((ruleId) => {
     const rule = result.rules.find((entry: RuleStats) => entry.id === ruleId)
     const evaluated = rule ? rule.fired + rule.silent : 0
     return {
@@ -82,9 +99,13 @@ function entriesOf(result: AuditResult, populationId: PopulationId, label: strin
   })
 }
 
+export type Side = { label: string; params: EngineParams }
+
 export type SideEffectOptions = {
-  before: number
-  after: number
+  before: Side
+  after: Side
+  /** Welche Regeln berichtet werden. Default: die ausgelieferten. */
+  ruleIds?: readonly string[]
   variants?: number
   /** Erzwungene Viewport-Höhe für die Webseiten — sonst ist nichts segmentiert. */
   webViewport?: number
@@ -93,41 +114,42 @@ export type SideEffectOptions = {
   onProgress?: (message: string) => void
 }
 
-async function measureSide(alpha: number, options: SideEffectOptions): Promise<{ side: SideEffectSide; counts: Record<string, number> }> {
+async function measureSide(side: Side, options: SideEffectOptions): Promise<{ side: SideEffectSide; counts: Record<string, number> }> {
   const variants = options.variants ?? 24
   const webViewport = options.webViewport ?? 500
+  const ruleIds = options.ruleIds ?? SHIPPED_RULES
   const entries: RateEntry[] = []
   const counts: Record<string, number> = {}
 
-  options.onProgress?.(`α = ${alpha}: konstruierte Frames`)
-  for (const result of await auditConstructed({ variants, blendAlpha: alpha })) {
-    entries.push(...entriesOf(result, 'konstruiert', result.setName))
+  options.onProgress?.(`${side.label}: konstruierte Frames`)
+  for (const result of await auditConstructed({ variants, params: side.params })) {
+    entries.push(...entriesOf(result, 'konstruiert', result.setName, ruleIds))
     counts[result.setName] = result.imageCount
   }
 
-  options.onProgress?.(`α = ${alpha}: UEyes-Webseiten, Viewport ${webViewport} px erzwungen`)
+  options.onProgress?.(`${side.label}: UEyes-Webseiten, Viewport ${webViewport} px erzwungen`)
   const web = await auditFindings({
     setName: 'ueyes-web',
     priorAsset: 'web',
     viewportOverride: webViewport,
-    blendAlpha: alpha,
+    params: side.params,
     ...(options.limit ? { limit: options.limit } : {}),
   })
-  entries.push(...entriesOf(web, 'ueyes-web-segmentiert', `UEyes Webseiten (Viewport ${webViewport} px erzwungen)`))
+  entries.push(...entriesOf(web, 'ueyes-web-segmentiert', `UEyes Webseiten (Viewport ${webViewport} px erzwungen)`, ruleIds))
   counts['UEyes Webseiten'] = web.imageCount
 
-  options.onProgress?.(`α = ${alpha}: UEyes-Telefon-Screens, ein Viewport`)
+  options.onProgress?.(`${side.label}: UEyes-Telefon-Screens, ein Viewport`)
   const mobile = await auditFindings({
     setName: 'ueyes-mobile',
     priorAsset: 'mobile',
     segment: false,
-    blendAlpha: alpha,
+    params: side.params,
     ...(options.limit ? { limit: options.limit } : {}),
   })
-  entries.push(...entriesOf(mobile, 'ueyes-mobile-1vp', 'UEyes Telefon-Screens (ein Viewport)'))
+  entries.push(...entriesOf(mobile, 'ueyes-mobile-1vp', 'UEyes Telefon-Screens (ein Viewport)', ruleIds))
   counts['UEyes Telefon'] = mobile.imageCount
 
-  return { side: { alpha, entries }, counts }
+  return { side: { label: side.label, configuration: describeParams(side.params), entries }, counts }
 }
 
 export async function measureSideEffects(options: SideEffectOptions): Promise<SideEffectResult> {
@@ -139,6 +161,7 @@ export async function measureSideEffects(options: SideEffectOptions): Promise<Si
     realImageCount: { ...before.counts, ...after.counts },
     constructedVariants: options.variants ?? 24,
     webViewport: options.webViewport ?? 500,
+    ruleIds: options.ruleIds ?? SHIPPED_RULES,
   }
 }
 
@@ -148,12 +171,12 @@ function pct(value: number | null): string {
 
 export function buildSideEffectReport(result: SideEffectResult, generatedAt: string, notes: string[] = []): string {
   const lines: string[] = []
-  lines.push(`# A5 — Nebenwirkungen einer Änderung an \`blendAlpha\``)
+  lines.push('# Nebenwirkungen einer Engine-Änderung auf die Befundregeln')
   lines.push('')
-  lines.push(
-    `Feuerraten der drei **ausgelieferten** Regeln bei α = ${result.before.alpha} (heute) und ` +
-      `α = ${result.after.alpha}. Erzeugt: ${generatedAt}`,
-  )
+  lines.push(`Feuerraten bei **${result.before.label}** und **${result.after.label}**. Erzeugt: ${generatedAt}`)
+  lines.push('')
+  lines.push(`- ${result.before.label}: \`${result.before.configuration}\``)
+  lines.push(`- ${result.after.label}: \`${result.after.configuration}\``)
   lines.push('')
   lines.push(
     'Keine Zeile in `rules.ts` ist dafür angefasst worden. Was sich ändert, ist die Karte, auf der die drei ' +
@@ -172,10 +195,10 @@ export function buildSideEffectReport(result: SideEffectResult, generatedAt: str
   )
   lines.push('')
 
-  for (const ruleId of SHIPPED_RULES) {
+  for (const ruleId of result.ruleIds) {
     lines.push(`## \`${ruleId}\``)
     lines.push('')
-    lines.push('| Population | bewertet | blockiert | Rate α = ' + result.before.alpha + ' | Rate α = ' + result.after.alpha + ' | Δ | Entscheidungsgröße p5 / Median / p95 (vorher → nachher) |')
+    lines.push(`| Population | bewertet | blockiert | ${result.before.label} | ${result.after.label} | Δ | Entscheidungsgröße p5 / Median / p95 (vorher → nachher) |`)
     lines.push('|---|---:|---:|---:|---:|---:|---|')
     for (const before of result.before.entries.filter((entry) => entry.ruleId === ruleId)) {
       const after = result.after.entries.find(

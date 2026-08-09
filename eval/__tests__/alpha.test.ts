@@ -49,7 +49,7 @@ describe('blendAt', () => {
       params.blendAlpha = alpha
       const expected = combineFeatures(features, WIDTH, HEIGHT, params)
 
-      const actual = blendAt(normalize01(features.positionPrior), imageTermOf(features), alpha)
+      const actual = blendAt(normalize01(features.positionPrior), imageTermOf(features), alpha, base.blendGamma)
       expect(actual.length).toBe(expected.length)
       for (let i = 0; i < expected.length; i++) expect(actual[i]).toBeCloseTo(expected[i], 6)
     })

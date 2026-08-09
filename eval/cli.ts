@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { PROFILE_DURATIONS, PROFILE_IDS, type ProfileId } from '../src/engine/params'
+import { PROFILE_DURATIONS, PROFILE_IDS, type EngineParams, type ProfileId } from '../src/engine/params'
 import { analyzeFrame } from '../src/engine/analyze'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
@@ -29,9 +29,9 @@ import {
   type TestConfirmation,
 } from './alpha'
 import { buildAlphaReport, buildTestConfirmationSection, decisionFor, DECISION_METRICS } from './alpha-report'
-import { runVisualCheck } from './visual-check'
-import { buildSideEffectReport, measureSideEffects, SHIPPED_RULES } from './side-effects'
-import { sharpnessSweep, stageOneVariants, stageTwoVariants, type SharpnessResult, type Variant } from './sharpness'
+import { alphaVariants, runVisualCheck, type CheckVariant } from './visual-check'
+import { ALL_RULE_IDS, buildSideEffectReport, measureSideEffects, SHIPPED_RULES } from './side-effects'
+import { baseParams, beforeSharpnessVariant, sharpnessSweep, stageOneVariants, stageTwoVariants, type SharpnessResult, type Variant } from './sharpness'
 import { buildSharpnessReport, verdictOf } from './sharpness-report'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
@@ -733,19 +733,26 @@ async function runVisualCheckCommand(args: Args): Promise<number> {
     ? args.alphas.split(',').map(Number).filter(Number.isFinite)
     : [0.3, 0.5, 0.8, 1.2]
 
-  console.log(`Prüffall Onboarding-Screen 393 x 852 — α ∈ {${alphas.join(', ')}}`)
+  // `--sharp` stellt statt des Alpha-Sweeps die Schärfe-Kandidaten nebeneinander:
+  // Ist-Zustand gegen die Varianten, die `npm run sharpness` übrig gelassen hat.
+  const variants: CheckVariant[] = typeof args.sharp === 'string' ? sharpnessVariants(args.sharp) : alphaVariants(alphas)
+  console.log(
+    typeof args.sharp === 'string'
+      ? `Prüffall Onboarding-Screen 393 x 852 — Schärfe-Varianten: ${variants.map((v) => v.label).join(', ')}`
+      : `Prüffall Onboarding-Screen 393 x 852 — α ∈ {${alphas.join(', ')}}`,
+  )
   console.log('KONSTRUIERT, nicht beobachtet: der Screen prüft zwei Fragen mit bekannter Antwort.')
   console.log('Keine Zahl von hier gehört in eine Feuerrate oder in einen Metrik-Vergleich.')
-  const result = await runVisualCheck({ alphas })
+  const result = await runVisualCheck({ variants })
 
   for (const region of result.regions) {
     console.log('')
     console.log(`${region.label} — ${region.question}`)
-    console.log(`  ${'α'.padEnd(6)}${'Mittel'.padStart(9)}${'Spitze'.padStart(9)}${'Perzentil'.padStart(11)}   Farbe der Spitze`)
+    console.log(`  ${'Variante'.padEnd(22)}${'Mittel'.padStart(9)}${'Spitze'.padStart(9)}${'Perzentil'.padStart(11)}   Farbe der Spitze`)
     for (const picture of result.pictures) {
       const measurement = picture.measurements.find((entry) => entry.regionId === region.id)!
       console.log(
-        `  ${String(picture.alpha).padEnd(6)}${measurement.mean.toFixed(3).padStart(9)}` +
+        `  ${picture.label.padEnd(22)}${measurement.mean.toFixed(3).padStart(9)}` +
           `${measurement.max.toFixed(3).padStart(9)}${(measurement.percentileOfMax * 100).toFixed(1).padStart(10)} %   ` +
           measurement.bandOfMax,
       )
@@ -755,14 +762,33 @@ async function runVisualCheckCommand(args: Args): Promise<number> {
   console.log('')
   console.log('Rang des CTA unter den Klick-Kandidaten:')
   for (const picture of result.pictures) {
-    console.log(`  α ${String(picture.alpha).padEnd(5)} Rang ${picture.ctaRank ?? '—'} von ${picture.candidateCount}`)
+    console.log(`  ${picture.label.padEnd(22)} Rang ${picture.ctaRank ?? '—'} von ${picture.candidateCount}`)
   }
 
   const target = str(args, 'out', 'out/a4-onboarding.png')
   writeFile(target, result.sheet)
   console.log('')
-  console.log(`Bild: ${target}  (links das Original, danach je Alpha eine Spalte)`)
+  console.log(`Bild: ${target}  (links das Original, danach je Variante eine Spalte)`)
   return 0
+}
+
+/**
+ * Spalten für `--sharp`: eine Kommaliste von Varianten-Ids aus dem
+ * Schärfe-Sweep (`eval/sharpness.ts`), immer mit dem Ist-Zustand voran.
+ *
+ * Damit zeigt der Prüfbogen dieselben Konfigurationen, über die die Zahlen
+ * entschieden haben — und nicht eine, die nur ähnlich aussieht.
+ */
+function sharpnessVariants(ids: string): CheckVariant[] {
+  const all = [...stageOneVariants(), beforeSharpnessVariant()]
+  const wanted = ids.split(',').map((id) => id.trim())
+  const out: CheckVariant[] = [{ label: 'Ist-Zustand', params: baseParams() }]
+  for (const id of wanted) {
+    const variant = all.find((entry) => entry.id === id)
+    if (!variant) throw new Error(`Unbekannte Schärfe-Variante "${id}". Verfügbar: ${all.map((entry) => entry.id).join(', ')}`)
+    out.push({ label: `${variant.lever} ${variant.label}`, params: variant.params })
+  }
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -773,20 +799,40 @@ async function runVisualCheckCommand(args: Args): Promise<number> {
 // ---------------------------------------------------------------------------
 
 async function runSideEffects(args: Args): Promise<number> {
-  const before = num(args, 'before', 0.3)
-  const after = num(args, 'after', 0.5)
   const limit = args.limit ? num(args, 'limit', 0) : undefined
+  const ruleIds = args.rules === 'all' ? ALL_RULE_IDS : SHIPPED_RULES
 
-  console.log(`A5 — Feuerraten der ausgelieferten Regeln bei α = ${before} gegen α = ${after}.`)
+  // Zwei Wege, eine Seite zu beschreiben: ein Alpha-Wert (`--before/--after`)
+  // oder eine Varianten-Id aus dem Schärfe-Sweep (`--before-variant` …). Beides
+  // landet in demselben `EngineParams` — die Messung kennt nur Parameter.
+  const sideFor = (alphaKey: string, variantKey: string, fallbackAlpha: number): { label: string; params: EngineParams } => {
+    if (typeof args[variantKey] === 'string') {
+      const id = args[variantKey]
+      if (id === 'basis') return { label: 'Ist-Zustand', params: baseParams() }
+      const variant = [...stageOneVariants(), beforeSharpnessVariant()].find((entry) => entry.id === id)
+      if (!variant) throw new Error(`Unbekannte Variante "${id}"`)
+      return { label: `${variant.lever} ${variant.label}`, params: variant.params }
+    }
+    const alpha = num(args, alphaKey, fallbackAlpha)
+    const params = baseParams()
+    params.blendAlpha = alpha
+    return { label: `α = ${String(alpha).replace('.', ',')}`, params }
+  }
+
+  const before = sideFor('before', 'before-variant', 0.3)
+  const after = sideFor('after', 'after-variant', 0.5)
+
+  console.log(`Feuerraten: ${before.label} gegen ${after.label}, ${ruleIds.length} Regeln.`)
   const result = await measureSideEffects({
     before,
     after,
+    ruleIds,
     ...(limit ? { limit } : {}),
     onProgress: (message) => console.log(`  ${message} …`),
   })
 
   console.log('')
-  for (const ruleId of SHIPPED_RULES) {
+  for (const ruleId of ruleIds) {
     console.log(`${ruleId}`)
     for (const entry of result.before.entries.filter((item) => item.ruleId === ruleId)) {
       const other = result.after.entries.find((item) => item.ruleId === ruleId && item.population === entry.population)
@@ -1100,10 +1146,13 @@ export async function main(argv: readonly string[]): Promise<number> {
         '',
         'npm run visual-check -- [options]  1.2 A4 — der Onboarding-Prüffall, je Alpha ein Bild',
         '  --alphas <liste>    Kommaliste der Alpha-Werte                    (default: 0.3,0.5,0.8,1.2)',
+        '  --sharp <ids>       statt Alphas: Varianten-Ids aus dem Schärfe-Sweep, kommagetrennt',
         '  --out <pfad>        Zielpfad des PNG                        (default: out/a4-onboarding.png)',
         '',
         'npm run side-effects -- [options]  1.2 A5 — Feuerraten vor und nach einer Alpha-Änderung',
-        '  --before <α> --after <α>   die beiden verglichenen Werte              (default: 0.3 / 0.5)',
+        '  --before <α> --after <α>   die beiden verglichenen Alpha-Werte        (default: 0.3 / 0.5)',
+        '  --before-variant <id> --after-variant <id>   stattdessen Varianten aus dem Schärfe-Sweep',
+        '  --rules all         auch die stillgelegten Regeln berichten',
         '  --limit <n>         Bilder je echter Population begrenzen',
         '',
         'npm run crossval -- [options]    k-fache Kreuzvalidierung über Tuning + Test',

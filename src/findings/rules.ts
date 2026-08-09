@@ -307,11 +307,17 @@ const ctaBelowFold: Rule = {
  *    Rate ohne eine einzige Änderung an dieser Regel gestiegen — gemessen mit
  *    `npm run side-effects`:
  *
- *      Webseite, segmentiert       2,2 %  →  11,9 %
- *      Telefon, ein Viewport      10,3 %  →  31,1 %
- *      Desktop scrollend (konstr.) 0,0 %  →   8,3 %
- *      Telefon scrollend (konstr.) 0,0 %  →  20,8 %
- *      Telefon 1 VP (konstruiert)  0,0 %  →  20,8 %
+ *                                 α 0,3     α 0,5    + Schärfe (Stand)
+ *      Webseite, segmentiert        2,2 %    11,9 %     10,3 %
+ *      Telefon, ein Viewport       10,3 %    31,1 %     21,2 %
+ *      Desktop scrollend (konstr.)  0,0 %     8,3 %      4,2 %
+ *      Telefon scrollend (konstr.)  0,0 %    20,8 %      4,2 %
+ *      Telefon 1 VP (konstruiert)   0,0 %    20,8 %     16,7 %
+ *
+ *    Die dritte Spalte ist der ausgelieferte Stand nach 1.2 A6 (Blur 0,035,
+ *    `blendGamma` 2,0). Die Zuspitzung nimmt einen Teil des Anstiegs zurück —
+ *    sie senkt die Fläche *neben* den Blickfängen stärker als die zwischen
+ *    ihnen. Eine Verdopplung gegenüber 1.1 bleibt.
  *
  *    Der Grund steht in der Verteilung: das Tal zwischen den beiden Maxima
  *    fällt, weil der stärker gewichtete Bildanteil die Fläche zwischen zwei
@@ -320,11 +326,10 @@ const ctaBelowFold: Rule = {
  *    mitten in der Verteilung statt an ihrem unteren Rand.
  *
  * **Nicht nachjustiert, mit Absicht.** 0,9 an die neue Verteilung anzupassen
- * wäre eine zweite unkalibrierte Bewegung im selben Schritt. Die Regel wird in
- * 1.2 B1 ohnehin umgebaut (Abstand auf Diagonale oder getrennte x/y-Schwellen)
- * und **danach** neu kalibriert — auf der Karte mit α = 0,5, in jeder der drei
- * Frame-Formen getrennt. Bis dahin gilt: 11,9 % / 31,1 % ist der Stand, nicht
- * 3,3 % / 10,0 %.
+ * wäre eine weitere unkalibrierte Bewegung. Die Regel wird in 1.2 B1 ohnehin
+ * umgebaut (Abstand auf Diagonale oder getrennte x/y-Schwellen) und **danach**
+ * neu kalibriert — auf der ausgelieferten Karte, in jeder der drei Frame-Formen
+ * getrennt. Bis dahin gilt: 10,3 % / 21,2 % ist der Stand, nicht 3,3 % / 10,0 %.
  *
  * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
  * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um
@@ -396,15 +401,19 @@ const competition: Rule = {
  * Bildanteils, und tiefere Abschnitte haben mehr Inhalt als der Kopfbereich.
  * Gemessen beim Umstieg auf 0,5 (`npm run side-effects`):
  *
- *   Webseite, Viewport 500 erzwungen   27,7 %  →  34,9 %   (Median 0,021 → 0,031)
- *   Desktop scrollend (konstruiert)    83,3 %  →  95,8 %
- *   Telefon scrollend (konstruiert)   100,0 %  → 100,0 %
+ *                                      α 0,3     α 0,5    + Schärfe (Stand)
+ *   Webseite, Viewport 500 erzwungen   27,7 %   34,9 %     40,9 %
+ *   Desktop scrollend (konstruiert)    83,3 %   95,8 %    100,0 %
+ *   Telefon scrollend (konstruiert)   100,0 %  100,0 %    100,0 %
  *
- * 95,8 % auf einer der drei konstruierten Formen ist nah an „feuert immer" und
- * damit nah an „sagt nichts". Auf echten Bildern bleibt die Regel mit 34,9 %
- * im brauchbaren Bereich; die konstruierten Frames stellen den Hero aber
- * absichtlich weiter unten auf, ihre Quote ist die des Aufbaus. Neu zu
- * bewerten ist 0,08 trotzdem — an echten Designs mit Layer-Baum (PRD Set 2).
+ * Auf der konstruierten Desktop-Form feuert sie damit **immer** und sagt dort
+ * nichts mehr.
+ *
+ * Auf echten Bildern bleibt die Regel mit 40,9 % im brauchbaren Bereich; die
+ * konstruierten Frames stellen den Hero absichtlich weiter unten auf, ihre
+ * Quote ist die des Aufbaus. Die Richtung ist über beide Schritte eindeutig,
+ * und 0,08 ist damit endgültig nachzumessen — an echten Designs mit Layer-Baum
+ * (PRD Set 2).
  */
 const coldFold: Rule = {
   id: 'cold-fold',

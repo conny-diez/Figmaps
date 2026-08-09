@@ -41,12 +41,14 @@ import { SCENARIOS } from './scenarios'
 type Perturbation = { id: string; lever: string; params: EngineParams }
 
 /**
- * Die Ränder der vier Hebel, die die Karte formen.
+ * Die Ränder der Hebel, die die Karte formen — jeweils gegen den
+ * **ausgelieferten** Stand gerechnet, nicht gegen einen historischen.
  *
- * `blendAlpha` ist nicht dabei: er ist in 1.2 A gemessen und entschieden
- * worden, und der Fall, der daran hing, ist der Anlass dieses Tests. Die
- * übrigen vier sind die Kandidaten aus dem Schärfe-Sweep — sie können sich
- * noch bewegen, und genau dagegen soll dieser Test absichern.
+ * `blendAlpha` 0,3 und `blendGamma` 1 sind bewusst die Werte *vor* 1.2: wenn
+ * ein Fall nur mit der neuen Konfiguration hält, ist er wieder so
+ * zerbrechlich, wie `cta-below-fold` es war. Die übrigen Punkte liegen jenseits
+ * des gemessenen Bereichs (`eval/sharpness.ts`), damit auch eine künftige
+ * Bewegung abgedeckt ist.
  */
 function perturbations(): Perturbation[] {
   const base = (): EngineParams => cloneParams(resolveParams('hybrid-v1'))
@@ -56,17 +58,27 @@ function perturbations(): Perturbation[] {
   withAlpha.blendAlpha = 0.3
   out.push({ id: 'blendAlpha 0,3 (der Wert vor 1.2)', lever: 'blendAlpha', params: withAlpha })
 
-  const withBlendGamma = base()
-  withBlendGamma.blendGamma = 2
-  out.push({ id: 'blendGamma 2', lever: 'blendGamma', params: withBlendGamma })
+  // Beide Ränder des Bereichs, den die Messung offen lässt: 1 ist das Verhalten
+  // vor 1.2 A6 (kein Gamma über der fertigen Karte), 2,5 der größte Wert, der
+  // im Sweep überhaupt noch irgendwo hielt (Webpage; Mobile verliert dort CC
+  // belastbar, siehe `config.ts` → `hybrid`). Der ausgelieferte Wert 2 liegt
+  // dazwischen und braucht keine eigene Zeile — das ist der Ist-Zustand in
+  // `end-to-end.test.ts`.
+  const withoutBlendGamma = base()
+  withoutBlendGamma.blendGamma = 1
+  out.push({ id: 'blendGamma 1 (kein Gamma, wie vor 1.2 A6)', lever: 'blendGamma', params: withoutBlendGamma })
+
+  const withMoreBlendGamma = base()
+  withMoreBlendGamma.blendGamma = 2.5
+  out.push({ id: 'blendGamma 2,5 (die gemessene Obergrenze)', lever: 'blendGamma', params: withMoreBlendGamma })
 
   const withGamma = base()
   withGamma.post = { ...withGamma.post, gamma: 2 }
   out.push({ id: 'post.gamma 2', lever: 'post.gamma', params: withGamma })
 
   const withBlur = base()
-  withBlur.post = { ...withBlur.post, blurSigmaRatio: 0.035 }
-  out.push({ id: 'post.blurSigmaRatio 0,035', lever: 'post.blurSigmaRatio', params: withBlur })
+  withBlur.post = { ...withBlur.post, blurSigmaRatio: 0.02 }
+  out.push({ id: 'post.blurSigmaRatio 0,02', lever: 'post.blurSigmaRatio', params: withBlur })
 
   const withClip = base()
   withClip.post = { ...withClip.post, clipLowPercentile: 40 }

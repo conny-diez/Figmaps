@@ -35,7 +35,7 @@
 import { existsSync } from 'node:fs'
 import { ENGINE_CONFIG } from '../src/engine/config'
 import { combineFeatureParts, HeuristicAttentionEngine } from '../src/engine/heuristic'
-import { normalize01 } from '../src/engine/imageops'
+import { applyGamma, normalize01 } from '../src/engine/imageops'
 import { fitWithin } from '../src/engine/ops-pure'
 import { resolveParams, type EngineParams } from '../src/engine/params'
 import { resamplePrior } from '../src/engine/priors'
@@ -168,13 +168,19 @@ function gridOf(sample: EvalSample): [number, number] {
  *
  * `imageTerm` ist bereits nachbearbeitet (Blur, Perzentil-Clip, Gamma) und
  * hängt nicht von alpha ab; `prior` ist der normierte Ortsprior. Die
- * ausgelieferte Formel ist `normalize01(prior + alpha * image)` — bewusst ohne
- * zweites Gamma, siehe `heuristic.ts`.
+ * ausgelieferte Formel ist `normalize01(prior + alpha * image)`, seit 1.2 A6
+ * gefolgt von der Tonkurve `blendGamma` (siehe `config.ts` → `hybrid`).
+ *
+ * `blendGamma` hat den Parität-Test hier prompt umgeworfen, als er eingeführt
+ * wurde — genau dafür gibt es ihn. Wer die Mischung in `heuristic.ts` ändert,
+ * ändert sie hier mit, oder der Sweep misst eine andere Engine als die, über
+ * die er entscheidet.
  */
-export function blendAt(prior: Float32Array, imageTerm: Float32Array, alpha: number): Float32Array {
+export function blendAt(prior: Float32Array, imageTerm: Float32Array, alpha: number, blendGamma = 1): Float32Array {
   const blended = new Float32Array(prior.length)
   for (let i = 0; i < blended.length; i++) blended[i] = prior[i] + alpha * imageTerm[i]
-  return normalize01(blended)
+  const normalised = normalize01(blended)
+  return blendGamma === 1 ? normalised : applyGamma(normalised, blendGamma)
 }
 
 /** 8-Bit-Quantisierung eines Mittelwertfelds auf das Prior-Raster. */
@@ -335,7 +341,7 @@ export async function alphaSweep(options: AlphaSweepOptions): Promise<AlphaSweep
     const prior = normalize01(features.positionPrior)
 
     for (const alpha of alphas) {
-      const map: ScalarMap = { ...shape, values: blendAt(prior, imageTerm, alpha) }
+      const map: ScalarMap = { ...shape, values: blendAt(prior, imageTerm, alpha, baseParams.blendGamma) }
       scoresPerAlpha.get(alpha)!.set(sample.id, scoreAll(map, sample.truth))
       concentrationPerAlpha.get(alpha)!.set(sample.id, concentrationOf(map))
     }
@@ -479,7 +485,7 @@ export async function confirmOnTest(options: {
     const prior = normalize01(features.positionPrior)
 
     for (const alpha of alphas) {
-      const map: ScalarMap = { ...shape, values: blendAt(prior, parts.imageTerm, alpha) }
+      const map: ScalarMap = { ...shape, values: blendAt(prior, parts.imageTerm, alpha, baseParams.blendGamma) }
       scores.get(alpha)!.set(sample.id, scoreAll(map, sample.truth))
       concentration.get(alpha)!.push(concentrationOf(map))
     }

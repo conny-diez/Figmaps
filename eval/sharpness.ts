@@ -81,6 +81,22 @@ export function baseParams(): EngineParams {
   return cloneParams(resolveParams('hybrid-v1'))
 }
 
+/**
+ * Die Nachbearbeitung, wie sie **vor** 1.2 A6 aussah: Blur 0,025 und kein
+ * Gamma über der fertigen Karte.
+ *
+ * Existiert als benannte Variante, damit „vorher gegen nachher" — im
+ * Prüfbogen wie in der Nebenwirkungsmessung — denselben Parametersatz meint
+ * und nicht einen, der ihm ähnlich sieht. Der Rest, `blendAlpha` 0,5
+ * eingeschlossen, bleibt der heutige: verglichen wird **eine** Änderung.
+ */
+export function beforeSharpnessVariant(): Variant {
+  const params = baseParams()
+  params.post = { ...params.post, blurSigmaRatio: 0.025 }
+  delete params.blendGamma
+  return { id: 'vor-a6', lever: 'basis', label: 'vor 1.2 A6 (Blur 0,025, kein blendGamma)', params }
+}
+
 function withPost(patch: Partial<EngineParams['post']>, extra: Partial<EngineParams> = {}): EngineParams {
   const params = baseParams()
   params.post = { ...params.post, ...patch }
@@ -327,11 +343,21 @@ export async function sharpnessSweep(options: SharpnessOptions): Promise<Sharpne
 /**
  * Stufe 2 — Kombinationen aus dem, was Stufe 1 ergeben hat.
  *
- * „Bester Punkt je Hebel" heißt: nicht schlechter als der Ist-Zustand in AUC,
- * CC und NSS (95-%-Intervall der gepaarten Differenz nicht unter Null), und
- * unter denen der mit der höchsten Konzentration. Ein Hebel, der die
- * Hauptmetriken kostet, kommt gar nicht erst in die Kombination — das Ziel ist
- * „schärfer, ohne die drei zu verlieren", nicht „schärfer".
+ * „Bester Punkt je Hebel" heißt drei Dinge gleichzeitig:
+ *
+ *   1. nicht schlechter als der Ist-Zustand in AUC, CC und NSS (das
+ *      95-%-Intervall der gepaarten Differenz liegt nicht ganz unter Null),
+ *   2. **schärfer** als der Ist-Zustand — sonst trägt der Hebel nichts zur
+ *      Frage bei, auch wenn er die Metriken hebt,
+ *   3. und unter den Übrigbleibenden der mit der höchsten Konzentration.
+ *
+ * Bedingung (2) steht hier, weil sie ohne sie fehlte: `post.blurSigmaRatio`
+ * 0,035 hält die Metriken (sogar besser) und *senkt* die Konzentration von
+ * 0,133 auf 0,131. Als einziger überlebender Wert seines Hebels wäre er
+ * gewählt worden — und hätte eine Kombination in die falsche Richtung gezogen.
+ *
+ * Beides muss in **jeder** Kategorie gelten. Ein Gewinn, der nur auf Webseiten
+ * trägt, ist kein Gewinn für das Plugin.
  */
 export function stageTwoVariants(stageOne: readonly SharpnessResult[]): Variant[] {
   const levers: LeverId[] = ['blur', 'gamma', 'clip', 'blendGamma']
@@ -349,6 +375,13 @@ export function stageTwoVariants(stageOne: readonly SharpnessResult[]): Variant[
         return (['aucJudd', 'cc', 'nss'] as MetricId[]).every((metric) => point.versusBasis[metric].ci95[1] >= 0)
       })
       if (!holdsEverywhere) continue
+      // (2) — schärfer als der Ist-Zustand, in jeder Kategorie.
+      const sharperEverywhere = stageOne.every((result) => {
+        const point = result.points.find((entry) => entry.variant.id === candidate.variant.id)
+        const basis = result.points.find((entry) => entry.variant.id === 'basis')
+        return point !== undefined && basis !== undefined && point.concentration.mean > basis.concentration.mean
+      })
+      if (!sharperEverywhere) continue
       const meanConcentration =
         stageOne.reduce(
           (sum, result) => sum + (result.points.find((entry) => entry.variant.id === candidate.variant.id)?.concentration.mean ?? 0),

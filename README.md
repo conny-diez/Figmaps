@@ -46,7 +46,9 @@ C Contrastmap). **Fertig ist A.**
 |---|---|
 | **`blendAlpha` 0,3 → 0,5** | Kreuzvalidiert und out-of-sample nachgemessen statt in-sample abgelesen. AUC, CC und NSS haben ihr Optimum einstimmig bei 0,5, in beiden Kategorien. Siehe [Alpha-Kurve](#alpha-kurve-12-a). |
 | **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
+| **Schärfe: Blur 0,035 + `blendGamma` 2,0** | Der A1-Befund ist zur Hälfte behoben — Konzentration 0,133 → 0,221 (Webpage) und 0,138 → 0,247 (Mobile), bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis). |
 | **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
+| **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
 | **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.1" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
 
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
@@ -1132,19 +1134,195 @@ ein Impressum-Link wirklich steht, unten rechts im ersten Viewport; der CTA
 führt damit über den ganzen geprüften Alpha-Bereich. Siehe
 `findings/__tests__/end-to-end.test.ts`.
 
+### A6 — Schärfe: die Nachbearbeitung, nicht das Mischungsverhältnis
+
+```bash
+npm run sharpness                       # zwei Stufen, kreuzvalidiert
+npm run visual-check -- --sharp vor-a6  # der Prüffall, vorher gegen nachher
+```
+
+A1 hat den Befund geliefert und `blendAlpha` als Hebel ausgeschlossen. Was die
+*Form* der Verteilung bestimmt, sind die Schritte danach — und einer davon
+existierte in 1.1 gar nicht mehr:
+
+| Hebel | wo er sitzt | Stand 1.1 |
+|---|---|---|
+| `post.blurSigmaRatio` | Weichzeichnung des Bildanteils | 0,025 |
+| `post.gamma` | Tonkurve **innerhalb** des Bildanteils | 0,8 |
+| `post.clip{Low,High}Percentile` | Sockel und Sättigung des Bildanteils | p1 / p99 |
+| `blendGamma` | Tonkurve über der **fertigen** Karte | **ausgebaut** |
+
+Der vierte ist der eigentliche Anlass. Er wurde beim Einbau von `hybrid-v1`
+entfernt, **weil er KL verschlechterte** (1,115 statt 1,078) — nach genau dem
+Kriterium, das bei einer Frage nach Zuspitzung nicht entscheiden darf. Er ist
+als Parameter zurück, mit `undefined` = Verhalten von 1.1, und wurde an AUC,
+CC und NSS gemessen.
+
+Aufbau: erst ein Hebel nach dem anderen (vier lesbare Kurven statt einer
+Punktwolke), dann Kombinationen aus dem, was übrig blieb. Kreuzvalidiert auf dem
+Tuning-Split, Ortsprior je Fold, 468 Bilder je Kategorie.
+
+#### Was die Einzelhebel ergeben (Webpage)
+
+| Hebel | Wert | AUC | CC | NSS | KL | Konzentration | Urteil |
+|---|---|---:|---:|---:|---:|---:|---|
+| — | **Ist-Zustand** | 0,783 | 0,447 | 1,061 | 1,091 | 0,133 | — |
+| Blur | 0,006 | 0,778 | 0,440 | 1,044 | 1,089 | 0,139 | verloren |
+| Blur | 0,015 | 0,781 | 0,444 | 1,054 | 1,090 | 0,136 | verloren |
+| Blur | **0,035** | 0,784 | 0,449 | 1,063 | 1,094 | 0,131 | **besser** |
+| `post.gamma` | 1,4 | 0,782 | 0,450 | 1,067 | 1,065 | 0,143 | verloren |
+| `post.gamma` | 2,0 | 0,781 | 0,450 | 1,067 | 1,055 | 0,150 | verloren |
+| Clip | p20/p99 | 0,782 | 0,448 | 1,062 | 1,074 | 0,140 | besser |
+| Clip | p40/p99 | 0,781 | 0,449 | 1,066 | 1,058 | 0,148 | verloren |
+| `blendGamma` | 1,6 | 0,783 | 0,456 | 1,083 | 1,038 | 0,188 | **besser** |
+| `blendGamma` | **2,0** | 0,783 | 0,454 | 1,080 | 1,055 | 0,225 | **besser** |
+| `blendGamma` | 2,5 | 0,783 | 0,448 | 1,066 | 1,117 | 0,270 | gehalten |
+| `blendGamma` | 3,5 | 0,783 | 0,430 | 1,025 | 1,337 | 0,353 | verloren |
+
+„Verloren" heißt: das 95-%-Intervall einer der drei gepaarten Differenzen liegt
+ganz unter der Null. Bei 468 Bildern ist das ein strenges Kriterium — `post.gamma`
+1,4 gewinnt 0,003 CC und verliert 0,001 AUC, und das reicht.
+
+**Drei Befunde, von denen zwei überraschen:**
+
+1. **Schärfer zeichnen hilft nicht.** Blur 0,006 bis 0,020 verlieren in allen
+   drei Hauptmetriken, monoton, in beiden Kategorien. Der Bildanteil ist kein
+   Detailkanal — was er beiträgt, ist grobe Struktur. Der einzige Blur-Wert, der
+   hält, ist der **größere**.
+2. **`post.gamma` und der Clip sind Sackgassen.** Beide erhöhen die
+   Konzentration und kosten dabei zuverlässig ein bis zwei Tausendstel AUC. Sie
+   spitzen den *Bildanteil* zu, und der ist mit α = 0,5 nur die halbe Miete —
+   der Ortsprior bleibt so weich wie vorher.
+3. **`blendGamma` ist der Hebel.** Er sitzt über der fertigen Karte, nimmt den
+   Prior also mit. Bei 2,0 steigt die Konzentration von 0,133 auf 0,225, ohne
+   dass eine der drei Metriken leidet — und **KL wird besser**, nicht
+   schlechter. Der 1.1 entfernte Gamma-Wert war ein *glättender* (unter 1); ein
+   zuspitzender ist nie gemessen worden.
+
+Auf Mobile derselbe Verlauf. Die Obergrenze ist gemessen, nicht gewählt: bei
+`blendGamma` 2,5 hält Webpage noch (Konzentration 0,270), Mobile verliert CC
+belastbar (0,538 gegen 0,552). 2,0 ist der größte Wert, der in **beiden**
+Kategorien keine Metrik kostet.
+
+#### Die Kombination, und warum sie gegenläufig ist
+
+| | AUC | CC | NSS | KL | Konzentration |
+|---|---:|---:|---:|---:|---:|
+| **Webpage**, Ist-Zustand | 0,783 | 0,447 | 1,061 | 1,091 | 0,133 (0,28× GT) |
+| Webpage, Blur 0,035 + `blendGamma` 2 | **0,784** | **0,456** | **1,083** | **1,049** | **0,221** (0,46× GT) |
+| **Mobile**, Ist-Zustand | 0,781 | 0,552 | 1,091 | 0,785 | 0,138 (0,36× GT) |
+| Mobile, Blur 0,035 + `blendGamma` 2 | **0,783** | **0,557** | **1,115** | **0,728** | **0,247** (0,64× GT) |
+
+**Alle vier Metriken verbessern sich, KL eingeschlossen.** Die Zuspitzung wird
+hier nicht mit Vorhersagegüte bezahlt — sie bringt welche mit. Das ist der
+Unterschied zu A2, wo jeder Gewinn an AUC/CC/NSS mit KL bezahlt wurde.
+
+Der Mechanismus ist gegenläufig und deshalb erklärungsbedürftig: die
+**Bildanalyse wird weicher gezeichnet, das Ergebnis härter angezogen**. Ein
+glatterer Bildanteil passt besser zu einer Ground Truth, die selbst aus
+überlagerten Blickpunkten besteht; die Schärfe kommt danach aus der Tonkurve
+über der fertigen Karte, wo sie den Ortsprior mitnimmt statt ihn zu umgehen.
+
+Die Lücke zur Ground Truth schließt sich damit **etwa zur Hälfte**: Faktor 3,6
+auf 2,2 (Webpage), 2,8 auf 1,6 (Mobile). Sie ist nicht geschlossen.
+
+Ausgeliefert wird das als eigener Block `ENGINE_CONFIG.hybrid`, **nicht** in
+`post`: `HEURISTIC_V1` liest `post` und ist die eingefrorene 1.0-Referenz des
+Harness. Würde sie mitwandern, verschöbe jede Messung an der aktiven
+Konfiguration ihre eigene Vergleichsbasis.
+
+#### Die Prüffälle sagen etwas anderes — auch das bleibt stehen
+
+![A6 — Onboarding-Prüffall, neu gegen alt](assets/messungen/a6-schaerfe-onboarding.png)
+
+Links das Original, Mitte der neue Stand, rechts der alte.
+
+| Element (Spitzenwert) | vor A6 | nach A6 |
+|---|---|---|
+| dunkle Kachel „Nachrichten" | 0,591 gelbgrün | 0,388 türkis/grün |
+| gelber CTA unten | 0,370 türkis/grün | 0,133 **kalt (dunkelblau)** |
+
+**Beide Prüfelemente werden kälter, nicht wärmer.** Auf 936 echten Screens ist
+die Karte in allen vier Metriken besser geworden; auf dem konstruierten
+Prüffall sind genau die zwei Elemente, nach denen A4 fragt, deutlicher aus dem
+Bild verschwunden. Beides ist wahr, und es wird hier nicht aufgelöst.
+
+Was die Bilder zeigen: die neue Karte ist **selektiv**. Sie setzt fast alles auf
+die Überschrift und lässt den Rest fallen — und die Überschrift ist auf einem
+Screen dieses Typs auch das, wohin die gemessene Aufmerksamkeit geht. Die alte
+Karte war überall lauwarm und hat damit *keine* Aussage gemacht, die man hätte
+widerlegen können. Ob eine Karte, die den CTA klar als kalt ausweist, das
+bessere Produkt ist als eine, die ihn milde grün färbt, ist eine Frage, die
+UEyes nicht beantwortet: der Datensatz enthält keinen Screen dieser Art mit
+bekannter Antwort.
+
+#### Nebenwirkungen, zum zweiten Mal gemessen
+
+Dieselbe Prüfung wie A5, jetzt für die Nachbearbeitung — und diesmal über
+**alle sechs** Regeln, nicht nur die drei ausgelieferten: `flat` liest den
+Bildanteil direkt, und der Blur formt genau den.
+
+| Regel | Population | vor A6 | nach A6 | seit 1.1 insgesamt |
+|---|---|---:|---:|---|
+| `cta-rank` | alle drei konstruierten Formen | 66,7 % | 66,7 % | unverändert |
+| `competition` | UEyes Telefon, ein Viewport | 31,1 % | **21,2 %** | 10,3 % → 21,2 % |
+| `competition` | UEyes Webseiten, segmentiert | 11,9 % | 10,3 % | 2,2 % → 10,3 % |
+| `competition` | Telefon scrollend (konstruiert) | 20,8 % | 4,2 % | 0,0 % → 4,2 % |
+| `cold-fold` | UEyes Webseiten, segmentiert | 34,9 % | **40,9 %** | 27,7 % → 40,9 % |
+| `cold-fold` | Desktop scrollend (konstruiert) | 95,8 % | 100,0 % | 83,3 % → 100,0 % |
+| `flat` (nicht ausgeliefert) | UEyes Webseiten, segmentiert | 15,2 % | 22,2 % | — |
+| `dead-cta` (nicht ausgeliefert) | Desktop scrollend (konstruiert) | 83,3 % | 100,0 % | — |
+| `cta-below-fold` (nicht ausgeliefert) | alle | 0,0 % | 0,0 % | unverändert |
+
+**`competition` bewegt sich zurück.** Die Zuspitzung senkt die Fläche *neben*
+den Blickfängen stärker als die zwischen ihnen, das Tal-Verhältnis steigt
+wieder. Über beide Schritte von 1.2 hinweg bleibt aber eine Verdopplung stehen
+(10,3 % → 21,2 % auf Telefon-Screens) — die Regel ist damit **zweimal** auf
+einer Karte gemessen worden, für die sie nicht kalibriert wurde. B1 baut sie um
+und kalibriert danach neu; bis dahin ist keine dieser Zahlen eine Schwelle.
+
+**`cold-fold` steigt weiter** und feuert auf der konstruierten Desktop-Form
+jetzt in 100 % der Fälle — also gar nicht mehr. Auf echten Bildern sind es
+40,9 %, noch im brauchbaren Bereich, aber die Richtung ist eindeutig und 0,08
+ist damit endgültig nachzumessen.
+
+**`flat` und `dead-cta` sind nicht ausgeliefert, ihre Zahlen aber trotzdem
+veraltet.** Genau deshalb stehen sie hier: eine abgeschaltete Regel, deren
+Schwelle im Stillen wegdriftet, ist beim Wiedereinschalten eine Falle. `flat`
+liegt jetzt bei 22,2 % statt 15,2 %, weil sein Bildanteil mit dem neuen Blur
+gerechnet wird.
+
+**Ein Nebeneffekt, der zur Darstellung gehört und nicht zur Vorhersage:** der
+Renderer blendet alles unter `transparencyCutoff` = 0,08 aus und fadet bis 0,20
+ein. Diese beiden Zahlen sind an der *alten* Werteverteilung gewählt worden. Mit
+einer zugespitzten Karte fällt mehr Fläche unter die Schwelle, das Bild wirkt
+also leerer, als die Konzentrationszahl allein erwarten lässt. Das ist keine
+Änderung an der Vorhersage, aber es ist eine offene Kalibrierung — siehe unten.
+
 ### Was offen bleibt
 
-1. **Die Schärfe.** Der eigentliche A1-Befund ist ungelöst: Faktor 3,4. `alpha`
-   ist dafür der falsche Hebel, weil er den Bildanteil als Ganzes skaliert statt
-   ihn selektiver zu machen. Die nächsten Kandidaten sind die Nachbearbeitung
-   (`post.blurSigmaRatio` 0,025 auf der 512er-Kante ist eine breite
-   Weichzeichnung, `post.gamma` 0,8 hebt schwache Werte zusätzlich an) und der
-   Perzentil-Clip. Jeder davon ist eine eigene Messung mit eigener
-   Nebenwirkungsprüfung — keiner ist in 1.2 A erledigt.
-2. **`competition` neu kalibrieren**, nach dem Umbau in B1, auf der Karte mit
-   α = 0,5, getrennt je Frame-Form.
-3. **`cold-fold` bei 0,08 nachprüfen**, sobald ein Set mit echten Layer-Bäumen
+1. **Die Schärfe ist halb geschlossen, nicht geschlossen.** Faktor 3,6 → 2,2
+   (Webpage) und 2,8 → 1,6 (Mobile). Was noch fehlt, holt keiner der vier
+   geprüften Hebel: `post.gamma` und der Clip spitzen den Bildanteil zu und
+   kosten dabei zuverlässig AUC, ein schärferer Blur verliert überall, und
+   `blendGamma` ist bei 2,0 an seiner gemessenen Obergrenze. Der nächste Schritt
+   ist keine Konstante mehr, sondern eine andere Bildanalyse — der
+   Ortsprior selbst ist eine weiche Glocke und deckelt, wie scharf die Summe
+   werden kann.
+2. **Der `transparencyCutoff` des Renderers ist auf der alten Verteilung
+   kalibriert.** 0,08 mit einer Rampe bis 0,20 war für eine Karte gewählt, deren
+   Masse breiter lag. Auf der zugespitzten Karte fällt mehr Fläche darunter, das
+   Bild wirkt leerer. Das ist eine Darstellungsfrage, keine Vorhersagefrage —
+   aber sie ist offen, und sie gehört an einen Menschen mit Blick auf echte
+   Screens, nicht an eine Metrik.
+3. **`competition` neu kalibrieren**, nach dem Umbau in B1, auf der Karte mit
+   α = 0,5 **und** `blendGamma` 2,0, getrennt je Frame-Form.
+4. **`cold-fold` bei 0,08 nachprüfen**, sobald ein Set mit echten Layer-Bäumen
    existiert.
+5. **`flat` ist doppelt veraltet.** Seine Schwellen sind auf dem Bildanteil mit
+   Blur 0,025 geschätzt; der ist jetzt 0,035. Die Regel ist nicht ausgeliefert,
+   aber die Zahlen in `config.ts` sind es dem Namen nach — beim
+   Wiedereinschalten sind sie neu zu messen, nicht zu übernehmen.
 
 ---
 
@@ -2234,7 +2412,7 @@ blockiert (NFR-3).
 npm test
 ```
 
-401 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
+414 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
 Bild ⇒ flache Feature-Map, schwarzes Quadrat ⇒ Peak an dessen Position,
 Prototype-Hotspot schlägt Namens-Treffer, gleiche Eingabe ⇒ identische Ausgabe.
 Echte Screens haben keine bekannte Wahrheit und eignen sich nicht für

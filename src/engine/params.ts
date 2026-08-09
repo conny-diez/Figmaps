@@ -238,8 +238,14 @@ function imageOnlyWeights(base: FeatureWeights): FeatureWeights {
 const HYBRID_PARAMS: EngineParams = {
   ...cloneParams(HEURISTIC_V1),
   weights: imageOnlyWeights(HEURISTIC_V1.weights),
+  // Die Nachbearbeitung weicht seit 1.2 A6 von 1.0 ab — aber nur hier, nicht in
+  // `ENGINE_CONFIG.post`: `HEURISTIC_V1` ist die eingefrorene Referenz des
+  // Harness und darf sich nicht mitbewegen, wenn die aktive Konfiguration
+  // gemessen wird.
+  post: { ...HEURISTIC_V1.post, blurSigmaRatio: ENGINE_CONFIG.hybrid.blurSigmaRatio },
   priorSource: 'data',
   blendAlpha: HYBRID_BLEND_ALPHA,
+  blendGamma: ENGINE_CONFIG.hybrid.blendGamma,
 }
 
 const HYBRID_CONFIG: EngineConfigEntry = {
