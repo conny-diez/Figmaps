@@ -187,13 +187,21 @@ function hasValleyBetween(
  * unten und in 2 von 8 direkt unter den Hero (`layoutFor`, `variant % 3 === 2`).
  * Die Regel soll also in genau 6 Fällen feuern und in 2 schweigen:
  *
- *   Desktop scrollend   6/8 — feuert auf genau den 6 „CTA unten"-Varianten
- *   Telefon 1 Viewport  6/8 — dieselbe Aufteilung, keine Abweichung
- *   Telefon scrollend   7/8 — eine Fehlmeldung (v5, CTA oben)
+ *   Desktop scrollend   16/24 — feuert auf genau den 16 „CTA unten"-Varianten
+ *   Telefon 1 Viewport  16/24 — dieselbe Aufteilung, keine Abweichung
+ *   Telefon scrollend   16/24 — dieselbe Aufteilung, keine Abweichung
  *
- * 23 von 24 Urteilen stimmen mit der Konstruktion überein. Die Quote von rund
- * 79 % ist hoch, aber sie ist die Quote, die der Aufbau vorgibt — nicht das
- * Zeichen einer Regel, die immer feuert.
+ * **24 von 24 Urteilen stimmen in jeder Frame-Form mit der Konstruktion
+ * überein** (`npm run finding-load`). Keine Fehlmeldung, kein Versäumnis. Die
+ * einzige Abweichung, die hier früher stand — eine Fehlmeldung auf „Telefon
+ * scrollend" —, ist mit den Engine-Änderungen aus 1.2 A verschwunden.
+ *
+ * **Die 66,7 % sind die Quote des Generators, nicht die der Regel.**
+ * `constructed.ts` → `layoutFor` setzt `ctaAtBottom = variant % 3 !== 2`,
+ * stellt den CTA also in genau zwei Dritteln der Varianten nach unten. Wer
+ * diese Zahl als Eigenschaft der Regel liest, liest eine Eigenschaft von
+ * `layoutFor`. Auf echten Screens ist die Quote unbekannt und mit UEyes nicht
+ * messbar — ohne Layer-Baum gibt es keine Kandidaten.
  *
  * Solange der Flächenanteil im Score steckte, war das anders: er addierte 0,20
  * auf jede Ergebniskarte (230.400 px² gegen 17.784 px² beim CTA) und schob die
@@ -332,17 +340,29 @@ const ctaBelowFold: Rule = {
  * neu kalibriert — auf der ausgelieferten Karte, in jeder der drei Frame-Formen
  * getrennt. Bis dahin gilt: 10,3 % / 22,4 % ist der Stand, nicht 3,3 % / 10,0 %.
  *
- * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
- * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um
- * eine Größenordnung schwankt. Derselbe Wert 0,3 bedeutet
+ * **Der Abstand ist in 1.2 B1 auf die Diagonale umgestellt und neu
+ * kalibriert.** Vorher war er ein Anteil der Karten*breite* und bedeutete je
+ * nach Frame-Form 3,9 % bis 48,0 % der Höhe — „weit auseinander" hieß auf einem
+ * Telefon etwas völlig anderes als auf einem Desktop. Gemessen mit dem neuen
+ * Maß, je 495 Bilder, die beiden Ein-Viewport-Populationen:
  *
- *   Desktop, ein Viewport   154 px = 48,0 % der Kartenhöhe
- *   Telefon, ein Viewport    71 px = 13,9 %
- *   Telefon, scrollend       77 px =  3,9 %
+ *   Abstand   Webseiten   Telefon
+ *   0,15        47,1 %     22,2 %
+ *   **0,25**    15,8 %     15,2 %
+ *   0,35         0,8 %      6,3 %
  *
- * „weit auseinander" heißt also je nach Frame-Form etwas völlig anderes. Nicht
- * geändert, weil jede Änderung ohne neue Kalibrierung genau der Fehler wäre,
- * um den es hier geht.
+ * Bei 0,25 sind die Raten praktisch gleich — genau die Formunabhängigkeit, die
+ * der Umstellung zugrunde lag. **Alle Quoten von vor 1.2 B1 sind ungültig**,
+ * auch die 3,3 % / 10,0 % aus 1.1: sie stammen vom alten Maß.
+ *
+ * **Auf segmentierten Telefon-Frames feuert die Regel gar nicht mehr** (0,0 %
+ * bei 0,25, ebenso auf beiden konstruierten Scroll-Formen). Der Grund ist
+ * strukturell und nicht der Abstand: auf der komponierten Karte ist jeder
+ * tiefere Abschnitt um `sectionAttenuation^i` gedämpft, das zweite Maximum
+ * erreicht `competitionIntensity` = 0,65 dort nicht mehr. Dieselbe Blockade wie
+ * bei `cta-below-fold`, und dieselbe Konsequenz: die Dämpfung wird dafür nicht
+ * angefasst. `competition` ist damit faktisch eine Ein-Viewport-Regel; auf
+ * Webseiten mit Segmentierung feuert sie noch (7,1 %).
  */
 const competition: Rule = {
   id: 'competition',
@@ -353,7 +373,10 @@ const competition: Rule = {
 
     const x1 = first % attention.width
     const y1 = Math.floor(first / attention.width)
-    const minDistance = cfg.competitionMinDistance * attention.width
+    // Anteil der **Diagonale**, nicht der Breite — siehe `config.ts`. Der alte
+    // Bezug auf die Breite machte „weit auseinander" auf einem Telefon zu etwas
+    // anderem als auf einem Desktop.
+    const minDistance = cfg.competitionMinDistanceDiagonal * Math.hypot(attention.width, attention.height)
 
     const second = argmax(attention.values, (index) => {
       const dx = (index % attention.width) - x1
@@ -402,27 +425,26 @@ const competition: Rule = {
  * Bildanteils, und tiefere Abschnitte haben mehr Inhalt als der Kopfbereich.
  * Gemessen beim Umstieg auf 0,5 (`npm run side-effects`):
  *
- *                                      α 0,3     α 0,5    + Schärfe (Stand)
- *   Webseite, Viewport 500 erzwungen   27,7 %   34,9 %     40,0 %
- *   Telefon, Viewport 400 erzwungen       —     58,6 %     61,6 %
+ *                                      α 0,3     α 0,5    + Schärfe   + Schwelle je Typ
+ *   Webseite, Viewport 500 erzwungen   27,7 %   34,9 %     40,0 %      40,0 %
+ *   Telefon, Viewport 400 erzwungen       —     58,6 %     61,6 %      39,8 %
  *   Desktop scrollend (konstruiert)    83,3 %   95,8 %    100,0 %
  *   Telefon scrollend (konstruiert)   100,0 %  100,0 %    100,0 %
  *
  * Auf beiden konstruierten Formen feuert sie damit **immer** und sagt dort
  * nichts mehr.
  *
- * **DER EIGENTLICHE BEFUND STEHT NICHT IN DER RATE, SONDERN IN DER
- * VERTEILUNG.** Der relative Vorsprung des stärksten Abschnitts liegt
+ * **DER BEFUND STAND NICHT IN DER RATE, SONDERN IN DER VERTEILUNG — und ist
+ * behoben.** Der relative Vorsprung des stärksten Abschnitts lag
  *
- *   auf Webseiten       im Median bei 0,037  — die Schwelle 0,08 liegt darüber
- *   auf Telefon-Screens im Median bei 0,131  — die Schwelle liegt **darunter**
+ *   auf Webseiten       im Median bei 0,037  — die Schwelle 0,08 darüber, p60
+ *   auf Telefon-Screens im Median bei 0,131  — die Schwelle **darunter**, p38
  *
- * Auf Telefon-Screens sagt die Regel also häufiger ja als nein, und zwar nicht
- * knapp. 0,08 stammt aus der Webseiten-Verteilung und ist auf der Telefon-
- * Verteilung nie geprüft worden — dieselbe Fehlerklasse wie bei `flat`, nur
- * dass die Schwelle diesmal zwischen **Populationen** wandert statt zwischen
- * Konfigurationen. Eine Schwelle je UI-Typ, wie sie `flat` schon hat, ist der
- * naheliegende Umbau; er gehört zu 1.2 B und braucht eine eigene Messung.
+ * Auf Telefon-Screens sagte die Regel damit häufiger ja als nein. Seit 1.2 B
+ * hat `coldFoldMargin` eine Schwelle je UI-Typ, beide am selben Perzentil
+ * ihrer eigenen Verteilung (p60): web 0,080, mobile 0,189. Die Begründung und
+ * die Grenzen der Kalibrierung stehen in `config.ts` — insbesondere, dass das
+ * Perzentil selbst nicht kalibriert ist.
  *
  * Auf Webseiten bleibt die Regel mit 40,0 % im brauchbaren Bereich; die
  * konstruierten Frames stellen den Hero absichtlich weiter unten auf, ihre
@@ -444,7 +466,11 @@ const coldFold: Rule = {
     // Relative: the concentration measure lives in a narrow band, so an
     // absolute margin would either never fire or fire always.
     if (!(aboveFold > 0)) return null
-    if (input.sectionSalience[bestIndex] / aboveFold - 1 < cfg.coldFoldMargin) return null
+    // Schwelle je UI-Typ, wie bei `flat`: „der stärkste Abschnitt liegt nicht
+    // oben" soll auf einer Webseite und auf einem Telefon-Screen dasselbe
+    // heißen. Mit einer Zahl für beide hieß es das nicht — siehe `config.ts`.
+    const margin = cfg.coldFoldMargin[input.priorCategory] ?? cfg.coldFoldMargin.web
+    if (input.sectionSalience[bestIndex] / aboveFold - 1 < margin) return null
 
     return {
       id: 'cold-fold',

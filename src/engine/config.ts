@@ -537,6 +537,37 @@ export const ENGINE_CONFIG = {
     /** Never show more than this many findings (C-1). */
     maxShown: 6,
     /**
+     * Unterhalb dieses Frame-Mittelwerts des Bildanalyse-Anteils sagt das Panel
+     * dazu, dass die Karte überwiegend die Positionsannahme zeigt.
+     *
+     * **Ein Hinweis, keine Änderung an der Karte.** Die Unterscheidung
+     * „inhaltsarm" ist pro Pixel nachweislich unmöglich — eine Schwelle auf dem
+     * Bildanteil löscht auf echten Screens 1,3 bis 3,8 % der sichtbaren Fläche
+     * (`eval/band-gate.ts`). Pro **Frame** ist sie möglich, weil die
+     * Perzentil-Normierung auf einer strukturlosen Fläche keinen Wertebereich
+     * findet und exakt null liefert.
+     *
+     * **Gemessen, nicht geschätzt** (`npm run band-gate`). Die beiden
+     * Populationen liegen zwei Größenordnungen auseinander:
+     *
+     *   grauer 1440 x 4000-Testframe, ohne Inhalt   0,000000
+     *   niedrigster der 40 Gate-Bilder              0,228585
+     *   Median der Gate-Bilder                      0,4516
+     *
+     * Dazwischen liegt in dieser Stichprobe **nichts**. 0,02 ist eine
+     * Größenordnung unter dem kleinsten beobachteten echten Wert und liegt
+     * damit sicher in der Lücke; auf keinem der 40 Gate-Bilder erscheint der
+     * Hinweis. Der Lauf prüft diese Bedingung bei jedem Aufruf mit.
+     *
+     * Was das nicht heißt: dass zwischen 0,02 und 0,23 nie ein echter Frame
+     * liegt. 40 Bilder zeigen keine Population. Die Wahl ist deshalb bewusst
+     * konservativ — ein *dünn* gefüllter Frame löst den Hinweis **nicht** aus,
+     * obwohl er ihn vielleicht verdiente. Das ist die richtige Richtung für
+     * einen Fehler: ein fehlender Hinweis kostet nichts, ein falscher erzählt
+     * dem Nutzer, seine Datei sei leer.
+     */
+    lowContentLevel: 0.02,
+    /**
      * `competition`: Anteil des Maximums, den eine Region erreichen muss, um
      * als zweiter Hotspot zu zählen.
      *
@@ -551,8 +582,58 @@ export const ENGINE_CONFIG = {
      * die eigentliche Aussage trägt („zwei getrennte Regionen").
      */
     competitionIntensity: 0.65,
-    /** `competition`: minimum distance between the two peaks, share of width. */
-    competitionMinDistance: 0.3,
+    /**
+     * `competition`: Mindestabstand der beiden Spitzen, als Anteil der
+     * **Bilddiagonale**.
+     *
+     * **Umgestellt in 1.2 B1 — vorher ein Anteil der Karten*breite*.** Das war
+     * der dokumentierte Fehler: derselbe Wert 0,3 bedeutete je nach Frame-Form
+     *
+     *   Desktop, ein Viewport   154 px = 48,0 % der Kartenhöhe
+     *   Telefon, ein Viewport    71 px = 13,9 %
+     *   Telefon, scrollend       77 px =  3,9 %
+     *
+     * „Weit auseinander" hieß also auf einem Telefon etwas völlig anderes als
+     * auf einem Desktop. Auf der Diagonale hieße dasselbe 0,3 zwischen 26 % und
+     * 13 % — immer noch nicht identisch, aber die Diagonale ist die Größe, die
+     * mit der Form skaliert, statt eine Kante willkürlich auszuzeichnen.
+     *
+     * **Warum die Diagonale und nicht getrennte x/y-Schwellen.** Getrennte
+     * Schwellen wären ausdrucksstärker — „nebeneinander" ist etwas anderes als
+     * „untereinander" —, aber sie sind **zwei** Konstanten statt einer, auf
+     * einer Population, auf der die Regel ohnehin selten feuert (2,6 % bis
+     * 22,4 %). Zwei Werte an so wenigen Auslösern zu kalibrieren hieße, Rauschen
+     * zu kalibrieren. Die Diagonale ist die sparsamere Wahl; getrennte Schwellen
+     * bleiben möglich, sobald es eine Population gibt, die sie trägt.
+     *
+     * Der Name trägt die Einheit, weil der alte Wert sonst stillschweigend
+     * weitergelesen würde.
+     *
+     * **0,25 ist gemessen** (`npm run competition`, je 495 Bilder). Die
+     * Feuerrate der beiden Ein-Viewport-Populationen — der Fall, um den es in
+     * 1.2 B geht:
+     *
+     *   Abstand   Webseiten   Telefon
+     *   0,15        47,1 %     22,2 %
+     *   0,20        31,1 %     18,6 %
+     *   **0,25**    15,8 %     15,2 %
+     *   0,30         4,0 %     10,5 %
+     *   0,35         0,8 %      6,3 %
+     *
+     * **Bei 0,25 sind die beiden Formen praktisch gleich** (15,8 gegen 15,2 %).
+     * Darunter unterscheiden sie sich um mehr als das Doppelte, darüber kippt
+     * das Verhältnis um. Genau diese Formunabhängigkeit war der Zweck der
+     * Umstellung, und sie ist der Grund für den Wert — nicht die Rate selbst,
+     * für die es keine Ground Truth gibt.
+     *
+     * Die bindende Bedingung ist dabei **nicht** der Abstand, sondern
+     * `competitionIntensity`: je weiter der Suchradius, desto schwächer das
+     * zweite Maximum. Sein Median fällt auf Webseiten von 0,873 (0,15) auf
+     * 0,390 (0,35) und unterschreitet die Schwelle 0,65 zwischen 0,25 und 0,30.
+     * Das Talverhältnis sitzt bei 0,25 in beiden Ein-Viewport-Populationen
+     * innerhalb der Verteilung (p22 bzw. p34), die Regel kann dort also beides.
+     */
+    competitionMinDistanceDiagonal: 0.25,
     /**
      * `competition`: the path between the two peaks must dip below
      * `zweites Maximum x this`. Without the valley test a single wide bright
@@ -628,8 +709,42 @@ export const ENGINE_CONFIG = {
      * a featureless page sits at 0,163 and a page with a strong eye-catcher
      * deep down at 0,182. An absolute margin on the old 0..1 peak scale could
      * never be reached — which is why this rule was silently inert.
+     *
+     * **Je UI-Typ seit 1.2 B, vorher eine Zahl für alle.** Die 0,08 stammen aus
+     * der Webseiten-Verteilung, und auf Telefon-Screens lagen sie unter deren
+     * Median: die Regel sagte dort häufiger ja als nein. Gemessen mit
+     * `npm run cold-fold`, je 495 Bilder mit erzwungener Segmentierung:
+     *
+     *   Dezile web     −0,132 −0,081 −0,043  0,005  0,037  0,080  0,128  0,181  0,259
+     *   Dezile mobile  −0,071 −0,007  0,045  0,088  0,131  0,189  0,250  0,315  0,411
+     *
+     * 0,08 sitzt in web bei **p60** (Rate 40,0 %) und in mobile bei **p38**
+     * (61,6 %). Dieselbe Fehlerklasse wie bei `flat` — eine Schwelle, in einer
+     * Population geschätzt und in einer anderen angewandt —, nur wandert sie
+     * hier zwischen UI-Typen statt zwischen Konfigurationen.
+     *
+     * **Kalibriert wird auf Vergleichbarkeit, nicht gegen eine Wahrheit.** Es
+     * gibt keine Ground Truth dafür, ob ein Screen diesen Befund verdient;
+     * niemand hat gelabelt, wo Aufmerksamkeit „zu weit unten" bündelt. Die
+     * Schwelle liegt deshalb in jedem Typ am **selben Perzentil** seiner
+     * eigenen Verteilung, damit die Aussage in beiden dasselbe heißt — genau
+     * die Begründung, mit der `flat` seine vier Schwellen bekommen hat. Mit
+     * p60 in beiden: web 40,0 %, mobile 39,8 %.
+     *
+     * **Das Perzentil selbst ist nicht kalibriert.** p60 ist aus dem
+     * ausgelieferten Zustand übernommen. Ob ein Befund auf 40 % der Screens
+     * erscheinen soll, ist eine Produktfrage und hier ausdrücklich **nicht**
+     * entschieden — entschieden ist nur, dass die Regel in beiden Typen
+     * dieselbe Frage stellt.
+     *
+     * `desktop` und `poster` sind **nicht gemessen**: die Kategorien sind
+     * importierbar, aber für Figmaps nicht die relevanten UI-Typen. Sie fallen
+     * auf den web-Wert zurück, und das ist eine Annahme, keine Messung.
      */
-    coldFoldMargin: 0.08,
+    coldFoldMargin: {
+      web: 0.08,
+      mobile: 0.189,
+    } as Record<string, number>,
     /** `cta-rank`: a primary candidate below this rank is worth reporting. */
     ctaRankThreshold: 1,
     /** Name tokens that mark a candidate as the *primary* call to action. */

@@ -21,6 +21,7 @@ import {
   type ProfileId,
 } from '../src/engine/params'
 import { analyzeFrame } from '../src/engine/analyze'
+import { ENGINE_CONFIG } from '../src/engine/config'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { renderContactSheet, type Triptych } from './contact-sheet'
@@ -45,6 +46,17 @@ import { buildSharpnessReport, verdictOf } from './sharpness-report'
 import { groupSweep, GROUP_LABELS, type GroupSweepResult } from './groups'
 import { measureCutoff } from './cutoff'
 import { buildGateFixtures } from './gate-fixtures'
+import { measureBandGate, type ThresholdCandidate } from './band-gate'
+import { measureColdFold } from './cold-fold'
+import {
+  analyseCtaRank,
+  LOAD_POPULATIONS,
+  LOAD_POPULATIONS_WITH_LAYERS,
+  measureFindingLoad,
+  onboardingFindings,
+} from './finding-load'
+import { sweepCompetition } from './competition'
+import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -1076,6 +1088,221 @@ async function runSideEffects(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// band-gate — verändert eine Inhaltsschwelle im Renderer echte Screens?
+//
+//   npm run band-gate
+// ---------------------------------------------------------------------------
+
+async function runBandGate(args: Args): Promise<number> {
+  const candidates: ThresholdCandidate[] = typeof args.candidates === 'string'
+    ? args.candidates.split(',').map((entry) => {
+        const [cutoff, ramp] = entry.split('/').map(Number)
+        return { cutoff, ramp: ramp ?? cutoff }
+      })
+    : [
+        { cutoff: 0.005, ramp: 0.01 },
+        { cutoff: 0.01, ramp: 0.02 },
+        { cutoff: 0.02, ramp: 0.04 },
+        { cutoff: 0.05, ramp: 0.05 },
+      ]
+
+  console.log('Inhaltsschwelle im Renderer — verändert sie die Ausgabe auf echten Screens?')
+  console.log('Das ist eine Falsifikation: wenn ja, ist der Vorschlag erledigt.')
+  const allContentLevels: number[] = []
+  for (const set of [{ setName: 'gate-web', priorAsset: 'web' as const }, { setName: 'gate-mobile', priorAsset: 'mobile' as const }]) {
+    const result = await measureBandGate({ ...set, candidates })
+    console.log('')
+    console.log(`${result.setName}: ${result.imageCount} Bilder`)
+    console.log(`  Bildanteil, Quantile p1/p5/p10/p25/p50: ${result.imageTermQuantiles.map((v) => v.toFixed(4)).join(' / ')}`)
+    console.log(`  ${'Schwelle'.padEnd(16)}${'Pixel verändert'.padStart(17)}${'sichtbar verloren'.padStart(19)}${'max Δ'.padStart(9)}${'Bilder'.padStart(9)}`)
+    for (const entry of result.candidates) {
+      console.log(
+        `  ${`${entry.candidate.cutoff} / ${entry.candidate.ramp}`.padEnd(16)}` +
+          `${(entry.changedShare * 100).toFixed(3).padStart(15)} %` +
+          `${(entry.lostVisibleShare * 100).toFixed(3).padStart(17)} %` +
+          `${entry.maxDelta.toFixed(3).padStart(9)}` +
+          `${String(entry.imagesAffected).padStart(7)}/${result.imageCount}`,
+      )
+    }
+    allContentLevels.push(...result.contentLevels)
+    console.log(
+      `  Frame-Mittelwert des Bildanteils: min ${Math.min(...result.contentLevels).toFixed(4)}, ` +
+        `p25 ${result.contentLevels[Math.floor(result.contentLevels.length * 0.25)].toFixed(4)}, ` +
+        `Median ${result.contentLevels[Math.floor(result.contentLevels.length * 0.5)].toFixed(4)}`,
+    )
+  }
+
+  // Der Gegenpol: ein Frame ohne jeden Inhalt. Ohne diesen Wert sagt die
+  // Verteilung oben nichts darüber, ob eine Schwelle überhaupt trennt.
+  const grey = solidImage(720, 2000, [180, 180, 180])
+  const greyAnalysis = await analyzeFrame(new HeuristicAttentionEngine(), nodeImageOps, {
+    source: grey,
+    signals: [],
+    frameWidth: 1440,
+    frameHeight: 4000,
+  })
+  console.log('')
+  console.log(`Grauer Testframe (1440 x 4000, ohne Inhalt): ${greyAnalysis?.contentLevel.toFixed(6)}`)
+  console.log(`Niedrigster Wert unter den 40 Gate-Bildern:  ${Math.min(...allContentLevels).toFixed(6)}`)
+  console.log(`Ausgelieferte Schwelle:                      ${ENGINE_CONFIG.findings.lowContentLevel}`)
+  const wouldFire = allContentLevels.filter((value) => value < ENGINE_CONFIG.findings.lowContentLevel).length
+  console.log(
+    wouldFire === 0
+      ? `Der Hinweis erscheint auf keinem der ${allContentLevels.length} Gate-Bilder. Bedingung erfüllt.`
+      : `ACHTUNG: der Hinweis erschiene auf ${wouldFire} der ${allContentLevels.length} Gate-Bilder.`,
+  )
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// cold-fold — 1.2 B: die Schwelle je UI-Typ
+//
+//   npm run cold-fold
+// ---------------------------------------------------------------------------
+
+async function runColdFold(): Promise<number> {
+  // Die Referenz, gegen die die Verteilungen gelesen werden: der web-Wert. Er
+  // ist der einzige, der je an Daten geschätzt wurde.
+  const shippedMargin = ENGINE_CONFIG.findings.coldFoldMargin.web
+  console.log('cold-fold: Verteilung der Entscheidungsgröße je UI-Typ.')
+  console.log('Kalibriert wird auf Vergleichbarkeit, nicht gegen eine Wahrheit — es gibt keine.')
+  const result = await measureColdFold({ onProgress: (message) => console.log(`  ${message} …`) })
+
+  console.log('')
+  for (const measurement of result.measurements) {
+    console.log(
+      `${measurement.population.id}: ${measurement.evaluated} bewertet, ${measurement.blocked} blockiert, ` +
+        `Rate heute ${(measurement.currentRate * 100).toFixed(1)} %`,
+    )
+    console.log(`  Dezile: ${measurement.deciles.map((v) => v.toFixed(3)).join(' ')}`)
+    console.log(
+      `  die ausgelieferte Schwelle ${shippedMargin} sitzt bei p${(measurement.currentThresholdQuantile * 100).toFixed(0)}`,
+    )
+  }
+
+  console.log('')
+  console.log(`Anker: p${(result.anchorQuantile * 100).toFixed(0)} — die Stelle, an der die heutige Schwelle in web sitzt.`)
+  console.log(`${'UI-Typ'.padEnd(10)}${'Schwelle'.padStart(10)}${'Rate'.padStart(9)}`)
+  for (const id of Object.keys(result.proposed)) {
+    console.log(`${id.padEnd(10)}${result.proposed[id].toFixed(3).padStart(10)}${`${(result.proposedRate[id] * 100).toFixed(1)} %`.padStart(9)}`)
+  }
+  console.log('')
+  console.log('Das Perzentil selbst ist NICHT kalibriert — es ist aus dem ausgelieferten Zustand übernommen.')
+  console.log('Ob ein Befund auf so vielen Screens erscheinen soll, ist eine Produktfrage.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// finding-load — wie viele Befunde bekommt ein Screen, und warum ist cta-rank
+// der Ausreißer?
+//
+//   npm run finding-load
+// ---------------------------------------------------------------------------
+
+async function runFindingLoad(args: Args): Promise<number> {
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log('Befunde pro Screen — gezählt wird, was das Panel zeigt: nur ausgelieferte Regeln.')
+  console.log('')
+  console.log('MIT Layer-Baum (konstruiert) — die einzigen Populationen, auf denen der')
+  console.log('vollständige Regelsatz laufen kann. Eine Figma-Datei hat immer Ebenen.')
+  const withLayers = await measureFindingLoad({
+    populations: LOAD_POPULATIONS_WITH_LAYERS,
+    onProgress: (m) => console.log(`  ${m} …`),
+  })
+  printLoad(withLayers)
+
+  const onboarding = await onboardingFindings()
+  console.log('')
+  console.log(`Onboarding-Nachbau (393 x 852, ${onboarding.candidateCount} Kandidaten): ${onboarding.findings.length} Befunde`)
+  for (const finding of onboarding.findings) console.log(`    ${finding}`)
+
+  console.log('')
+  console.log('OHNE Layer-Baum (UEyes) — dieselbe Messung ohne cta-rank, die Regel braucht')
+  console.log('Kandidaten. Diese Zahlen UNTERSCHÄTZEN die Befundlast systematisch.')
+  const results = await measureFindingLoad({ populations: LOAD_POPULATIONS, ...(limit ? { limit } : {}), onProgress: (m) => console.log(`  ${m} …`) })
+
+  printLoad(results)
+
+  console.log('')
+  console.log('cta-rank: was macht die Regel so häufig?')
+  console.log('Der Verdacht ist der Generator — `layoutFor` stellt den CTA in 2 von 3 Varianten nach unten.')
+  for (const analysis of await analyseCtaRank()) {
+    const m = analysis.matrix
+    console.log('')
+    console.log(`  ${analysis.shapeLabel} — Rate ${(analysis.rate * 100).toFixed(1)} %`)
+    console.log(`    CTA unten,  Regel feuert   ${String(m.bottomFired).padStart(3)}`)
+    console.log(`    CTA unten,  Regel schweigt ${String(m.bottomSilent).padStart(3)}`)
+    console.log(`    CTA oben,   Regel feuert   ${String(m.topFired).padStart(3)}`)
+    console.log(`    CTA oben,   Regel schweigt ${String(m.topSilent).padStart(3)}`)
+    console.log(`    Übereinstimmung mit dem Aufbau: ${(analysis.agreement * 100).toFixed(1)} %`)
+  }
+  return 0
+}
+
+function printLoad(results: Awaited<ReturnType<typeof measureFindingLoad>>): void {
+  for (const result of results) {
+    console.log('')
+    console.log(`${result.population.label} — ${result.imageCount} Screens, Ø ${result.mean.toFixed(2)} Befunde`)
+    const width = Math.max(result.histogram.length, 1)
+    console.log(`  ${'Befunde'.padEnd(10)}${Array.from({ length: width }, (_, i) => String(i).padStart(8)).join('')}`)
+    console.log(`  ${'Screens'.padEnd(10)}${result.histogram.map((count) => String(count).padStart(8)).join('')}`)
+    console.log(
+      `  ${'Anteil'.padEnd(10)}${result.histogram
+        .map((count) => `${((count / result.imageCount) * 100).toFixed(1)} %`.padStart(8))
+        .join('')}`,
+    )
+    const rules = Object.keys(result.perRule).sort((a, b) => result.perRule[b] - result.perRule[a])
+    for (const rule of rules) {
+      console.log(
+        `    ${rule.padEnd(16)} auf ${((result.perRule[rule] / result.imageCount) * 100).toFixed(1).padStart(5)} % der Screens sichtbar`,
+      )
+    }
+    for (const [rule, count] of Object.entries(result.blockedPerRule)) {
+      if (count === result.imageCount) console.log(`    ${rule.padEnd(16)} auf allen Screens strukturell blockiert`)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// competition — 1.2 B1: nach der Umstellung des Abstandsmaßes neu kalibrieren
+//
+//   npm run competition
+// ---------------------------------------------------------------------------
+
+async function runCompetition(args: Args): Promise<number> {
+  const distances = typeof args.distances === 'string'
+    ? args.distances.split(',').map(Number).filter(Number.isFinite)
+    : [0.15, 0.2, 0.25, 0.3, 0.35]
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log('competition — Abstand jetzt als Anteil der DIAGONALE. Alle alten Quoten sind ungültig.')
+  console.log(`Ausgeliefert: Abstand ${ENGINE_CONFIG.findings.competitionMinDistanceDiagonal}, Tal ${ENGINE_CONFIG.findings.competitionValleyRatio}, Intensität ${ENGINE_CONFIG.findings.competitionIntensity}`)
+  const results = await sweepCompetition({ distances, ...(limit ? { limit } : {}), onProgress: (m) => console.log(`  ${m} …`) })
+
+  for (const result of results) {
+    console.log('')
+    console.log(`${result.population.label} — ${result.frameCount} Frames`)
+    console.log(`  ${'Abstand'.padEnd(9)}${'2. Max'.padStart(9)}${'Tal p5'.padStart(9)}${'Median'.padStart(9)}${'p95'.padStart(9)}${'Schwelle'.padStart(10)}${'Rate'.padStart(9)}`)
+    for (const point of result.points) {
+      console.log(
+        `  ${String(point.distance).padEnd(9)}` +
+          `${point.secondPeakQuantiles[2].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[0].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[2].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[4].toFixed(3).padStart(9)}` +
+          `${`p${(point.valleyThresholdQuantile * 100).toFixed(0)}`.padStart(10)}` +
+          `${`${(point.rate * 100).toFixed(1)} %`.padStart(9)}`,
+      )
+    }
+  }
+  console.log('')
+  console.log('„Schwelle" ist die Stelle, an der competitionValleyRatio in der Talverteilung sitzt.')
+  console.log('Liegt sie bei p0 oder p100, kann die Regel nur nie oder immer feuern.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
 //
 //   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
@@ -1434,6 +1661,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args.groups) return await runGroups(args)
     if (args.cutoff) return await runCutoff(args)
     if (args['gate-fixtures']) return runGateFixtures(args)
+    if (args['band-gate']) return await runBandGate(args)
+    if (args['cold-fold']) return await runColdFold()
+    if (args['finding-load']) return await runFindingLoad(args)
+    if (args.competition) return await runCompetition(args)
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)
