@@ -20,7 +20,7 @@ import { PRIOR_ASSET_IDS, PRIOR_DURATIONS, type PriorAssetId } from '../src/engi
 import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
 import { crossValidate, ENGINE_LABELS, FOLDS } from './crossval'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
-import { auditFindings, quantiles } from './findings-audit'
+import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
 import { buildEpicDReport } from './epic-d-report'
 import { diagnose } from './diagnose'
@@ -274,10 +274,20 @@ async function runEval(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// findings-audit — does every rule actually fire on real images?
+// findings-audit — does every rule actually fire, and where does its threshold
+// sit inside the distribution it cuts?
+//
+//   npm run findings-audit -- --fixtures ueyes-mobile --prior-asset mobile --single-viewport
+//   npm run findings-audit -- --fixtures ueyes-web --viewport 500
+//   npm run findings-audit -- --constructed [--variants 24]
+//
+// `--constructed` needs no dataset: it draws its own frames, and it is the only
+// way to reach the three rules that require click candidates.
 // ---------------------------------------------------------------------------
 
 async function runFindingsAudit(args: Args): Promise<number> {
+  if (args.constructed === true) return await runConstructedAudit(args)
+
   const setName = str(args, 'fixtures', 'ueyes-web')
   const viewportOverride = args.viewport ? num(args, 'viewport', 0) : undefined
   const limit = args.limit ? num(args, 'limit', 0) : undefined
@@ -306,36 +316,84 @@ async function runFindingsAudit(args: Args): Promise<number> {
       }
     },
   })
-  process.stdout.write(`\r  ${result.imageCount} Bilder, davon ${result.withSignals} mit Layer-Signalen     \n\n`)
+  process.stdout.write(`\r  ${result.imageCount} Bilder, davon ${result.withSignals} mit Layer-Signalen     \n`)
 
+  printAudit(result)
+  return 0
+}
+
+/**
+ * The same audit on constructed frames with a layer tree.
+ *
+ * Exists because `cta-rank`, `cta-below-fold` and `dead-cta` need click
+ * candidates, candidates need a layer tree, and a screenshot has none — on
+ * UEyes those three are permanently blocked. The numbers are constructed, not
+ * observed, and the header says so on every run.
+ */
+async function runConstructedAudit(args: Args): Promise<number> {
+  const variants = args.variants ? num(args, 'variants', 24) : 24
+
+  console.log(`Findings-Audit auf konstruierten Frames mit Layer-Baum, ${variants} Varianten je Form.`)
+  console.log('ACHTUNG: konstruiert, nicht beobachtet. Eine Quote sagt, wie sich eine Regel auf einem')
+  console.log('konventionellen Layout verhält — nicht, wie häufig ein solches Layout vorkommt.')
+
+  let last = 0
+  const results = await auditConstructed({
+    variants,
+    onProgress: (done, total) => {
+      if (done - last >= 5 || done === total) {
+        last = done
+        process.stdout.write(`\r  ${done}/${total} Frames …   `)
+      }
+    },
+  })
+  process.stdout.write('\r                          \r')
+
+  for (const result of results) printAudit(result)
+  return 0
+}
+
+/**
+ * Fire rate, distribution, and — the column that matters — where the threshold
+ * sits inside that distribution. A threshold outside the observed range means
+ * the rule can only ever fire always or never; that is how `flat` and
+ * `dead-cta` were finally understood.
+ */
+function printAudit(result: AuditResult): void {
+  console.log('')
   console.log(
-    `Konfiguration: Ortsprior ${result.priorAsset}, ${result.segmented ? 'segmentiert' : 'ein Viewport'} —` +
-      ' die Quoten gelten nur für diese.',
+    `${result.setName}: ${result.imageCount} Frames, Ortsprior ${result.priorAsset}, ` +
+      `${result.segmented ? 'segmentiert' : 'ein Viewport'} — die Quoten gelten nur für diese Konfiguration.`,
   )
-  console.log('Regel              feuert   stumm  blockiert   Anteil (von bewertbaren)')
+  console.log('  Regel              feuert   stumm  blockiert   Anteil  Schwelle  liegt bei')
   for (const rule of result.rules) {
     const evaluated = rule.fired + rule.silent
     const share = evaluated > 0 ? `${((rule.fired / evaluated) * 100).toFixed(1)} %` : '—'
+    const position = evaluated > 0 ? thresholdPosition(rule.samples, rule.threshold?.value ?? null) : '—'
     const flag =
-      (evaluated === 0 ? '  (nicht bewertbar)' : rule.fired === 0 ? '  ← feuert NIE' : rule.fired === evaluated ? '  ← feuert IMMER' : '') +
-      (rule.shipped ? '' : '  [nicht ausgeliefert]')
+      (evaluated === 0
+        ? '  (nicht bewertbar)'
+        : rule.fired === 0
+          ? '  ← feuert NIE'
+          : rule.fired === evaluated
+            ? '  ← feuert IMMER'
+            : position === 'ÜBER max' || position === 'UNTER min'
+              ? '  ← Schwelle außerhalb'
+              : '') + (rule.shipped ? '' : '  [nicht ausgeliefert]')
     console.log(
-      `  ${rule.id.padEnd(16)} ${String(rule.fired).padStart(5)} ${String(rule.silent).padStart(7)} ${String(rule.blocked).padStart(10)}   ${share.padStart(7)}${flag}`,
+      `    ${rule.id.padEnd(16)} ${String(rule.fired).padStart(5)} ${String(rule.silent).padStart(7)} ` +
+        `${String(rule.blocked).padStart(10)}  ${share.padStart(7)}  ${(rule.threshold ? String(rule.threshold.value) : '—').padStart(8)}  ${position.padStart(9)}${flag}`,
     )
   }
-  console.log('')
   for (const rule of result.rules) {
-    if (rule.blocked > 0) console.log(`  ${rule.id}: ${rule.blocked}x blockiert — ${rule.blockedReason}`)
+    if (rule.blocked > 0) console.log(`    ${rule.id}: ${rule.blocked}x blockiert — ${rule.blockedReason}`)
   }
-  console.log('')
-  console.log('Verteilung der Entscheidungsgröße (p5 / p25 / Median / p75 / p95):')
+  console.log('  Verteilung der Entscheidungsgröße (p5 / p25 / Median / p75 / p95):')
   for (const rule of result.rules) {
     if (rule.samples.length === 0) continue
     const q = quantiles(rule.samples).map((value) => value.toFixed(3))
-    console.log(`  ${rule.id.padEnd(16)} ${q.join('  ')}   [${rule.variable}]`)
+    console.log(`    ${rule.id.padEnd(16)} ${q.join('  ')}   [${rule.variable}]`)
   }
-
-  return 0
 }
 
 // ---------------------------------------------------------------------------

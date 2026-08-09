@@ -192,6 +192,9 @@ eval/                      Epic A — läuft offline in Node
 ├─ report.ts               A-5  Markdown-Report
 ├─ contact-sheet.ts        A-5  Triptychon der zwölf schlechtesten Fälle
 ├─ tune.ts                 A-6  Random Search
+├─ findings-audit.ts       C-1  Feuerraten, Verteilungen, Lage der Schwelle
+├─ constructed.ts          C-1  Frames mit Layer-Baum — ohne die drei Regeln
+│                               mit Klick-Kandidaten unmessbar sind
 └─ fixtures/               nicht im Repo — siehe fixtures/README.md
 
 assets/
@@ -916,8 +919,28 @@ meisten stören (`src/findings/label.ts`).
 ### Feuert jede Regel überhaupt?
 
 ```bash
+# echte Bilder — in der Konfiguration, in der die Regel läuft
+npm run findings-audit -- --fixtures ueyes-mobile --prior-asset mobile --single-viewport
 npm run findings-audit -- --fixtures ueyes-web --viewport 500
+
+# konstruierte Frames mit Layer-Baum — braucht keinen Datensatz
+npm run findings-audit -- --constructed
 ```
+
+Der zweite Aufruf existiert, weil `cta-rank`, `cta-below-fold` und `dead-cta`
+Klick-Kandidaten brauchen, Kandidaten einen Layer-Baum, und ein Screenshot
+keinen hat. An UEyes sind diese drei dauerhaft blockiert. `eval/constructed.ts`
+zeichnet dafür Frames in drei Formen — Telefon als ein Viewport, Telefon
+scrollend, Desktop scrollend — mit variierender Hierarchie, Hero, CTA-Position
+und Kartenzahl. **Konstruiert, nicht beobachtet:** eine Quote von dort sagt, wie
+sich eine Regel auf einem konventionellen Layout verhält, nicht wie häufig ein
+solches Layout vorkommt. Der Aufruf schreibt diesen Vorbehalt in jeden Lauf.
+
+Beide Aufrufe geben dieselbe Tabelle aus, und die entscheidende Spalte ist
+**„liegt bei"** — wo die Schwelle innerhalb der beobachteten Verteilung sitzt.
+`ÜBER max` oder `UNTER min` heißt, dass die Regel gar nichts anderes tun kann,
+als immer oder nie zu feuern. Das ist die Zahl, an der `flat` und `dead-cta`
+schließlich verstanden wurden.
 
 `cold-fold` war seit seiner Einführung wirkungslos, obwohl alle Unit-Tests grün
 waren: die Tests riefen die Regel direkt mit handgebauten Werten auf, die
@@ -1122,7 +1145,8 @@ Layer-Baum hat:
 | `cold-fold` | 29,8 %, Schwelle 0,08 bei p70 | blockiert (nicht segmentiert) |
 
 **B) Konstruierte Frames mit Layer-Baum** (je 24, mit variierender Hierarchie,
-Hero, CTA-Position und Kartenzahl — konstruiert, nicht beobachtet):
+Hero, CTA-Position und Kartenzahl — konstruiert, nicht beobachtet;
+reproduzierbar mit `npm run findings-audit -- --constructed`):
 
 | Regel | Desktop scrollend | Telefon, ein Viewport | Telefon scrollend |
 |---|---|---|---|
