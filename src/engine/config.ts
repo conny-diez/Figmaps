@@ -22,8 +22,27 @@
  */
 export const ENGINE_VERSION = 'hybrid-v1'
 
-/** Name tokens that mark a node as probably interactive (FR-3). */
+/**
+ * Name tokens that mark a node as probably interactive (FR-3).
+ *
+ * Matched as substrings of a lowercased name token, so the shortest useful stem
+ * is listed: `melden` covers „Anmelden" and „Abmelden", `schalter` covers
+ * „Umschalter", `feld` covers „Eingabefeld" und „Suchfeld".
+ *
+ * **Deutsch gehört dazu, nicht als Zugabe.** Bei meinestadt.de sind sämtliche
+ * Ebenennamen deutsch, und mit der rein englischen Liste traf davon *keiner*
+ * (gemessen an 24 typischen Namen: 0 Treffer). Das betrifft nicht nur die
+ * ausgeblendete Clickmap: `cta-rank` und `cta-below-fold` sind ausgeliefert und
+ * hängen an denselben Kandidaten.
+ *
+ * Bekannte Fehlgriffe, bewusst in Kauf genommen: `karte` trifft auch eine
+ * „Standortkarte", `reiter` steckt in „breiter", `feld` in „Umfeld". Ein
+ * Kandidat zu viel verschiebt eine Rangfolge, ein fehlender macht die Regel
+ * blind — und die zweite Richtung ist die, die auf dem Onboarding-Screen
+ * schiefging.
+ */
 export const INTERACTIVE_KEYWORDS: readonly string[] = [
+  // englisch
   'button',
   'btn',
   'cta',
@@ -40,6 +59,30 @@ export const INTERACTIVE_KEYWORDS: readonly string[] = [
   'dropdown',
   'select',
   'card',
+  'nav',
+  'accordion',
+  // deutsch
+  'knopf',
+  'schaltfläche',
+  'schalter',
+  'karte',
+  'kachel',
+  'kategorie',
+  'melden',
+  'registrier',
+  'senden',
+  'weiter',
+  'zurück',
+  'suche',
+  'filter',
+  'auswahl',
+  'eingabe',
+  'feld',
+  'reiter',
+  'menü',
+  'kästchen',
+  'verweis',
+  'akkordeon',
 ]
 
 export const ENGINE_CONFIG = {
@@ -221,6 +264,13 @@ export const ENGINE_CONFIG = {
     },
     /** Max characters for a text node to qualify as a button label. */
     maxTextCharsForButton: 30,
+    /**
+     * How far up the ancestor chain the filled box around a label is looked
+     * for. 3 covers Button → Auto-Layout-Reihe → Icon+Text-Stapel → Label,
+     * which is as deep as component libraries usually nest before the box is
+     * no longer the tappable element.
+     */
+    buttonContainerDepth: 3,
     /** Candidates smaller than this (frame px²) are ignored. */
     minCandidateArea: 400,
     /** Candidates larger than this share of the frame are ignored (backdrops). */

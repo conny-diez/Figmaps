@@ -23,7 +23,7 @@ describe('findCandidates', () => {
     expect(findCandidates([node], FRAME.width, FRAME.height)).toHaveLength(1)
   })
 
-  it('accepts a short label inside a filled container', () => {
+  it('accepts the filled container of a short label — the box, not the words', () => {
     const container = makeSignal({ hasFill: true, width: 140, height: 48, x: 10, y: 10 })
     const label = makeSignal({
       isText: true,
@@ -36,9 +36,43 @@ describe('findCandidates', () => {
       height: 24,
     })
     const found = findCandidates([container, label], FRAME.width, FRAME.height)
-    // The container itself carries neither a reaction nor a keyword name, so
-    // only the label qualifies — via the button heuristic.
-    expect(found.map((c) => c.id)).toEqual([label.id])
+    // The container carries neither a reaction nor a keyword name, but it is
+    // what a finger hits — the same preference `dropNestedCandidates` encodes.
+    expect(found.map((c) => c.id)).toEqual([container.id])
+  })
+
+  it('finds the filled box through an unfilled auto-layout wrapper', () => {
+    // The shape every component library produces, and the one that made an
+    // onboarding screen yield a single candidate at „100 %".
+    const button = makeSignal({ hasFill: true, x: 10, y: 10, width: 200, height: 52 })
+    const row = makeSignal({ hasFill: false, parentId: button.id, x: 18, y: 16, width: 184, height: 40 })
+    const label = makeSignal({
+      isText: true,
+      charCount: 8,
+      hasFill: false,
+      parentId: row.id,
+      x: 24,
+      y: 24,
+      width: 120,
+      height: 20,
+    })
+    expect(findCandidates([button, row, label], FRAME.width, FRAME.height).map((c) => c.id)).toEqual([button.id])
+  })
+
+  it('collapses several labels of one card into a single candidate', () => {
+    const card = makeSignal({ hasFill: true, x: 0, y: 0, width: 300, height: 160 })
+    const title = makeSignal({ isText: true, charCount: 20, parentId: card.id, x: 10, y: 10, width: 260, height: 30 })
+    const action = makeSignal({ isText: true, charCount: 14, parentId: card.id, x: 10, y: 110, width: 120, height: 24 })
+    expect(findCandidates([card, title, action], FRAME.width, FRAME.height).map((c) => c.id)).toEqual([card.id])
+  })
+
+  it('does not walk out of the button into the page background', () => {
+    // The backdrop is filled too, but it is over the area limit — the search
+    // must return nothing rather than nominate the whole screen.
+    const backdrop = makeSignal({ hasFill: true, x: 0, y: 0, width: FRAME.width, height: FRAME.height })
+    const row = makeSignal({ hasFill: false, parentId: backdrop.id, x: 10, y: 10, width: 200, height: 40 })
+    const label = makeSignal({ isText: true, charCount: 8, parentId: row.id, x: 20, y: 20, width: 100, height: 20 })
+    expect(findCandidates([backdrop, row, label], FRAME.width, FRAME.height)).toHaveLength(0)
   })
 
   it('rejects long text even inside a filled container', () => {

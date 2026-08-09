@@ -367,15 +367,43 @@ const coldFold: Rule = {
  * 0/24, Telefon scrollend 6/24, Desktop scrollend 5/24. Der Frame aus dem
  * Vergleichstest — farbiger Kopf, farbiger Fuß — feuert nicht mehr.
  *
- * **Was bleibt.** Die Größe reagiert weiterhin auch auf die *Menge* an Inhalt:
- * auf gescrollten Desktop-Frames feuerte sie bei den Varianten mit den meisten
- * Karten, darunter eine mit starkem Akzent und Hero. „Zwölf fast gleiche
- * Karten sind flach" ist vertretbar, aber es ist nicht dasselbe wie „kein
- * Blickfang". Wenn das im Gebrauch stört, ist es die nächste Frage — und
- * wieder eine Bedeutungs-, keine Kalibrierungsfrage.
+ * **Dritter Anlauf, und diesmal aus: die Größe misst das Falsche.** Der
+ * Vorbehalt oben („reagiert auch auf die Menge an Inhalt") ist zu milde. Zwei
+ * kontrollierte Sweeps auf derselben Fläche, gemessen auf dem Bildanalyse-Anteil:
+ *
+ *   Hierarchie konstant (ein Hero), nur mehr Inhalt
+ *     Hero + 2 Zeilen 0,176 · +4 0,156 · +6 0,143 · +8 0,134 · +10 0,127
+ *
+ *   Inhalt konstant (6 Zeilen), nur der Blickfang wächst
+ *     keiner 0,123 · 60 px 0,220 · 120 px 0,155 · 240 px 0,142 · 400 px 0,137
+ *
+ * Der zweite Sweep ist **nicht monoton**: ein *großer* Blickfang (0,137) landet
+ * fast dort, wo *kein* Blickfang landet (0,123). Die Größe beantwortet damit
+ * „wie klein ist die stärkste Stelle", nicht „wie deutlich ist die Hierarchie".
+ * Und die reine Inhaltsmenge bewegt sie um 0,049 — bei einem Klassenabstand von
+ * 0,004 (ohne Hierarchie 0,000–0,123, mit 0,127–0,220).
+ *
+ * **Warum das ein Abschalten ist und keine Nachjustierung.** Mit den
+ * ausgelieferten Schwellen (p10 je UI-Typ, web 0,086) gibt die Regel auf diesen
+ * 13 Fällen keine falsche Aussage ab — sie feuert auf keinem Screen mit
+ * Blickfang. Der Grund ist aber nicht Trennschärfe, sondern dass die Schwelle
+ * **unterhalb des gesamten realistischen Wertebereichs** (0,103–0,220) liegt:
+ * sie feuert praktisch nur auf einem leeren Screen (0,000), und drei von vier
+ * Screens ohne Hierarchie verpasst sie, darunter zwölf gleich starke Blöcke.
+ * Eine faktisch blockierte Regel, die im Gebrauch als stumm erscheint — das ist
+ * dieselbe Fehlerklasse wie beim wirkungslosen `cold-fold`, nur andersherum.
+ * Und jede Schwelle, die „zwölf gleiche Blöcke" fängt, wird von einer Seite mit
+ * Hero und viel Inhalt wieder gekippt.
+ *
+ * **Nächster Schritt (1.2, nicht hier).** Andere Entscheidungsgröße: ein
+ * Kontrast zwischen der stärksten Stelle und dem Rest, unabhängig von deren
+ * *Fläche* — z. B. p99 ÷ Median des Bildanalyse-Anteils statt des Massenanteils
+ * der stärksten 5 %. Das ist eine Neuentwicklung mit eigener Messung. Steht im
+ * README neben der Kandidaten-Gruppierung für `dead-cta`.
  */
 const flat: Rule = {
   id: 'flat',
+  shipped: false,
   evaluate(input) {
     // Concentration, not the p90-p50 spread. The spread depends on the map's
     // overall contrast, which differs systematically between UI types: on the

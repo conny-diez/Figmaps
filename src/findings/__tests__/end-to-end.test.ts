@@ -144,6 +144,15 @@ describe('end-to-end reachability of every rule', () => {
     )
   })
 
+  it('does not ship `flat` — its threshold sits below the whole realistic range', () => {
+    // The decision quantity answers "how small is the strongest spot", not "how
+    // clear is the hierarchy": a large eye-catcher scores 0,137, none at all
+    // 0,123. The shipped threshold (web 0,086) is below the realistic range
+    // 0,103–0,220 entirely, so the rule fires only on a near-empty screen. See
+    // `rules.ts` for both sweeps.
+    expect(RULES.map((rule) => rule.id)).not.toContain('flat')
+  })
+
   it('does not ship `dead-cta` — its threshold is not backed by a measurement', () => {
     // 24 of 24 in each of three constructed frame shapes, in the redefined
     // form too: the quantity is a minimum over N candidates and falls with N,
@@ -232,13 +241,17 @@ describe('end-to-end reachability of every rule', () => {
     for (let y = 10; y < 444; y += 10) {
       for (let x = 4; x < 714; x += 12) box(source, x, y, 8, 7, [0, 0, 0])
     }
-    expect(await run({ source, signals: [], frameWidth: 1440, frameHeight: 900 })).toContain('flat')
+    expect(
+      await run({ source, signals: [], frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
+    ).toContain('flat')
   })
 
   it('flat stays silent on a screen with one dominant element', async () => {
     const source = canvas(720, 450)
     box(source, 240, 140, 240, 170, [0, 0, 0])
-    expect(await run({ source, signals: [], frameWidth: 1440, frameHeight: 900 })).not.toContain('flat')
+    expect(
+      await run({ source, signals: [], frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
+    ).not.toContain('flat')
   })
 
   // --- cta-below-fold ------------------------------------------------------

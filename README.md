@@ -941,16 +941,47 @@ Ebenenformen, die solche Screens haben:
 | Karte „Category Card" (englisch benannt) | ja, über „card" |
 | Karte „Kachel" mit Prototype-Interaktion | ja |
 
-Drei Ursachen, alle systematisch:
+Drei Ursachen, alle systematisch. Zwei davon sind behoben:
 
-1. **Nur der direkte Elternteil** wird auf eine Füllung geprüft. Eine einzige
-   Auto-Layout-Zwischenebene — der Normalfall in Komponentenbibliotheken —
-   lässt die Erkennung ausfallen.
+1. ~~**Nur der direkte Elternteil** wird auf eine Füllung geprüft.~~
+   **Behoben:** die Suche läuft jetzt die Vorfahrenkette hoch, bis zu
+   `clickmap.buttonContainerDepth` (3) Ebenen, und der gefundene *Kasten* wird
+   Kandidat statt der Beschriftung — „die Schaltfläche, nicht ihr Text", dieselbe
+   Vorliebe, die `dropNestedCandidates` schon kannte. Der Kasten muss die
+   Größengrenzen selbst einhalten, sonst wandert die Suche aus dem Knopf heraus
+   in den Seitenhintergrund.
 2. **Rahmen ohne Text** werden nie über die Label-Regel erfasst; die verlangt
    `isText`. Eine Bildkachel ohne Beschriftung ist nur über Namen oder
-   Reaktion erreichbar.
-3. Die Stichwortliste ist **englisch**. „Kachel", „Karte", „Kategorie",
-   „Anmelden" treffen nichts, „Category Card" trifft.
+   Reaktion erreichbar. **Offen** — Aufwandsschätzung unten.
+3. ~~Die Stichwortliste ist **englisch**.~~ **Behoben:** deutsche Stichwörter
+   ergänzt und der Tokenizer repariert. `extractNameHints` zerlegte an
+   `[^a-z0-9]`, was „Schaltfläche" in „schaltfl" + „che" zerriss — kein
+   Stichwort mit Umlaut konnte je treffen. Der Trenner lässt jetzt `äöüß`
+   stehen.
+
+**Gemessen, vorher → nachher:**
+
+| | vorher | nachher |
+|---|---:|---:|
+| 24 typische deutsche Ebenennamen, die ein Stichwort treffen | 0 | **21** |
+| Kandidaten im Onboarding-Nachbau (Kachel + Knopf, je mit Auto-Layout-Zwischenebene) | 0 | **2** |
+| Kandidaten über die 24 konstruierten Frames | 445 | **368** |
+
+Die Zahl auf den konstruierten Frames *sinkt*, und das ist der Zweck: drei
+Beschriftungen einer Karte fallen zu einem Kandidaten — der Karte — zusammen,
+statt als drei konkurrierende Einträge in der Rangfolge zu stehen. Das entlastet
+nebenbei `dead-cta`, dessen Entscheidungsgröße mit der Kandidatenzahl sinkt.
+
+**Aufwand für Ursache (2), noch nicht umgesetzt.** Ein Rahmen ohne Text und ohne
+Stichwort ist nur über Form-Heuristik erkennbar, und jede davon ist eine neue
+Entscheidungsgröße mit eigener Fehlerrate: „gefüllt, abgerundet, zwischen 24 und
+72 px hoch, breiter als hoch" fängt Knöpfe und Kacheln — und ebenso Badges,
+Chips, Bildplatzhalter und jede farbige Trennfläche. Der Code selbst ist klein
+(eine Bedingung in `findCandidates`, ~20 Zeilen); die Arbeit steckt in der
+Messung, denn ohne Beleg tauscht man fehlende Kandidaten gegen falsche. Das ist
+dieselbe Kalibrierungsfrage wie bei `flat` und `dead-cta` und gehört an
+dasselbe Set mit echten Layer-Bäumen (PRD Set 2). Schätzung: ein halber Tag
+Code, der Rest ist das Set.
 
 **Bedingungen für die Rückkehr ins Panel.** Beide, nicht eine davon:
 
@@ -978,12 +1009,14 @@ wird nach Severity, angezeigt werden maximal sechs.
 | `competition` | Zwei Regionen über 65 % Intensität, weit auseinander, mit Tal dazwischen | ja |
 | `cold-fold` | Above-the-fold-Abschnitt bündelt Aufmerksamkeit schwächer als ein späterer | ja |
 | `dead-cta` | Interaktives Element unter 45 % des stärksten Kandidaten seines Viewports | **nein** (siehe unten) |
-| `flat` | Konzentration des Bildanalyse-Anteils unter Schwellwert | ja |
+| `flat` | Konzentration des Bildanalyse-Anteils unter Schwellwert | **nein** (siehe unten) |
 
-`dead-cta` ist abgeschaltet: die Größe, die sie misst, ist ein Minimum über
-alle Kandidaten und sinkt mit deren Anzahl, sodass keine Konstante über die
-Frame-Formen hinweg trennscharf ist. `flat` war es aus verwandtem Grund und ist
-es nicht mehr — siehe die beiden Abschnitte unten.
+Beide sind abgeschaltet, aus derselben Ursache in zwei Ausprägungen: die
+Entscheidungsgröße misst nicht das, was die Regel behauptet. Bei `dead-cta` ist
+es ein Minimum über alle Kandidaten, das mit deren Anzahl sinkt; bei `flat` ist
+es ein Massenanteil, der auf die Fläche der stärksten Stelle reagiert statt auf
+die Deutlichkeit der Hierarchie. Beide Regeln bleiben implementiert und
+erreichbarkeitsgetestet — siehe die Abschnitte unten.
 
 Die Reihenfolge der Regeln in `rules.ts` ist die Reihenfolge, in der Befunde
 gelistet werden — als **Tie-Break innerhalb einer Severity**, denn sortiert
@@ -1354,12 +1387,58 @@ Telefon scrollend 6/24, Desktop scrollend 5/24. Der Frame aus dem
 Vergleichstest — farbiger Kopf, farbiger Fuß — feuert nicht mehr, und zwar in
 keiner der 20 Varianten.
 
-**Was bleibt.** Die Größe reagiert weiterhin auch auf die *Menge* an Inhalt: auf
-gescrollten Desktop-Frames feuerte sie bei den Varianten mit den meisten Karten,
-darunter eine mit starkem Akzent und Hero. „Zwölf fast gleiche Karten sind
-flach" ist vertretbar, aber es ist nicht dasselbe wie „kein Blickfang". Wenn das
-im Gebrauch stört, ist es die nächste Frage — und wieder eine Bedeutungs-, keine
-Kalibrierungsfrage.
+### `flat` ist wieder aus — die Größe misst das Falsche
+
+Der Vorbehalt oben („reagiert auch auf die Menge an Inhalt") war zu milde
+formuliert. Zwei kontrollierte Sweeps auf derselben Fläche, gemessen auf dem
+Bildanalyse-Anteil des ersten Abschnitts:
+
+| Hierarchie konstant (ein Hero), nur mehr Inhalt | c |
+|---|---:|
+| Hero + 2 Zeilen | 0,176 |
+| Hero + 4 Zeilen | 0,156 |
+| Hero + 6 Zeilen | 0,143 |
+| Hero + 8 Zeilen | 0,134 |
+| Hero + 10 Zeilen | 0,127 |
+
+| Inhalt konstant (6 Zeilen), nur der Blickfang wächst | c |
+|---|---:|
+| kein Blickfang | 0,123 |
+| 60 px | 0,220 |
+| 120 px | 0,155 |
+| 240 px | 0,142 |
+| 400 px | 0,137 |
+
+Der zweite Sweep ist **nicht monoton**: ein *großer* Blickfang (0,137) landet
+fast dort, wo *kein* Blickfang landet (0,123). Präzise formuliert misst die
+Größe, **wie klein die stärkste Stelle ist, nicht wie deutlich die Hierarchie
+ist**. Dazu bewegt die reine Inhaltsmenge sie um 0,049 — bei einem
+Klassenabstand von 0,004 (ohne Hierarchie 0,000–0,123, mit 0,127–0,220).
+
+**Warum das ein Abschalten ist und keine Nachjustierung.** Mit den
+ausgelieferten Schwellen gibt die Regel auf 13 Fällen mit bekannter Antwort
+keine falsche Aussage ab — sie feuert auf keinem Screen mit Blickfang. Der Grund
+ist aber nicht Trennschärfe:
+
+| Fall | c | `flat` |
+|---|---:|---|
+| Hero + 2…10 Zeilen | 0,176…0,127 | schweigt ✓ |
+| Blickfang 60…400 px | 0,220…0,137 | schweigt ✓ |
+| kein Blickfang, 6 Zeilen | 0,123 | schweigt — **verpasst** |
+| 4 gleiche Blöcke | 0,120 | schweigt — **verpasst** |
+| 12 gleiche Blöcke | 0,103 | schweigt — **verpasst** |
+| leerer Screen | 0,000 | feuert ✓ |
+
+Die Schwelle (web 0,086) liegt **unterhalb des gesamten realistischen
+Wertebereichs** (0,103–0,220). Die Regel ist damit faktisch blockiert: sie
+feuert nur auf einem leeren Screen und erscheint im Gebrauch als stumm — genau
+die Fehlerklasse, die bei `cold-fold` schon einmal ein Jahr lang unbemerkt
+blieb, nur andersherum. Und jede Schwelle, die „zwölf gleiche Blöcke" fängt,
+wird von einer Seite mit Hero und viel Inhalt wieder gekippt.
+
+`flat` steht deshalb auf `shipped: false`, mit demselben Muster wie `dead-cta`:
+Erreichbarkeitstest bleibt (beide Richtungen), Zahlen stehen im Kommentar,
+Grund steht hier.
 
 ### Bekannte Einschränkungen — bewusst nicht in diesem Schritt behoben
 
@@ -1376,6 +1455,20 @@ es in diesem Abschnitt geht.
 Beide stehen zusätzlich als Kommentar an der jeweiligen Regel in
 `src/findings/rules.ts`, damit sie beim Lesen des Codes nicht erst gesucht
 werden müssen.
+
+### Offen für 1.2 — die zwei abgeschalteten Regeln
+
+Beide brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle. In
+beiden Fällen ist der Umbau benannt und die Messung fehlt noch:
+
+| Regel | neue Größe | warum sie das Problem löst |
+|---|---|---|
+| `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
+| `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
+
+Was für beide gilt: nach dem Umbau ist neu zu kalibrieren, und dafür fehlt
+weiterhin das Set mit echten Layer-Bäumen (PRD Set 2). An UEyes ist keine der
+beiden messbar — ein Screenshot hat keine Ebenen.
 
 Sprachregeln (C-2), von den Tests erzwungen:
 

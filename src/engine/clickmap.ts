@@ -34,21 +34,55 @@ export function findCandidates(signals: readonly NodeSignal[], frameWidth: numbe
   for (const signal of signals) byId.set(signal.id, signal)
 
   const frameArea = frameWidth * frameHeight
+  const fits = (signal: NodeSignal): boolean => {
+    const area = signal.width * signal.height
+    if (area < cfg.minCandidateArea) return false
+    return !(frameArea > 0 && area / frameArea > cfg.maxCandidateAreaRatio)
+  }
+
+  /**
+   * The filled box a label sits in — searched up the **ancestor chain**, not
+   * just at the direct parent.
+   *
+   * A component library wraps its label in an unfilled auto-layout row inside
+   * the filled button; that is the normal shape, not an exception. Checking
+   * only `parentId` therefore missed every button and every category tile of a
+   * real onboarding screen while reporting the one element it did find at
+   * „100 %".
+   *
+   * Bounded by `buttonContainerDepth`, and the box has to satisfy the size
+   * limits itself — otherwise the search walks out of the button and returns
+   * the section, the page background, the frame.
+   */
+  const filledContainer = (label: NodeSignal): NodeSignal | null => {
+    let current = label.parentId ? byId.get(label.parentId) : undefined
+    for (let depth = 0; current && depth < cfg.buttonContainerDepth; depth++) {
+      if (current.hasFill && !current.isText && fits(current)) return current
+      current = current.parentId ? byId.get(current.parentId) : undefined
+    }
+    return null
+  }
+
   const candidates: NodeSignal[] = []
+  const seen = new Set<string>()
+  const add = (signal: NodeSignal): void => {
+    if (seen.has(signal.id)) return
+    seen.add(signal.id)
+    candidates.push(signal)
+  }
 
   for (const signal of signals) {
-    const area = signal.width * signal.height
-    if (area < cfg.minCandidateArea) continue
-    if (frameArea > 0 && area / frameArea > cfg.maxCandidateAreaRatio) continue
-
     if (signal.hasReactions || hasKeywordHit(signal)) {
-      candidates.push(signal)
+      if (fits(signal)) add(signal)
       continue
     }
 
     if (signal.isText && (signal.charCount ?? Infinity) < cfg.maxTextCharsForButton) {
-      const parent = signal.parentId ? byId.get(signal.parentId) : undefined
-      if (parent && parent.hasFill && !parent.isText) candidates.push(signal)
+      // The tappable thing is the box, not the words in it — the same
+      // preference `dropNestedCandidates` encodes. Several labels in one card
+      // therefore collapse into one candidate instead of three.
+      const container = filledContainer(signal)
+      if (container) add(container)
     }
   }
 

@@ -44,6 +44,20 @@ describe('extractNameHints', () => {
     expect(extractNameHints('')).toEqual([])
   })
 
+  it('matches German layer names — the whole library at meinestadt.de is German', () => {
+    expect(extractNameHints('Anmelden')).toEqual(['melden'])
+    expect(extractNameHints('Kategorie-Kachel')).toEqual(['kachel', 'kategorie'])
+    expect(extractNameHints('Weiter zur Auswahl')).toEqual(['auswahl', 'weiter'])
+  })
+
+  it('keeps umlauts inside a token', () => {
+    // Splitting on `[^a-z0-9]` tore „Schaltfläche" into „schaltfl" + „che", so
+    // no keyword with an umlaut could ever match.
+    expect(extractNameHints('Schaltfläche / Primär')).toEqual(['schaltfläche'])
+    expect(extractNameHints('Menü')).toEqual(['menü'])
+    expect(extractNameHints('Kontrollkästchen')).toEqual(['kästchen'])
+  })
+
   it('deduplicates and sorts deterministically', () => {
     expect(extractNameHints('button button BUTTON')).toEqual(['button'])
     expect(extractNameHints('menu tab chip')).toEqual(['chip', 'menu', 'tab'])
