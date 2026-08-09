@@ -48,7 +48,7 @@ C Contrastmap). **Fertig ist A.**
 | **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
 | **Schärfe: Blur 0,035 + `blendGamma` 1,6** | Der A1-Befund ist zu gut einem Drittel behoben, bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Nicht 2,0, obwohl der Mittelwert dafür spräche: dieser Wert lässt die Gruppe stehen, für die das Plugin existiert. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis) und [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften). |
 | **Transparenzschwelle nachgezogen** | 0,08 → 0,02. Dieselbe Schwelle hätte auf der neuen Karte 37,5 % statt 18,0 % verdeckt — ein Gutteil von „das Overlay ist leerer" war der Renderer, nicht die Vorhersage. |
-| **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. |
+| **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. Die Zahlen des Gates sind **kein Qualitätsbeleg** — siehe unten. |
 | **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
 | **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
 | **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.1" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
@@ -1136,6 +1136,36 @@ ein Impressum-Link wirklich steht, unten rechts im ersten Viewport; der CTA
 führt damit über den ganzen geprüften Alpha-Bereich. Siehe
 `findings/__tests__/end-to-end.test.ts`.
 
+### Das Regressions-Gate — was seine Zahlen sagen und was nicht
+
+Seit 1.2 liegen 40 Bilder im Repo (`eval/fixtures/gate-web`, `gate-mobile`), und
+das Gate vergleicht bei jedem PR den CC der ausgelieferten Konfiguration gegen
+`main`. Es meldet zum Beispiel:
+
+```
+gate-web     CC 0,4735 vs main 0,4561  (Δ +0,0174)
+gate-mobile  CC 0,5720 vs main 0,5543  (Δ +0,0177)
+```
+
+**Diese Zahlen sind kein Beleg für Genauigkeit, und sie dürfen nie als einer
+zitiert werden.** Der Grund ist nicht die Größe des Sets, sondern seine
+Verwendung: es nimmt 20 der 27 Test-Split-Bilder je Kategorie und läuft bei
+jedem PR **mit sichtbarem Ergebnis**. Wer eine Änderung so lange dreht, bis der
+Check grüner wird, hat auf diesem Set kalibriert — der Split ist damit
+Rückkopplung, nicht Beleg.
+
+Das ist der Preis des Aufbaus und nicht sein Fehler: ein Gate, dessen Zahl man
+nicht sieht, ist kein Gate. Deshalb steht hier eine Regel statt einer
+Gegenmaßnahme:
+
+> Das Gate beantwortet **„ist etwas kaputtgegangen"**. Es beantwortet **nicht**
+> „wie gut ist es". Jede Aussage über Güte kommt aus der Kreuzvalidierung über
+> 495 Bilder je Kategorie — und aus nichts anderem.
+
+Derselbe Absatz steht im `index.json` beider Sets, gleichrangig neben den drei
+anderen nicht verhandelbaren Eigenschaften (nur Test-Split, nur 3 s, auf dem
+Analyseraster), damit ihn auch findet, wer nur die Daten ansieht.
+
 ### A6 — Schärfe: die Nachbearbeitung, nicht das Mischungsverhältnis
 
 ```bash
@@ -1455,16 +1485,55 @@ greift und nicht der Boden.
 | Option | was sie tut | was sie kostet |
 |---|---|---|
 | **(a) Schwelle wieder höher** | zurück Richtung 0,08 | Direkter Tausch: 0,08 verdeckt auf echten Screens 37,5 % der Karte statt 18,0 %. Der A8-Gewinn ist weg, der CTA aus dem Prüffall fällt auf 41 % Deckkraft zurück. Ehrlich, aber es ist ein Rückschritt, keine Lösung. |
-| **(b) Deckkraft am Bildanteil koppeln** | Der Renderer multipliziert die Overlay-Deckkraft mit einer Funktion des **Bildanalyse-Anteils**, der bereits berechnet ist (`AnalyzeResult.imageTerms`). Auf einer leeren Fläche ist er null, die Bänder verschwinden von selbst; auf echtem Inhalt ändert sich fast nichts. | Die Karte zeigt dann nicht mehr die Vorhersage, sondern die Vorhersage *gewichtet danach, wie viel dieser Screen selbst beiträgt*. Ein Element, das allein durch seine **Position** Aufmerksamkeit bekommt, würde blasser — und das ist eine echte Aussage, die man wegblendet. Braucht eine eigene Messung und eine Entscheidung, ob die Karte das noch sagen darf, was sie behauptet. |
+| **(b) Inhaltsschwelle im Renderer** — *gemessen und verworfen, siehe unten* | Unterhalb eines sehr kleinen **Bildanalyse-Anteils** wird nicht gezeichnet, darüber unverändert volle Deckkraft, dazwischen ein weicher Auslauf. Als Schwelle statt als Faktor, damit sich auf Inhalt **exakt** nichts ändert. | Auf echten Screens ändert sich eben doch etwas — 1,3 bis 3,8 % der sichtbaren Fläche verschwinden ganz. Zahlen unten. |
 | **(c) Lokaler Kontrast statt absolutem Wert** | Gezeichnet wird, wo die Karte sich von ihrer *Umgebung* abhebt, nicht wo sie über einer festen Zahl liegt. Ein breiter, glatter Hügel — genau die Form der Bänder — fällt damit weg, ein Blickfang nicht. | Neue Heuristik im Renderer mit eigener Fehlerrate und eigenen Konstanten. Am ehesten das, was das Auge ohnehin tut, aber es ist eine Neuentwicklung, keine Justierung. |
 | **(d) Nichts tun, benennen** | Der Fall betrifft Flächen **ohne jeden Inhalt**; echter Inhalt dominiert den Prior lokal. | Der erste Frame, den jemand zum Ausprobieren auswählt, ist oft ein halbleerer. Das Artefakt trifft damit ausgerechnet den ersten Eindruck. |
 
-Meine Einschätzung, ohne sie umzusetzen: **(b) ist die einzige Option, die das
-Problem an der Ursache trifft** — die Bänder *sind* der Prior ohne Inhalt, und
-der Bildanteil ist genau die Größe, die „hier ist kein Inhalt" weiß. Sie ist
-aber auch die einzige, die ändert, was die Karte aussagt, und das ist keine
-Renderer-Entscheidung mehr. (a) ist sofort verfügbar und ein Rückschritt, (c)
-ist eine Neuentwicklung, (d) ist der Status quo.
+#### (b) wurde gemessen, bevor sie gebaut wurde — und ist damit erledigt
+
+```bash
+npm run band-gate
+```
+
+Der Einwand gegen (b) war, dass sie als *Faktor* die Aussage der Karte
+umschreibt. Als **Schwelle** mit vollem Durchlass darüber gilt er nicht mehr —
+vorausgesetzt, auf echten Screens liegt nichts unter der Schwelle. Das ist eine
+prüfbare Bedingung, und sie ist auf den 40 Gate-Bildern geprüft worden, an der
+**gerenderten Deckkraft**, nicht an der Karte.
+
+| Schwelle / Auslauf | Pixel verändert | sichtbare Fläche ganz verloren | größte Δ Deckkraft | betroffene Bilder |
+|---|---:|---:|---:|---:|
+| **Webpage** | | | | |
+| 0,005 / 0,01 | 1,50 % | 1,28 % | 1,000 | 13/20 |
+| 0,01 / 0,02 | 2,00 % | 1,50 % | 1,000 | 14/20 |
+| 0,05 / 0,05 | 4,98 % | 3,00 % | 1,000 | 19/20 |
+| **Mobile** | | | | |
+| 0,005 / 0,01 | 4,09 % | 3,81 % | 1,000 | 16/20 |
+| 0,01 / 0,02 | 4,91 % | 4,24 % | 1,000 | 18/20 |
+| 0,05 / 0,05 | 8,70 % | 6,61 % | 1,000 | 20/20 |
+
+**Die Bedingung ist nicht erfüllt, und zwar schon beim kleinsten geprüften
+Wert.** Selbst 0,005 löscht auf mehr als der Hälfte der Bilder Fläche, die heute
+gezeichnet wird — und die größte Änderung ist 1,000, also *voll sichtbar → gar
+nicht mehr sichtbar*, nicht ein Verblassen.
+
+Der Grund steht in der Verteilung des Bildanteils: p1 liegt bei 0,0000 und p5
+bei 0,0063 (Webpage) bzw. 0,0000 (Mobile). Auf einem echten Screen gibt es
+reichlich Fläche mit fast keinem Bildanteil — Weißraum, ruhige Ränder,
+Randbereiche neben dem Inhalt —, und dort zeichnet die Karte heute etwas, weil
+der **Ortsprior** dort etwas sagt. Genau das ist eine Aussage: „hier schaut man
+hin, obwohl nichts steht" ist auf einem realen Entwurf oft richtig. Die Schwelle
+kann nicht zwischen „leerer Frame" und „leere Stelle auf einem vollen Frame"
+unterscheiden, weil der Bildanteil diesen Unterschied nicht kennt.
+
+**Damit gilt (d): nichts tun.** Das Artefakt bleibt bestehen und ist oben
+dokumentiert. (a) wäre ein Rückschritt, (c) eine Neuentwicklung mit eigener
+Fehlerrate; beide sind nicht ausgeschlossen, aber keine davon ist eine
+Justierung, und keine wird hier nebenbei getroffen.
+
+Das Messwerkzeug bleibt im Repo (`eval/band-gate.ts`) — nicht, weil die Idee
+noch lebt, sondern damit die nächste Variante desselben Gedankens nicht wieder
+bei null anfängt.
 
 ### Was offen bleibt
 
@@ -2799,10 +2868,14 @@ Zusätzlich für 1.1 (M4, M5):
    nächste `npm install` schreibt die Hosts zurück. Der dauerhafte Ort für
    diese Entscheidung ist eine Repo-`.npmrc` oder die Benutzerkonfiguration —
    beides berührt, wie intern gebaut wird, und liegt bei Security.
-8. **Das Gate misst 40 Bilder, nicht 990.** Das eingecheckte Set ist klein
-   genug fürs Repo und groß genug, um eine grobe Regression zu fangen — eine
-   Verschlechterung von 0,065 CC fällt auf, eine von 0,005 nicht zuverlässig.
-   Es ersetzt keinen Messlauf auf dem vollen Set.
+8. **Der Gate-Split ist verbrannt.** Er nimmt 20 der 27 Test-Split-Bilder je
+   Kategorie und läuft bei jedem PR mit sichtbaren Zahlen — wer eine Änderung
+   dreht, bis die Zahl im Check steigt, hat auf ihm kalibriert. Das ist kein
+   Mangel des Aufbaus, sondern sein Preis: ein Gate, dessen Zahl man nicht
+   sieht, ist kein Gate. Die Konsequenz ist eine Regel, keine Gegenmaßnahme —
+   **diese Zahlen dürfen nie als Beleg für Genauigkeit zitiert werden.** Und
+   das Set ist mit 40 Bildern ohnehin nur grob: eine Verschlechterung von
+   0,065 CC fällt auf, eine von 0,005 nicht zuverlässig.
 
 ## Nicht in 1.1
 

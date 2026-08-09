@@ -10,6 +10,7 @@
     "Eingecheckte Teilmenge für das Regressions-Gate (A-7). Erzeugt mit `npm run gate-fixtures`.",
     "Bilder und Ground Truth liegen auf dem Analyseraster (längste Kante 512) — genau dem Raster, auf dem die Engine rechnet und auf das der Loader die Ground Truth ohnehin bringt. Die Fixationskarten sind mit Maximum-Pooling abgebildet, nicht flächengemittelt: eine Fixationskarte ist eine Menge von Orten. Die Heatmaps werden dadurch einmal mehr resampled als beim vollen Set; die absoluten Zahlen aus diesem Set sind deshalb NICHT mit denen aus dem vollen Set vergleichbar. Für ein Gate ist das gleichgültig: es vergleicht zwei Läufe auf demselben Set.",
     "Ausschließlich Bilder aus dem Test-Split des Datensatzes. Eine Auffüllung aus dem Tuning-Split wäre ein Fehler — das Gate prüfte sonst gegen Daten, auf denen kalibriert wurde.",
+    "DIESER SPLIT IST VERBRANNT. Er nimmt 20 der 27 Test-Split-Bilder und läuft bei jedem PR mit sichtbaren Zahlen; wer eine Änderung dreht, bis die Zahl im Check steigt, hat auf ihm kalibriert. Er ist damit Rückkopplung, nicht Beleg. Diese Zahlen dürfen NIE als Beleg für Genauigkeit zitiert werden — sie beantworten „ist etwas kaputtgegangen\", nicht „wie gut ist es\". Jede Aussage über Güte kommt aus der Kreuzvalidierung über 495 Bilder je Kategorie.",
     "Kein Tuning-Split enthalten, also auch keine Mean-Map-Baseline. Reports über dieses Set weisen das aus."
   ],
   "items": [

@@ -30,6 +30,18 @@
  * vollen Set vergleichbar. Für ein Gate ist das gleichgültig: es vergleicht
  * zwei Läufe auf **demselben** Set.
  *
+ * **DER GATE-SPLIT IST VERBRANNT, UND ZWAR ABSICHTLICH.** Er nimmt 20 der 27
+ * Test-Split-Bilder einer Kategorie und läuft bei **jedem** PR mit sichtbaren
+ * Zahlen. Wer eine Änderung so lange dreht, bis die Zahl im Check steigt, hat
+ * auf diesem Set kalibriert — der Split ist damit Rückkopplung, nicht Beleg.
+ *
+ * Das ist kein Mangel des Aufbaus, sondern sein Preis: ein Gate, dessen Zahl
+ * man nicht sieht, ist kein Gate. Die Konsequenz ist eine Regel und keine
+ * Gegenmaßnahme: **diese Zahlen dürfen nie als Beleg für Genauigkeit zitiert
+ * werden.** Sie beantworten „ist etwas kaputtgegangen", nicht „wie gut ist es".
+ * Jede Aussage über Güte kommt aus der Kreuzvalidierung über 495 Bilder je
+ * Kategorie, nirgendwo sonst her.
+ *
  * LIZENZ. UEyes steht unter CC BY 4.0; die Weitergabe ist erlaubt, die Nennung
  * Pflicht. Sie steht in `NOTICE.md`, im `index.json` dieses Sets und in jedem
  * Report, der es liest.
@@ -171,6 +183,11 @@ export function buildGateFixtures(options: GateFixtureOptions): GateFixtureSumma
         'es vergleicht zwei Läufe auf demselben Set.',
       'Ausschließlich Bilder aus dem Test-Split des Datensatzes. Eine Auffüllung aus dem Tuning-Split wäre ' +
         'ein Fehler — das Gate prüfte sonst gegen Daten, auf denen kalibriert wurde.',
+      'DIESER SPLIT IST VERBRANNT. Er nimmt 20 der 27 Test-Split-Bilder und läuft bei jedem PR mit sichtbaren ' +
+        'Zahlen; wer eine Änderung dreht, bis die Zahl im Check steigt, hat auf ihm kalibriert. Er ist damit ' +
+        'Rückkopplung, nicht Beleg. Diese Zahlen dürfen NIE als Beleg für Genauigkeit zitiert werden — sie ' +
+        'beantworten „ist etwas kaputtgegangen", nicht „wie gut ist es". Jede Aussage über Güte kommt aus der ' +
+        'Kreuzvalidierung über 495 Bilder je Kategorie.',
       'Kein Tuning-Split enthalten, also auch keine Mean-Map-Baseline. Reports über dieses Set weisen das aus.',
     ],
     items: selected.map((item) => ({ id: item.id, split: ['test', 'quick'] as const })),

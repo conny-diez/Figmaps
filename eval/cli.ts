@@ -45,6 +45,7 @@ import { buildSharpnessReport, verdictOf } from './sharpness-report'
 import { groupSweep, GROUP_LABELS, type GroupSweepResult } from './groups'
 import { measureCutoff } from './cutoff'
 import { buildGateFixtures } from './gate-fixtures'
+import { measureBandGate, type ThresholdCandidate } from './band-gate'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -1076,6 +1077,46 @@ async function runSideEffects(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// band-gate — verändert eine Inhaltsschwelle im Renderer echte Screens?
+//
+//   npm run band-gate
+// ---------------------------------------------------------------------------
+
+async function runBandGate(args: Args): Promise<number> {
+  const candidates: ThresholdCandidate[] = typeof args.candidates === 'string'
+    ? args.candidates.split(',').map((entry) => {
+        const [cutoff, ramp] = entry.split('/').map(Number)
+        return { cutoff, ramp: ramp ?? cutoff }
+      })
+    : [
+        { cutoff: 0.005, ramp: 0.01 },
+        { cutoff: 0.01, ramp: 0.02 },
+        { cutoff: 0.02, ramp: 0.04 },
+        { cutoff: 0.05, ramp: 0.05 },
+      ]
+
+  console.log('Inhaltsschwelle im Renderer — verändert sie die Ausgabe auf echten Screens?')
+  console.log('Das ist eine Falsifikation: wenn ja, ist der Vorschlag erledigt.')
+  for (const set of [{ setName: 'gate-web', priorAsset: 'web' as const }, { setName: 'gate-mobile', priorAsset: 'mobile' as const }]) {
+    const result = await measureBandGate({ ...set, candidates })
+    console.log('')
+    console.log(`${result.setName}: ${result.imageCount} Bilder`)
+    console.log(`  Bildanteil, Quantile p1/p5/p10/p25/p50: ${result.imageTermQuantiles.map((v) => v.toFixed(4)).join(' / ')}`)
+    console.log(`  ${'Schwelle'.padEnd(16)}${'Pixel verändert'.padStart(17)}${'sichtbar verloren'.padStart(19)}${'max Δ'.padStart(9)}${'Bilder'.padStart(9)}`)
+    for (const entry of result.candidates) {
+      console.log(
+        `  ${`${entry.candidate.cutoff} / ${entry.candidate.ramp}`.padEnd(16)}` +
+          `${(entry.changedShare * 100).toFixed(3).padStart(15)} %` +
+          `${(entry.lostVisibleShare * 100).toFixed(3).padStart(17)} %` +
+          `${entry.maxDelta.toFixed(3).padStart(9)}` +
+          `${String(entry.imagesAffected).padStart(7)}/${result.imageCount}`,
+      )
+    }
+  }
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
 //
 //   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
@@ -1434,6 +1475,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args.groups) return await runGroups(args)
     if (args.cutoff) return await runCutoff(args)
     if (args['gate-fixtures']) return runGateFixtures(args)
+    if (args['band-gate']) return await runBandGate(args)
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)

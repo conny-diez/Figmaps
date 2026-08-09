@@ -23,6 +23,7 @@
     "sharpness": "node scripts/eval.mjs --sharpness",
     "groups": "node scripts/eval.mjs --groups",
     "cutoff": "node scripts/eval.mjs --cutoff",
+    "band-gate": "node scripts/eval.mjs --band-gate",
     "visual-check": "node scripts/eval.mjs --visual-check",
     "side-effects": "node scripts/eval.mjs --side-effects",
     "epic-d": "node scripts/eval.mjs --epic-d",
