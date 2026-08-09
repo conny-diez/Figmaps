@@ -708,12 +708,14 @@ function App(): preact.JSX.Element {
                   onChange={(event) => toggleMap(kind, event.currentTarget.checked)}
                 />
                 <MapSchema kind={kind} settings={settings} frame={usableFrames[0]} />
-                <span class="maptoggle__track" aria-hidden="true">
-                  <span class="maptoggle__knob" />
-                </span>
                 <span class="maptoggle__text">
                   <span class="maptoggle__label">{MAP_LABELS[kind]}</span>
                   <span class="maptoggle__desc">{MAP_DESCRIPTIONS[kind]}</span>
+                </span>
+                {/* Last in the row: the switch belongs at the edge of the card,
+                    not wedged between the schema and the words it labels. */}
+                <span class="maptoggle__track" aria-hidden="true">
+                  <span class="maptoggle__knob" />
                 </span>
               </label>
             ))}
