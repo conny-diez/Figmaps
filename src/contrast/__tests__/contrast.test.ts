@@ -14,6 +14,7 @@ import {
   CONTRAST_LARGE,
   CONTRAST_NORMAL,
   contrastRatio,
+  displayedRatio,
   formatRatio,
   isLargeText,
   requiredRatio,
@@ -52,6 +53,42 @@ describe('WCAG-Kennwerte', () => {
   it('schreibt Verhältnisse mit einer Nachkommastelle, deutsch', () => {
     expect(formatRatio(3.14159)).toBe('3,1:1')
     expect(formatRatio(21)).toBe('21,0:1')
+  })
+
+  it('rundet ab, damit die Anzeige nie über den gemessenen Wert hinausgeht', () => {
+    // Der konkrete Fall, der das ausgelöst hat: 4,499204 wurde als „4,50"
+    // angezeigt und stand damit neben „gefordert 4,5" und dem Urteil
+    // „durchgefallen".
+    expect(formatRatio(4.499204)).toBe('4,4:1')
+    expect(formatRatio(4.5)).toBe('4,5:1')
+    expect(formatRatio(4.999)).toBe('4,9:1')
+  })
+
+  it('zeigt nie einen Wert, der gegen sein eigenes Urteil spricht', () => {
+    // Die Eigenschaft, nicht Beispiele: über den ganzen Wertebereich beider
+    // Schwellen darf die **angezeigte** Zahl dem Urteil nicht widersprechen.
+    //
+    //   durchgefallen  ⇒  Anzeige muss unter der Anforderung liegen
+    //   bestanden/grenzwertig ⇒ Anzeige muss sie erreichen
+    for (const required of [CONTRAST_NORMAL, CONTRAST_LARGE]) {
+      for (let ratio = 1; ratio <= 21; ratio += 0.0007) {
+        const status = statusOf(ratio, required)
+        const shown = displayedRatio(ratio)
+        if (status === 'durchgefallen') {
+          expect(shown, `${ratio} gegen ${required}`).toBeLessThan(required)
+        } else {
+          expect(shown, `${ratio} gegen ${required}`).toBeGreaterThanOrEqual(required)
+        }
+      }
+    }
+  })
+
+  it('lässt genau die Norm bestehen — 4,5 ist nicht durchgefallen', () => {
+    // WCAG 1.4.3 fordert MINDESTENS 4,5:1. Ein Vergleich mit `>` statt `>=`
+    // würde normkonforme Elemente als durchgefallen melden.
+    expect(statusOf(CONTRAST_NORMAL, CONTRAST_NORMAL)).not.toBe('durchgefallen')
+    expect(statusOf(CONTRAST_LARGE, CONTRAST_LARGE)).not.toBe('durchgefallen')
+    expect(statusOf(CONTRAST_NORMAL - 1e-9, CONTRAST_NORMAL)).toBe('durchgefallen')
   })
 
   it('rechnet dieselbe Luminanz wie der Layer-Baum', () => {

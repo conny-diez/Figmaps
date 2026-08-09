@@ -93,7 +93,38 @@ export function statusOf(ratio: number, required: number): ContrastStatus {
  *
  * Eine Stelle, weil die Messung nicht mehr hergibt (siehe `BORDERLINE_MARGIN`)
  * — und weil C-2 für Befundtexte ohnehin höchstens eine Dezimalstelle erlaubt.
+ *
+ * **Abgerundet, nicht kaufmännisch gerundet, und das ist kein Detail.**
+ *
+ * Gerundet stand in der ersten Fassung „4,50:1" neben „WCAG AA verlangt 4,5:1"
+ * und darunter das Urteil „durchgefallen". Der Rohwert war 4,499204, das Urteil
+ * also richtig — aber die angezeigte Zahl widersprach ihm. Bei einer Ausgabe,
+ * die als überprüfbare Tatsache auftritt, ist das schlimmer als ein falscher
+ * Wert: es sieht aus wie ein Fehler in der Regel, und wer nachrechnet, findet
+ * keinen.
+ *
+ * Abrunden löst das **beweisbar**, nicht nur meistens. Die angezeigte Zahl ist
+ * damit immer eine untere Schranke des gemessenen Werts, und weil beide
+ * Schwellen (4,5 und 3,0) bei einer Nachkommastelle exakt darstellbar sind,
+ * gilt:
+ *
+ *   Verhältnis <  Schwelle  ⇒  Anzeige ≤ Verhältnis <  Schwelle
+ *   Verhältnis ≥  Schwelle  ⇒  Anzeige ≥ Schwelle
+ *
+ * Die Anzeige kann dem Urteil also nicht widersprechen. `wcag.test.ts` prüft
+ * das über den ganzen Wertebereich, nicht an Beispielen.
+ *
+ * Abrunden ist zusätzlich die sichere Richtung: wir behaupten nie mehr Kontrast,
+ * als gemessen wurde.
  */
 export function formatRatio(ratio: number): string {
-  return `${(Math.round(ratio * 10) / 10).toFixed(1).replace('.', ',')}:1`
+  return `${(Math.floor(ratio * 10) / 10).toFixed(1).replace('.', ',')}:1`
+}
+
+/**
+ * Die angezeigte Zahl als Zahl — für Tests und für alles, was prüfen muss, ob
+ * Anzeige und Urteil zueinander passen.
+ */
+export function displayedRatio(ratio: number): number {
+  return Math.floor(ratio * 10) / 10
 }

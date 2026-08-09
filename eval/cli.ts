@@ -57,6 +57,7 @@ import {
 } from './finding-load'
 import { sweepCompetition } from './competition'
 import { runContrastCheck } from './contrast-check'
+import { formatRatio } from '../src/contrast/wcag'
 import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
@@ -1314,11 +1315,17 @@ function runContrastCheckCommand(args: Args): number {
   for (const result of runContrastCheck()) {
     console.log('')
     console.log(`${result.label} — ${result.results.length} Textelemente gemessen, ${result.skipped.length} übersprungen`)
-    console.log(`  ${'Status'.padEnd(15)}${'Wert'.padStart(9)}${'gefordert'.padStart(11)}${'Näherung'.padStart(10)}   Text`)
+    // Angezeigt **und** roh: die angezeigte Zahl ist das, was der Nutzer sieht
+    // und wonach er das Urteil beurteilt; der Rohwert ist das, was er beim
+    // Nachrechnen bekommt. Beide zu zeigen ist der Sinn dieses Werkzeugs.
+    console.log(
+      `  ${'Status'.padEnd(15)}${'angezeigt'.padStart(11)}${'roh'.padStart(11)}${'gefordert'.padStart(11)}` +
+        `${'Näherung'.padStart(10)}   Text`,
+    )
     for (const entry of result.results) {
       console.log(
-        `  ${entry.status.padEnd(15)}${entry.ratio.toFixed(2).padStart(9)}${entry.required.toFixed(1).padStart(11)}` +
-          `${(entry.approximate ? 'ja' : '—').padStart(10)}   ${entry.text.slice(0, 40)}`,
+        `  ${entry.status.padEnd(15)}${formatRatio(entry.ratio).padStart(11)}${entry.ratio.toFixed(4).padStart(11)}` +
+          `${entry.required.toFixed(1).padStart(11)}${(entry.approximate ? 'ja' : '—').padStart(10)}   ${entry.text.slice(0, 40)}`,
       )
     }
     for (const entry of result.skipped) console.log(`  übersprungen: ${entry.nodeId} — ${entry.reason}`)

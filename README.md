@@ -1893,10 +1893,35 @@ Gemessen auf den beiden Prüffällen:
 | Onboarding-Screen 393 × 852 | 8 | 0 | 2 |
 | Desktop, scrollend 1440 × 3200 | 21 | 10 | 0 |
 
-Auf dem Desktop-Frame fallen die Firmennamen (4,19:1) und die Kartenknöpfe
-(4,50:1 — genau auf der Grenze, also durchgefallen) durch, die Stellentitel
-bestehen mit 18,08:1. Auf dem Onboarding-Screen besteht alles; die Unterzeile
-liegt mit 4,51:1 knapp darüber und wird als grenzwertig markiert.
+Auf dem Desktop-Frame fallen die Firmennamen (4,1:1) und die Kartenknöpfe
+(4,4:1) durch, die Stellentitel bestehen mit 18,0:1. Auf dem Onboarding-Screen
+besteht alles; die Unterzeile liegt mit 4,5:1 knapp darüber und wird als
+grenzwertig markiert.
+
+#### Die angezeigte Zahl darf dem Urteil nicht widersprechen
+
+Die Kartenknöpfe standen in der ersten Fassung mit **„4,50:1"** neben „WCAG AA
+verlangt 4,5:1" und dem Urteil „durchgefallen". Beide Erklärungen waren zu
+prüfen:
+
+| | |
+|---|---|
+| Vergleichsoperator `>` statt `>=` | **Nein.** `statusOf` schneidet bei `ratio < required`; genau 4,5 besteht, wie WCAG 1.4.3 es verlangt („mindestens"). Ein Test hält das jetzt fest. |
+| Anzeige-Rundung | **Ja.** Der Rohwert war **4,499204**, das Urteil also richtig — kaufmännisch gerundet wurde daraus „4,50". |
+
+Rechnerisch stimmte alles, im Bild war es unhaltbar. Behoben durch **Abrunden**
+statt Runden, und zwar nicht als Notlösung: weil beide Schwellen bei einer
+Nachkommastelle exakt darstellbar sind (4,5 und 3,0), ist die angezeigte Zahl
+damit **beweisbar** widerspruchsfrei zum Urteil —
+
+```
+Verhältnis <  Schwelle  ⇒  Anzeige ≤ Verhältnis <  Schwelle
+Verhältnis ≥  Schwelle  ⇒  Anzeige ≥ Schwelle
+```
+
+Der Test prüft das als Eigenschaft über den ganzen Wertebereich beider
+Schwellen, nicht an Beispielen. Abrunden ist zusätzlich die sichere Richtung:
+wir behaupten nie mehr Kontrast, als gemessen wurde.
 
 ### Die Befunde stehen getrennt (C4)
 
