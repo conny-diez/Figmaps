@@ -258,8 +258,18 @@ const ctaRank: Rule = {
  *
  * Was die Regel stattdessen bräuchte: eine Größe, die den Kandidaten **innerhalb
  * seines eigenen Abschnitts** bewertet statt auf der gedämpften Gesamtkarte.
- * Das ist eine Neuentwicklung, kein Schwellenwert — siehe README, „Offen für
- * 1.2".
+ *
+ * **Die gibt es schon.** `localMean` liest genau das — die mittlere
+ * Aufmerksamkeit eines Kandidaten auf der *ungedämpften* Karte seines eigenen
+ * Viewports — und wurde für `dead-cta` gebaut, aus demselben Grund: dort machte
+ * die Dämpfung jeden Fußzeilen-Knopf rechnerisch leise. In 1.2 ist das damit
+ * **eine Änderung für zwei Regeln**, nicht zwei Aufgaben: beide steigen von der
+ * komponierten Karte auf die Abschnittskarte um.
+ *
+ * Was dabei mitentschieden werden muss: die Aussage ändert sich. „Der stärkste
+ * Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
+ * eigenen Viewport dominiert, sitzt nicht im ersten" — der Satz muss neu
+ * geschrieben werden, nicht nur die Zahl. Siehe README, „Offen für 1.2".
  */
 const ctaBelowFold: Rule = {
   id: 'cta-below-fold',
@@ -287,6 +297,15 @@ const ctaBelowFold: Rule = {
  * Auf echten Bildern nicht entartet: 3,3 % (Webseite, segmentiert) und 10,0 %
  * (Telefon, ein Viewport), Schwelle bei p3 bzw. p10. Die selektivste Regel,
  * wie beabsichtigt.
+ *
+ * **ACHTUNG — diese Quoten sind die einzige positive Evidenz dieser Regel, und
+ * sie wurden mit genau dem Abstandsmaß gemessen, das unten als falsch skaliert
+ * dokumentiert ist.** „Weit auseinander" bedeutete bei jeder der beiden
+ * Messungen etwas anderes (48,0 % bzw. 13,9 % der Kartenhöhe), die 3,3 % und
+ * 10,0 % sind also nicht dieselbe Frage, zweimal beantwortet. Sobald der
+ * Abstand in 1.2 auf die Diagonale oder auf getrennte x/y-Schwellen umgestellt
+ * wird, ist die Feuerrate **neu zu messen** — die alten Zahlen dürfen nicht
+ * übernommen werden, auch nicht als Plausibilitätsanker.
  *
  * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
  * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um

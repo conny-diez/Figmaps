@@ -1413,6 +1413,16 @@ Scroll-Dämpfung (`sectionAttenuation`, laut `config.ts` ausdrücklich eine
 Annahme ohne Messung). Wer eine Regel gegen eine solche Karte kalibriert,
 kalibriert gegen die Konfiguration, nicht gegen den Screen.
 
+**Die einzige positive Evidenz von `competition` steht auf demselben Maß.** Die
+3,3 % (Webseite) und 10,0 % (Telefon) wurden mit genau dem Abstandsmaß gemessen,
+das hier als falsch skaliert dokumentiert ist: „weit auseinander" bedeutete bei
+den beiden Messungen 48,0 % bzw. 13,9 % der Kartenhöhe. Es sind also nicht
+dieselbe Frage, zweimal beantwortet. Sobald der Abstand in 1.2 auf die Diagonale
+oder auf getrennte x/y-Schwellen umgestellt wird, **ist die Feuerrate neu zu
+messen** — die alten Zahlen dürfen weder übernommen noch als
+Plausibilitätsanker benutzt werden. Bis dahin ist die Regel ausgeliefert, weil
+sie nicht entartet ist, nicht weil sie validiert wäre.
+
 `competition` bleibt mit 3–10 % die selektivste Regel. Das ist kein Fehler —
 zwei wirklich getrennte, gleich starke Blickfänge sind selten —, aber sie ist
 die erste, die man streichen sollte, falls sie sich im Gebrauch nicht bewährt.
@@ -1532,7 +1542,7 @@ es in diesem Abschnitt geht.
 
 | Was | Beleg | warum jetzt nicht |
 |---|---|---|
-| `competitionMinDistance` misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Kartenhöhe | Tabelle oben | Die Regel ist mit 3–10 % nicht entartet. Eine Umstellung auf die Diagonale oder auf getrennte x/y-Schwellen ändert die Verteilung und verlangt eine eigene Neukalibrierung — ein eigener Schritt. |
+| `competitionMinDistance` misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Kartenhöhe | Tabelle oben | Die Regel ist mit 3–10 % nicht entartet. Eine Umstellung auf die Diagonale oder auf getrennte x/y-Schwellen ändert die Verteilung und verlangt eine eigene Neukalibrierung — ein eigener Schritt. **Die 3–10 % selbst stammen von diesem Maß und sind danach ungültig.** |
 | `cta-below-fold` ist durch `sectionAttenuation` strukturell unterdrückt (0 von 48 konstruierten Scrollframes) | Tabelle oben | Die Ursache ist die Scroll-Dämpfung, laut `config.ts` ausdrücklich eine **Annahme ohne Messung**. Sie zu ändern, um eine Regel häufiger feuern zu lassen, hieße die Vorhersage an die Regel anzupassen statt umgekehrt. Erst die Dämpfung belegen, dann die Regel. |
 
 Beide stehen zusätzlich als Kommentar an der jeweiligen Regel in
@@ -1650,7 +1660,7 @@ Drei Regeln, die ohne Folds und ohne Abschnitte auskommen:
 
 | Regel-Idee | vorhanden | neu zu bauen |
 |---|---|---|
-| **Konkurrierende Blickfänge** — zwei etwa gleich starke, weit auseinanderliegende Spitzen | `competition` gibt es bereits: Zwei-Maxima-Suche, Talprüfung, Schwellen in `config.ts` | Der Mindestabstand misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Höhe (Tabelle oben). Für Hochkant-Screens braucht es die Diagonale oder getrennte x/y-Schwellen — und danach eine Neukalibrierung |
+| **Konkurrierende Blickfänge** — zwei etwa gleich starke, weit auseinanderliegende Spitzen | `competition` gibt es bereits: Zwei-Maxima-Suche, Talprüfung, Schwellen in `config.ts` | Der Mindestabstand misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Höhe (Tabelle oben). Für Hochkant-Screens braucht es die Diagonale oder getrennte x/y-Schwellen — und danach eine **Neumessung der Feuerrate**, siehe unten |
 | **CTA in der ruhigsten Zone** — der primäre Kandidat liegt dort, wo die Karte kalt ist | `meanInRect` über die Kandidatengeometrie, `percentile` über die ganze Karte, `isPrimaryCandidate` | Die Entscheidungsgröße muss der Rang des CTA **innerhalb der Kartenverteilung** sein (z. B. „unter dem 30. Perzentil aller Pixel"), nicht relativ zu den anderen Kandidaten — genau der Fehler, an dem `dead-cta` hängt. Schwelle aus Daten |
 | **Kopfbereich stärker als Inhalt** — die Aufmerksamkeit bleibt im oberen Band hängen | Die Karte selbst, `sectionSalience` als Konzentrationsmaß, Geometrie aller Knoten | Bandaufteilung (z. B. obere 25 % gegen Rest) und ein Verhältnismaß. Dieselbe Vorsicht wie bei `flat`: die Größe darf nicht auf die *Menge* an Inhalt reagieren |
 
@@ -1672,11 +1682,25 @@ Branch existiert sie noch nicht; hier steht sie als Vormerkung für 1.2.)
 Alle drei brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle.
 In allen Fällen ist der Umbau benannt und die Messung fehlt noch:
 
+**Zwei der drei teilen sich eine Änderung.** `cta-below-fold` und `dead-cta`
+scheitern am selben Mechanismus — die komponierte Karte ist um
+`sectionAttenuation^i` gedämpft, also ist alles weiter unten rechnerisch leise,
+unabhängig vom Entwurf. Die Größe, die das behebt, **ist bereits gebaut**:
+`localMean` in `rules.ts` liest die mittlere Aufmerksamkeit eines Kandidaten auf
+der *ungedämpften* Karte seines eigenen Viewports und wird von `dead-cta` schon
+benutzt. `cta-below-fold` müsste seine Rangfolge nur ebenfalls darauf stellen.
+Das ist in 1.2 **eine Änderung für zwei Regeln**, nicht zwei Aufgaben.
+
+Mitentschieden werden muss dabei, dass sich die *Aussage* ändert: „der stärkste
+Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
+eigenen Viewport dominiert, sitzt nicht im ersten". Der Satz ist neu zu
+schreiben, nicht nur die Zahl.
+
 | Regel | neue Größe | warum sie das Problem löst |
 |---|---|---|
-| `cta-below-fold` | Bewertung des Kandidaten **innerhalb seines Abschnitts** statt auf der gedämpften Gesamtkarte | Die Regel ist nicht falsch kalibriert, sie ist blockiert: oben-lastiger Prior plus `sectionAttenuation^i`. Auf der ungedämpften Abschnittskarte ist „stärkster Kandidat dieses Viewports" wieder eine beantwortbare Frage. |
+| `cta-below-fold` | Rangfolge über `localMean` statt über die komponierte Karte — **derselbe Umbau wie bei `dead-cta`** | Die Regel ist nicht falsch kalibriert, sie ist blockiert: oben-lastiger Prior plus `sectionAttenuation^i`. Auf der ungedämpften Abschnittskarte ist „stärkster Kandidat dieses Viewports" wieder eine beantwortbare Frage. |
 | `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
-| `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
+| `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden — auf `localMean`, das dafür schon existiert | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
 
 Was für beide gilt: nach dem Umbau ist neu zu kalibrieren, und dafür fehlt
 weiterhin das Set mit echten Layer-Bäumen (PRD Set 2). An UEyes ist keine der
