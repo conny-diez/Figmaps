@@ -31,6 +31,9 @@ import { findingsInputFor } from '../src/findings/derive'
 import { ALL_RULES } from '../src/findings/rules'
 import type { FindingsInput } from '../src/findings/types'
 import { FIXTURES_ROOT, listSplit, readPng } from './dataset'
+import { buildFrame, SHAPES } from './constructed'
+import { ENGINE_CONFIG } from '../src/engine/config'
+import type { Bitmap } from '../src/engine/ops'
 import type { PriorAssetId } from '../src/engine/priors'
 
 export type RuleOutcome = 'fired' | 'silent' | 'blocked'
@@ -46,6 +49,12 @@ export type RuleStats = {
   /** Distribution of the rule's decision variable, for re-calibration. */
   variable: string
   samples: number[]
+  /**
+   * The constant this rule compares its decision variable against, and on
+   * which side it fires. `null` for the two rules that have none — „not rank 1"
+   * and „below the first fold" are definitions, not calibrations.
+   */
+  threshold: { value: number; firesBelow: boolean } | null
 }
 
 export type AuditResult = {
@@ -184,6 +193,47 @@ export function decisionVariable(id: string, input: FindingsInput): number | nul
   }
 }
 
+/**
+ * The constant each rule cuts its decision variable at.
+ *
+ * Lives next to `decisionVariable` and has to be changed with it *and* with the
+ * rule — three places for one fact, which is the price of measuring a rule from
+ * outside. The report is worth it: a threshold only means something next to the
+ * distribution it cuts, and „the threshold sits above the maximum" is what made
+ * `flat` obvious after three attempts at re-calibrating it.
+ */
+export function thresholdOf(id: string, category: string): { value: number; firesBelow: boolean } | null {
+  const cfg = ENGINE_CONFIG.findings
+  switch (id) {
+    case 'flat':
+      return { value: cfg.flatConcentrationThreshold[category] ?? cfg.flatConcentrationThreshold.web, firesBelow: true }
+    case 'competition':
+      return { value: cfg.competitionValleyRatio, firesBelow: true }
+    case 'cold-fold':
+      return { value: cfg.coldFoldMargin, firesBelow: false }
+    case 'dead-cta':
+      return { value: cfg.deadCtaRelativeToBest, firesBelow: true }
+    default:
+      return null
+  }
+}
+
+/**
+ * Where a threshold sits inside the observed distribution.
+ *
+ * „ÜBER max" or „UNTER min" means the rule cannot do anything but fire always
+ * or never — the finding that eventually explained both `flat` and `dead-cta`.
+ */
+export function thresholdPosition(samples: readonly number[], threshold: number | null): string {
+  if (threshold === null) return 'ohne'
+  if (samples.length === 0) return '—'
+  const sorted = [...samples].sort((a, b) => a - b)
+  if (threshold <= sorted[0]) return 'UNTER min'
+  if (threshold > sorted[sorted.length - 1]) return 'ÜBER max'
+  const below = sorted.filter((sample) => sample < threshold).length
+  return `p${Math.round((below / sorted.length) * 100)}`
+}
+
 export type AuditOptions = {
   setName: string
   /** Forces segmentation, so the two section rules can be exercised at all. */
@@ -211,55 +261,83 @@ export type AuditOptions = {
   segment?: boolean
 }
 
-export async function auditFindings(options: AuditOptions): Promise<AuditResult> {
-  const setName = options.setName
-  const ids = [...new Set([...listSplit(setName, 'tuning'), ...listSplit(setName, 'test')])]
-  const selected = options.limit ? ids.slice(0, options.limit) : ids
-  const engine = new HeuristicAttentionEngine(options.priorAsset ? { priorAsset: options.priorAsset } : {})
+/** One frame to score, whatever it came from. */
+type AuditCase = {
+  image: Bitmap
+  signals: NodeSignal[]
+  frameWidth: number
+  frameHeight: number
+  priorAsset?: PriorAssetId
+  /** What the rules are told the screen is — drives `flat`'s threshold. */
+  category?: string
+  viewportOverride?: number
+  segment?: boolean
+}
 
+const VARIABLE_NAMES: Record<string, string> = {
+  flat: 'Konzentration des Bildanteils (Top-5-%-Masse, 1. Abschnitt)',
+  competition: 'Tal ÷ zweites Maximum (bindend)',
+  'cold-fold': 'relativer Vorsprung der stärksten Sektion',
+  'dead-cta': 'ruhigster ÷ stärkster Kandidat (je eigener Abschnitt)',
+  'cta-rank': 'Rang des primären CTA',
+  'cta-below-fold': 'y des stärksten Kandidaten ÷ Fold 1',
+}
+
+function emptyStats(category: string): Map<string, RuleStats> {
   const stats = new Map<string, RuleStats>()
-  const variableNames: Record<string, string> = {
-    flat: 'Konzentration des Bildanteils (Top-5-%-Masse, 1. Abschnitt)',
-    competition: 'Tal ÷ zweites Maximum (bindend)',
-    'cold-fold': 'relativer Vorsprung der stärksten Sektion',
-    'dead-cta': 'ruhigster ÷ stärkster Kandidat (je eigener Abschnitt)',
-    'cta-rank': 'Rang des primären CTA',
-    'cta-below-fold': 'y des stärksten Kandidaten ÷ Fold 1',
-  }
   // Deliberately ALL_RULES, not the shipped subset: re-calibrating a rule that
   // is switched off is exactly what this tool is for.
   for (const rule of ALL_RULES) {
-    stats.set(rule.id, { id: rule.id, shipped: rule.shipped !== false, fired: 0, silent: 0, blocked: 0, blockedReason: '', variable: variableNames[rule.id] ?? '', samples: [] })
+    stats.set(rule.id, {
+      id: rule.id,
+      shipped: rule.shipped !== false,
+      fired: 0,
+      silent: 0,
+      blocked: 0,
+      blockedReason: '',
+      variable: VARIABLE_NAMES[rule.id] ?? '',
+      samples: [],
+      threshold: thresholdOf(rule.id, category),
+    })
   }
+  return stats
+}
 
-  let done = 0
+/**
+ * The one loop both audits go through: real analysis, real `deriveFindings`
+ * input, real rules. Two of them would be two measurements.
+ */
+async function tally(
+  cases: AsyncIterable<AuditCase> | Iterable<AuditCase>,
+  category: string,
+  onProgress?: (done: number) => void,
+): Promise<{ stats: Map<string, RuleStats>; count: number; withSignals: number; segmented: number }> {
+  const stats = emptyStats(category)
+  let count = 0
   let withSignals = 0
+  let segmented = 0
 
-  for (const id of selected) {
-    const imagePath = join(FIXTURES_ROOT, setName, 'images', `${id}.png`)
-    if (!existsSync(imagePath)) continue
-    const image = readPng(imagePath)
-
-    const signalsPath = join(FIXTURES_ROOT, setName, 'signals', `${id}.json`)
-    const signals: NodeSignal[] = existsSync(signalsPath) ? (JSON.parse(readFileSync(signalsPath, 'utf8')) as NodeSignal[]) : []
-    if (signals.length > 0) withSignals++
+  for await (const item of cases) {
+    if (item.signals.length > 0) withSignals++
+    const engine = new HeuristicAttentionEngine(item.priorAsset ? { priorAsset: item.priorAsset } : {})
 
     const analysis: AnalyzeResult | null = await analyzeFrame(engine, nodeImageOps, {
-      source: image,
-      signals,
-      frameWidth: image.width,
-      frameHeight: image.height,
-      ...(options.viewportOverride ? { viewportOverride: options.viewportOverride } : {}),
-      ...(options.segment === false ? { segment: false } : {}),
+      source: item.image,
+      signals: item.signals,
+      frameWidth: item.frameWidth,
+      frameHeight: item.frameHeight,
+      ...(item.viewportOverride ? { viewportOverride: item.viewportOverride } : {}),
+      ...(item.segment === false ? { segment: false } : {}),
     })
     if (!analysis) continue
+    if (analysis.plan.segmented) segmented++
 
     const input = findingsInputFor({
       analysis,
-      signals,
-      frameWidth: image.width,
-      frameHeight: image.height,
-      ...(options.priorAsset ? { priorCategory: options.priorAsset } : {}),
+      signals: item.signals,
+      frameWidth: item.frameWidth,
+      frameHeight: item.frameHeight,
+      ...(item.category ? { priorCategory: item.category } : {}),
     })
 
     for (const rule of ALL_RULES) {
@@ -276,19 +354,107 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
       else entry.silent++
     }
 
-    done++
-    options.onProgress?.(done, selected.length)
+    count++
+    onProgress?.(count)
   }
+
+  return { stats, count, withSignals, segmented }
+}
+
+export async function auditFindings(options: AuditOptions): Promise<AuditResult> {
+  const setName = options.setName
+  const ids = [...new Set([...listSplit(setName, 'tuning'), ...listSplit(setName, 'test')])]
+  const selected = options.limit ? ids.slice(0, options.limit) : ids
+
+  function* cases(): Generator<AuditCase> {
+    for (const id of selected) {
+      const imagePath = join(FIXTURES_ROOT, setName, 'images', `${id}.png`)
+      if (!existsSync(imagePath)) continue
+      const signalsPath = join(FIXTURES_ROOT, setName, 'signals', `${id}.json`)
+      yield {
+        image: readPng(imagePath),
+        signals: existsSync(signalsPath) ? (JSON.parse(readFileSync(signalsPath, 'utf8')) as NodeSignal[]) : [],
+        frameWidth: 0,
+        frameHeight: 0,
+        ...(options.priorAsset ? { priorAsset: options.priorAsset, category: options.priorAsset } : {}),
+        ...(options.viewportOverride ? { viewportOverride: options.viewportOverride } : {}),
+        ...(options.segment === false ? { segment: false } : {}),
+      }
+    }
+  }
+
+  // The frame size *is* the image size for a screenshot; filled in here rather
+  // than in the generator so the pixels are only decoded once.
+  function* sized(): Generator<AuditCase> {
+    for (const item of cases()) yield { ...item, frameWidth: item.image.width, frameHeight: item.image.height }
+  }
+
+  const category = options.priorAsset ?? 'web'
+  const { stats, count, withSignals, segmented } = await tally(sized(), category, (done) =>
+    options.onProgress?.(done, selected.length),
+  )
 
   return {
     setName,
-    imageCount: done,
+    imageCount: count,
     viewportOverride: options.viewportOverride,
     priorAsset: options.priorAsset ?? 'aus der Geometrie abgeleitet',
-    segmented: options.segment !== false,
+    // Read off the plans, not off the option: `--viewport` only *requests*
+    // segmentation, and a frame below the threshold is analysed whole anyway.
+    segmented: segmented > 0,
     withSignals,
     rules: [...stats.values()],
   }
+}
+
+export type ConstructedAuditOptions = {
+  /** Layout variants per shape. Each varies hierarchy, hero, CTA position, card count. */
+  variants?: number
+  onProgress?: (done: number, total: number) => void
+}
+
+/**
+ * The same audit on the constructed frames of `constructed.ts` — the only
+ * population in which the three candidate-based rules can be measured at all.
+ *
+ * One result per frame shape, because that is the whole point: a rule whose
+ * rate differs between a phone viewport and a scrolling desktop page has a
+ * decision variable that depends on the geometry rather than on the design.
+ */
+export async function auditConstructed(options: ConstructedAuditOptions = {}): Promise<AuditResult[]> {
+  const variants = options.variants ?? 24
+  const total = SHAPES.length * variants
+  let done = 0
+  const out: AuditResult[] = []
+
+  for (const shape of SHAPES) {
+    function* cases(): Generator<AuditCase> {
+      for (let variant = 0; variant < variants; variant++) {
+        const frame = buildFrame(shape, variant)
+        yield {
+          image: frame.image,
+          signals: frame.signals,
+          frameWidth: shape.frameWidth,
+          frameHeight: shape.frameHeight,
+          priorAsset: shape.prior,
+          category: shape.category,
+        }
+      }
+    }
+
+    const result = await tally(cases(), shape.category, () => options.onProgress?.(++done, total))
+    out.push({
+      setName: shape.label,
+      imageCount: result.count,
+      viewportOverride: undefined,
+      priorAsset: shape.prior,
+      segmented: result.segmented > 0,
+      withSignals: result.withSignals,
+      rules: [...result.stats.values()],
+    })
+  }
+
+  return out
 }
 
 /** Quantiles of a rule's decision variable — the basis for a threshold. */
