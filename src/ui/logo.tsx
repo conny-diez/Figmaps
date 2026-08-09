@@ -1,6 +1,7 @@
 /**
  * FigMaps product mark — inline SVG so the panel needs no network access and no
- * separate asset in the bundle. Source of truth: `assets/logo.svg`.
+ * separate asset in the bundle. Source of truth: `assets/logo.svg` (the dark
+ * variant; `assets/logo-light.svg` is the same mark for light backgrounds).
  */
 
 /** Unique per instance is unnecessary: the panel renders exactly one mark. */
@@ -24,14 +25,12 @@ export function Logo({ size = 20 }: { size?: number }): preact.JSX.Element {
       <g transform="translate(0,7)">
         <g clip-path={`url(#${CLIP_ID})`}>
           <rect x="28.5" y="26.5" width="71" height="57" rx="7" fill="#FFF0A0" />
-          <ellipse cx="54" cy="45" rx="26" ry="23" fill="#FFDD00" />
-          <ellipse cx="54" cy="45" rx="15" ry="13" fill="#FFB300" />
-          <ellipse cx="54" cy="45" rx="7" ry="6" fill="#FF8A00" />
-          <ellipse cx="85" cy="70" rx="14" ry="11" fill="#FFDD00" />
-          <ellipse cx="85" cy="70" rx="7" ry="5" fill="#FFB300" />
+          <rect x="28.5" y="26.5" width="71" height="19" fill="#FFDD00" />
+          <rect x="28.5" y="45.5" width="71" height="19" fill="#FFB300" />
+          <rect x="28.5" y="64.5" width="71" height="19" fill="#FF8A00" />
         </g>
-        {/* The frame outline follows the panel theme instead of the fixed #333
-            of the asset, so the mark stays legible in dark mode. */}
+        {/* The frame outline is drawn with `currentColor`; `.app__logo` sets it
+            to the panel's foreground, which is the #ECECEF of the dark asset. */}
         <rect
           x="16"
           y="14"

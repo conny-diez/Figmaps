@@ -122,3 +122,25 @@ Veröffentlichung zu klären sind:
 2. **Interne vs. öffentliche Nutzung.** Für die interne Verwendung bei
    meinestadt.de gelten dieselben CC-BY-Pflichten; beim Publishing in die
    Figma Community kommt die Sichtbarkeit in der Store-Beschreibung hinzu.
+
+## Manrope und JetBrains Mono — Schriften in `assets/fonts/`
+
+Das Panel liefert zwei Webfonts als Base64-Data-URI in `build/ui.html` aus;
+`scripts/build.mjs` setzt sie beim Bauen in `src/ui/styles.css` ein. Das
+Manifest verbietet Netzwerkzugriff (`networkAccess: none`), die Schriften
+können also nicht von einem CDN geladen werden.
+
+| Schrift | Datei | Lizenz |
+|---|---|---|
+| Manrope | `assets/fonts/manrope-latin.woff2` | SIL Open Font License 1.1 |
+| JetBrains Mono | `assets/fonts/jetbrains-mono-latin.woff2` | SIL Open Font License 1.1 |
+
+**Vorgenommene Änderungen:** keine. Es sind die unveränderten Latin-Subsets in
+der Fassung, die Google Fonts ausliefert (variable Fonts, Achse `wght`).
+
+Die OFL erlaubt Weitergabe und Einbettung; sie verlangt, dass die Lizenz
+mitgeliefert wird und die Schriften nicht einzeln verkauft werden.
+
+- Manrope: <https://github.com/sharanda/manrope> (Mikhail Sharanda, OFL 1.1)
+- JetBrains Mono: <https://github.com/JetBrains/JetBrainsMono> (JetBrains, OFL 1.1)
+- Lizenztext: <https://openfontlicense.org/>

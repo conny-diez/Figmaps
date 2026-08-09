@@ -8,6 +8,26 @@ import esbuild from 'esbuild'
 const watch = process.argv.includes('--watch')
 const dev = watch || process.argv.includes('--dev')
 
+/**
+ * The manifest sets `networkAccess: none`, so the panel's webfonts cannot be
+ * pulled from a CDN — the latin subsets travel inside build/ui.html as data
+ * URIs. Keys are the placeholders used in `src/ui/styles.css`.
+ */
+const UI_FONTS = {
+  __FONT_MANROPE__: 'assets/fonts/manrope-latin.woff2',
+  __FONT_JETBRAINS_MONO__: 'assets/fonts/jetbrains-mono-latin.woff2',
+}
+
+/** Reads `src/ui/styles.css` and swaps the font placeholders for data URIs. */
+async function readUiCss() {
+  let css = await readFile('src/ui/styles.css', 'utf8')
+  for (const [placeholder, path] of Object.entries(UI_FONTS)) {
+    const base64 = (await readFile(path)).toString('base64')
+    css = css.replaceAll(placeholder, `data:font/woff2;base64,${base64}`)
+  }
+  return css
+}
+
 await mkdir('build', { recursive: true })
 
 /** Shared esbuild settings. */
@@ -37,7 +57,7 @@ const htmlPlugin = {
       if (result.errors.length > 0) return
       const file = result.outputFiles?.find((f) => f.path.endsWith('.js'))
       if (!file) return
-      const css = await readFile('src/ui/styles.css', 'utf8')
+      const css = await readUiCss()
       // A literal `</script>` inside the bundle would terminate the tag early.
       const js = file.text.replace(/<\/script/gi, '<\\/script')
       const html = `<!DOCTYPE html>
