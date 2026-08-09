@@ -15,6 +15,7 @@ import { analysisSourceSize } from '../engine/ops-pure'
 import type { ScalarMap } from '../engine/types'
 import { deriveFindings } from '../findings/derive'
 import { contrastFindingText, measureContrast } from '../contrast/measure'
+import { measureNonTextContrast, nonTextFindingText, reportableNonText } from '../contrast/non-text'
 import { renderContrastmap } from '../render/contrastmap'
 import { CLICKMAP_IN_PANEL,
   type ContrastFinding,
@@ -49,6 +50,8 @@ export type PipelineResult = {
   findings: FindingPayload[]
   /** C4 — getrennt von `findings`, siehe `ContrastFinding` in `messages.ts`. */
   contrastFindings: ContrastFinding[]
+  /** WCAG 1.4.11 — getrennt von 1.4.3, weil eine Einschätzung darin steckt. */
+  nonTextFindings: ContrastFinding[]
   segments: SegmentInfo
   /** Absent when the frame was cancelled before anything was rendered. */
   mapMeta?: MapMeta
@@ -89,7 +92,7 @@ export async function generateMaps(
   const warnings: string[] = [...data.notices]
   const maps: RenderedMap[] = []
   const cancelled = (): boolean => hooks.isCancelled?.() === true
-  const empty = (): PipelineResult => ({ maps, warnings, ranking: [], findings: [], contrastFindings: [], segments: EMPTY_SEGMENTS })
+  const empty = (): PipelineResult => ({ maps, warnings, ranking: [], findings: [], contrastFindings: [], nonTextFindings: [], segments: EMPTY_SEGMENTS })
 
   hooks.onStep?.('Bild wird gelesen', 0.05)
   const bitmap = await decodePng(data.png)
@@ -238,6 +241,23 @@ export async function generateMaps(
       )
     }
 
+    // WCAG 1.4.11, auf denselben Pixeln. Getrennt gehalten, weil hier eine
+    // Einschätzung drinsteckt („ist das eine Komponente?") und in 1.4.3 nicht.
+    const nonText = measureNonTextContrast({
+      image: { width: contrastPixels.width, height: contrastPixels.height, data: contrastPixels.data },
+      signals: data.signals,
+      frameWidth: data.width,
+      frameHeight: data.height,
+    })
+    const nonTextFindings: ContrastFinding[] = reportableNonText(nonText.results).map((result) => ({
+      nodeId: result.nodeId,
+      status: result.status,
+      text: nonTextFindingText(result),
+      ratio: result.ratio,
+      required: result.required,
+      approximate: result.approximate,
+    }))
+
     if (settings.maps.contrast) {
       if (cancelled()) return { ...empty(), ranking, segments }
       hooks.onStep?.('Contrastmap wird gezeichnet', 0.8)
@@ -298,7 +318,7 @@ export async function generateMaps(
     })
 
     hooks.onStep?.('Fertig', 1)
-    return { maps, warnings, ranking, findings, contrastFindings, segments, mapMeta }
+    return { maps, warnings, ranking, findings, contrastFindings, nonTextFindings, segments, mapMeta }
   } finally {
     bitmap.close()
   }

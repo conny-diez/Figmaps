@@ -110,7 +110,17 @@ export type BackgroundEstimate = {
  * Randpixel verteilen sich über viele Bins und bilden nie eine Fläche; ein
  * echter Hintergrund ist ein scharfer Gipfel.
  */
-export function estimateBackground(luminances: readonly number[], textLuminance: number): BackgroundEstimate | null {
+export function estimateBackground(
+  luminances: readonly number[],
+  /**
+   * Die Farbe, deren Kern ausgeblendet wird — die Textfarbe.
+   *
+   * `null`, wenn es keine gibt: dann wird einfach die stärkste Fläche gesucht.
+   * Das braucht die Non-Text-Messung, die zwei Flächen gegeneinander stellt und
+   * keine davon ausblenden darf.
+   */
+  textLuminance: number | null,
+): BackgroundEstimate | null {
   if (luminances.length === 0) return null
 
   const bins: number[][] = Array.from({ length: HISTOGRAM_BINS }, () => [])
@@ -118,10 +128,10 @@ export function estimateBackground(luminances: readonly number[], textLuminance:
     Math.min(HISTOGRAM_BINS - 1, Math.max(0, Math.floor(value * HISTOGRAM_BINS)))
   for (const value of luminances) bins[binOf(value)].push(value)
 
-  const textBin = binOf(textLuminance)
+  const textBin = textLuminance === null ? null : binOf(textLuminance)
   const candidates = bins
     .map((values, index) => ({ index, values }))
-    .filter((entry) => Math.abs(entry.index - textBin) > TEXT_BIN_WINDOW && entry.values.length > 0)
+    .filter((entry) => entry.values.length > 0 && (textBin === null || Math.abs(entry.index - textBin) > TEXT_BIN_WINDOW))
 
   const total = candidates.reduce((sum, entry) => sum + entry.values.length, 0)
   if (total === 0) return null
@@ -140,10 +150,15 @@ export function estimateBackground(luminances: readonly number[], textLuminance:
   // und dann **kein** einzelner die Schwelle erreicht. Die erste Fassung fiel
   // dort auf die vorherrschende Fläche zurück und meldete für ein Foto
   // denselben Wert wie für eine einfarbige Fläche.
+  // Ohne Textfarbe gibt es kein „schlechtester Kontrast gegen sie" — dann wird
+  // nach Luminanz sortiert, und `worst`/`best` heißen dunkelste und hellste
+  // Fläche. Die Non-Text-Messung benutzt ohnehin nur `luminance`.
   const byContrast = candidates
     .map((entry) => ({ luminance: mean(entry.values), count: entry.values.length }))
-    .sort(
-      (a, b) => contrastRatio(textLuminance, a.luminance) - contrastRatio(textLuminance, b.luminance),
+    .sort((a, b) =>
+      textLuminance === null
+        ? a.luminance - b.luminance
+        : contrastRatio(textLuminance, a.luminance) - contrastRatio(textLuminance, b.luminance),
     )
 
   const groupMean = (entries: typeof byContrast): number => {

@@ -20,6 +20,7 @@ import type { NodeSignal } from '../src/messages'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { measureContrast, type ContrastResult } from '../src/contrast/measure'
 import { contrastFindingText } from '../src/contrast/measure'
+import { measureNonTextContrast, reportableNonText, type NonTextResult } from '../src/contrast/non-text'
 import { buildOnboardingFrame } from './onboarding'
 import { buildFrame, SHAPES } from './constructed'
 
@@ -123,6 +124,10 @@ export type ContrastCheckResult = {
   results: ContrastResult[]
   skipped: Array<{ nodeId: string; reason: string }>
   findings: string[]
+  /** WCAG 1.4.11 — alle geprüften Elemente, auch die nicht ausgelieferten. */
+  nonText: NonTextResult[]
+  /** Davon das, was tatsächlich gemeldet würde. */
+  nonTextReported: NonTextResult[]
   png: Uint8Array
 }
 
@@ -175,11 +180,20 @@ export function runContrastCheck(options: { tileWidth?: number } = {}): Contrast
       valueTag(canvas, rect, STATUS_RGB[result.status], labelSize)
     }
 
+    const nonText = measureNonTextContrast({
+      image: pixels,
+      signals: item.signals,
+      frameWidth: item.frameWidth,
+      frameHeight: item.frameHeight,
+    })
+
     out.push({
       id: item.id,
       label: item.label,
       results,
       skipped,
+      nonText: nonText.results,
+      nonTextReported: reportableNonText(nonText.results),
       findings: results.map((result) => contrastFindingText(result)),
       png: nodeImageOps.encode(canvas),
     })

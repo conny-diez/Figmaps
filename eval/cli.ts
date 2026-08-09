@@ -1330,6 +1330,18 @@ function runContrastCheckCommand(args: Args): number {
       )
     }
     for (const entry of result.skipped) console.log(`  übersprungen: ${entry.nodeId} — ${entry.reason}`)
+    if (result.nonText.length > 0) {
+      console.log('')
+      console.log(`  WCAG 1.4.11 — ${result.nonText.length} Elemente im Prüfumfang, ${result.nonTextReported.length} gemeldet`)
+      console.log(`  ${'Grund'.padEnd(14)}${'ausgeliefert'.padStart(13)}${'Wert'.padStart(8)}${'Label?'.padStart(8)}   Element`)
+      for (const entry of result.nonText) {
+        console.log(
+          `  ${entry.reason.padEnd(14)}${(entry.shipped ? 'ja' : 'nein').padStart(13)}` +
+            `${entry.ratio.toFixed(2).padStart(8)}${(entry.identifiableByText ? 'ja' : '—').padStart(8)}   ${entry.name.slice(0, 32)}`,
+        )
+      }
+    }
+
     const target = `${str(args, 'out', 'out/contrast')}-${result.id}.png`
     writeFile(target, result.png)
     console.log(`  Bild: ${target}`)

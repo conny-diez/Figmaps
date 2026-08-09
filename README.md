@@ -1948,6 +1948,105 @@ beiden nicht versehentlich in einer Liste landen. In einer Liste vermischt würd
 das eine das andere abwerten — und zwar in die falsche Richtung, denn die
 belastbarere Aussage verlöre.
 
+### Bedienelemente: WCAG 1.4.11 (Non-text Contrast)
+
+**Was gemessen wird, und was ausdrücklich nicht.** 1.4.11 fordert 3:1 für
+visuelle Information, die nötig ist, um eine Komponente oder ihren **Zustand**
+zu *identifizieren*. Das ist nicht „jede Fläche gegen irgendetwas": gemessen
+wird die **Begrenzung gegen die unmittelbar angrenzende Farbe** — die Kante, an
+der man erkennt, dass hier eine Komponente anfängt.
+
+**Die Ausnahme, die die meisten Fehlmeldungen verhindert:** ist eine Komponente
+durch ihren **eigenen sichtbaren Text** identifizierbar, ist ihre Begrenzung
+nicht erforderlich. Der gelbe Knopf „Los geht's" hat gegen den cremefarbenen
+Grund **1,45:1** und wäre ohne diese Ausnahme ein Durchfaller — nach der Norm
+ist er keiner, weil die Beschriftung ihn identifiziert. Genau diese Fehlmeldung
+produzieren rasterbasierte Werkzeuge, die nur Pixel sehen. **Wir können es
+besser, weil wir wissen, was ein Element ist.** Icon-Knöpfe ohne Text bleiben
+drin, denn dort trägt nur die Form die Information.
+
+#### Umfang: sortiert nach „wie sicher verlangt die Norm hier 3:1"
+
+| Grund | ausgeliefert | warum |
+|---|---|---|
+| Prototype-Interaktion (`hasReactions`) | **ja** | per Definition bedienbar |
+| Name trifft ein Stichwort (Button, Kachel, Feld …) | **ja** | von einem Menschen so benannt |
+| wiederholtes Element (≥ 3 gleichartige Geschwister) | nein | klassischer Dekorationsfall |
+| Trennlinie (dünn, lang) | nein | eine Linie zwischen ohnehin unterscheidbaren Karten ist zum Verständnis nicht nötig |
+
+Die unteren beiden werden **gemessen, aber nicht gemeldet** — dieselbe
+Konstruktion wie `shipped: false` bei den Vorhersageregeln: Code und Grund
+bleiben beieinander, und die Rate ist da, wenn jemand entscheiden will. Auf dem
+konstruierten Desktop-Frame fallen 7 von 9 Elementen in diese Kategorie
+(Ergebniskarten), alle mit eigener Beschriftung — sie würden also selbst bei
+Auslieferung nichts melden.
+
+Gemessen auf den beiden Prüffällen:
+
+| Frame | im Prüfumfang | davon gemeldet |
+|---|---:|---:|
+| Onboarding 393 × 852 | 6 | **0** (alle tragen eine Beschriftung) |
+| Desktop 1440 × 3200 | 9 | **2** (Suchfeld, CTA — beide ohne Textkind) |
+
+**Fotos sind ausgenommen — aus einem Messgrund, nicht aus einem Normgrund.** Die
+Ausnahmen der Norm sind inaktive Komponenten, browserbestimmte Darstellung und
+Grafiken, bei denen eine bestimmte Darstellung wesentlich ist; Fotos stehen
+nicht darunter. Sie fallen hier trotzdem raus, weil es über einem Foto keinen
+definierbaren Vordergrund gegen Hintergrund gibt, gegen den sich eine Begrenzung
+berechnen ließe. Der Unterschied ist wichtig: eine falsche Normbehauptung im
+Werkzeug kostet die ganze Sektion ihre Glaubwürdigkeit.
+
+#### Zwei Grenzen, die prinzipiell bleiben
+
+1. **Zustände sind in einem statischen Frame nicht prüfbar.** Man sieht einen
+   Zustand. 1.4.11 verlangt Kontrast auch für die *Unterscheidung* der Zustände
+   untereinander — ob der aktive Reiter sich vom inaktiven abhebt, ist aus einem
+   Frame nicht zu beantworten.
+2. **Inaktive Komponenten sind ausgenommen, und „inaktiv" ist aus dem Layer-Baum
+   nicht zuverlässig zu erkennen.** Ein ausgegrauter Knopf sieht aus wie ein
+   Knopf mit wenig Kontrast. Wir melden ihn; die Entscheidung bleibt beim
+   Menschen.
+
+Beide stehen im Panel, nicht nur hier. Und 1.4.11 bekommt eine **eigene
+Sektion**: in 1.4.3 steckt keine Einschätzung, hier schon — ob ein Element eine
+Komponente ist, schätzt eine Heuristik.
+
+### Was die Generatoren nicht erzeugen — und was davon eine Messung kippt
+
+**Zweimal hintereinander haben die Testframes eine kaputte Methode bestätigt,
+weil ihnen eine Eigenschaft echter Renders fehlte.** Erst die Textfarbe (jeder
+Knoten wurde übersprungen), dann die Kantenglättung (jeder Wert war falsch).
+Beide Male war die Messung falsch und alle Tests grün. Das ist kein Zufall
+mehr, sondern ein Muster — also einmal systematisch durchgegangen, was
+`constructed.ts`, `onboarding.ts` und `fixtures-cli.ts` **nicht** erzeugen.
+
+| Fehlt in den Fixtures | Kippt es eine Messung? | Stand |
+|---|---|---|
+| **Kantenglättung** an Glyphen | **Ja, tat es.** Minimum über Pixel traf immer ein Mischpixel | **behoben**, eigener Test mit bekannten Farbpaaren |
+| **Textfarbe** (`fillLuminance`) | **Ja, tat es.** Ohne sie misst die Contrastmap gar nicht | **behoben**, beide Generatoren setzen sie |
+| **Deckkraft < 1** an Fill oder Knoten | **Ja.** Die Farbe aus dem Layer-Baum ist dann nicht die, die man sieht — der gemeldete Kontrast wäre **besser** als die Wirklichkeit | **behoben ohne Testfall**: `traverse.ts` setzt `fillLuminance` nur noch, wenn Paint und Knoten voll deckend sind. Lieber „nicht messbar" als eine geschönte Zahl |
+| **Überlappende Elemente / Verdeckung** | **Ja, offen.** Ein Knoten, der von einem späteren Element überdeckt wird, wird gegen Pixel gemessen, die gar nicht zu ihm gehören. Die Generatoren zeichnen überschneidungsfrei | **offen** — braucht einen Frame mit bewusster Verdeckung |
+| **Verläufe als Hintergrund** | **Vermutlich nein.** Der `varies`-Pfad ist getestet, aber nur mit einem synthetischen Verlauf, nicht aus einem Generator | **offen**, geringes Risiko |
+| **Text auf Fotos** | **Vermutlich nein**, gleicher Pfad wie Verläufe. Die Onboarding-Kacheln haben Bildflächen, aber der Text liegt darunter, nie darauf | **offen**, geringes Risiko |
+| **Subpixel-Positionen** | **Möglich.** Alle Rechtecke der Generatoren liegen auf ganzen Pixeln; Figma liefert Bruchteile. `luminancesIn` rundet, kann also eine Pixelreihe daneben greifen — bei kleinem Text anteilig viel | **offen** |
+| **Rotation** | **Ja, vermutlich.** Ein gedrehter Textknoten hat eine achsenparallele Bounding-Box voller Hintergrund; die dominante Fläche wäre dann der Grund neben dem Text statt der dahinter | **offen** |
+| **Effekte (Schatten, Blur), Masken, Clipping** | **Möglich.** Ein Schatten unter Text verschiebt den gemessenen Hintergrund; eine Maske kann Pixel zeigen, die nicht zum Knoten gehören | **offen** |
+| **`figma.mixed`** (mehrere Schriftgrößen, mehrere Fills in einem Knoten) | Nein — der Übersprungpfad existiert und meldet den Grund | abgedeckt durch Konstruktion |
+
+**Was das über die Testframes sagt.** Sie sind gut für Geometrie und für die
+Befundregeln, und sie waren für die Kontrastmessung von Anfang an ungeeignet:
+ein Generator, der Text als hartkantige Balken in ganzzahligen Rechtecken
+zeichnet, kann eine pixelbasierte Messung nicht prüfen. Der Test mit **bekannten
+Farbpaaren** ist die Antwort darauf — er baut die eine Eigenschaft nach, die
+zählt, und prüft gegen Zahlen, die feststehen.
+
+**Die drei offenen Punkte mit echtem Risiko** (Verdeckung, Rotation, Subpixel)
+haben eines gemeinsam: bei allen dreien ist die **Bounding-Box nicht das, was
+man sieht**. Der naheliegende nächste Schritt ist deshalb keine weitere
+Fixture-Variante, sondern eine Plausibilitätsprüfung in der Messung selbst — ob
+die dominante Fläche überhaupt groß genug ist, um der Hintergrund *dieses*
+Elements zu sein. Nicht in diesem Schritt gebaut.
+
 ### Grenzen, ehrlich benannt (C5)
 
 Über einem Foto oder einem Verlauf gibt es kein „das" Kontrastverhältnis,
