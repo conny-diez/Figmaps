@@ -28,6 +28,7 @@
     "finding-load": "node scripts/eval.mjs --finding-load",
     "competition": "node scripts/eval.mjs --competition",
     "contrast-check": "node scripts/eval.mjs --contrast-check",
+    "header-weight": "node scripts/eval.mjs --header-weight",
     "visual-check": "node scripts/eval.mjs --visual-check",
     "side-effects": "node scripts/eval.mjs --side-effects",
     "epic-d": "node scripts/eval.mjs --epic-d",

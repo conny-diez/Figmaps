@@ -46,6 +46,7 @@ C Contrastmap). **Fertig ist A.**
 |---|---|
 | **`blendAlpha` 0,3 → 0,5** | Kreuzvalidiert und out-of-sample nachgemessen statt in-sample abgelesen. AUC, CC und NSS haben ihr Optimum einstimmig bei 0,5, in beiden Kategorien. Siehe [Alpha-Kurve](#alpha-kurve-12-a). |
 | **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
+| **Contrastmap — die Hauptausgabe, nicht die dritte Karte** | Auf dem Onboarding-Screen stehen **8 gemessene Kontrastaussagen gegen 1 Vorhersagebefund**, auf einem Desktop-Frame **10 durchgefallene Elemente gegen Ø 1,67 Vorhersagebefunde**. Sie braucht weder Folds noch Abschnitte noch Kandidaten noch Kalibrierung und sagt auf **jeder** Frame-Form etwas — als einzige Ausgabe des Plugins. Siehe [Contrastmap](#contrastmap-12-c). |
 | **Schärfe: Blur 0,035 + `blendGamma` 1,6** | Der A1-Befund ist zu gut einem Drittel behoben, bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Nicht 2,0, obwohl der Mittelwert dafür spräche: dieser Wert lässt die Gruppe stehen, für die das Plugin existiert. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis) und [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften). |
 | **Transparenzschwelle nachgezogen** | 0,08 → 0,02. Dieselbe Schwelle hätte auf der neuen Karte 37,5 % statt 18,0 % verdeckt — ein Gutteil von „das Overlay ist leerer" war der Renderer, nicht die Vorhersage. |
 | **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. Die Zahlen des Gates sind **kein Qualitätsbeleg** — siehe unten. |
@@ -1824,12 +1825,24 @@ rechnet eine Norm aus. Sie kann nicht in dem Sinne falsch sein, in dem eine
 Heatmap falsch sein kann; sie kann nur ungenau sein, und wo sie das ist, sagt
 sie es.
 
-**Nach den Befundzahlen ist sie der tragende Teil von 1.2, nicht die Ergänzung.**
+**Nach den Befundzahlen ist sie die Hauptausgabe des Plugins, nicht die dritte
+Karte.** Gemessen auf denselben zwei Frames:
+
+| Frame | Contrastmap | Vorhersage-Befunde |
+|---|---:|---:|
+| Onboarding 393 × 852 | **8** gemessene Aussagen (davon 2 zu beachten) | **1** |
+| Desktop 1440 × 3200 | **21** gemessene Aussagen, **10 durchgefallen** | Ø **1,67** |
+
 Von den drei Vorhersage-Regeln bedient jede genau eine Frame-Form
 ([siehe oben](#die-aufteilung-ist-keine-einschränkung-sondern-die-struktur)); auf
-einem Ein-Viewport-Telefon bekommt ein Drittel der Screens gar nichts. Die
-Contrastmap braucht weder Folds noch Abschnitte noch Kandidaten und sagt auf
-**jeder** Frame-Form etwas.
+einem Ein-Viewport-Telefon bekommt ein Drittel der Screens gar nichts, und der
+Rest genau einen Befund. Die Contrastmap braucht weder Folds noch Abschnitte
+noch Kandidaten noch Kalibrierung — sie sagt auf **jeder** Frame-Form etwas, und
+was sie sagt, kann man nachrechnen.
+
+Das gehört auch in die Beschreibung fürs Publishing: wer das Plugin installiert,
+bekommt zuerst eine Kontrastprüfung nach WCAG und **zusätzlich** eine
+Aufmerksamkeitsvorhersage — nicht umgekehrt.
 
 ### Wie gemessen wird (C1)
 
@@ -2864,6 +2877,63 @@ messbar sind.
 noch Abschnitte und funktioniert auf einem Ein-Viewport-Screen vollständig —
 damit deckt sie genau die Lücke ab, die die Befunde dort lassen. (In diesem
 Branch existiert sie noch nicht; hier steht sie als Vormerkung für 1.2.)
+
+### B2 — „Kopfbereich stärker als Inhalt" wird nicht gebaut
+
+```bash
+npm run header-weight
+```
+
+Die Regel wäre die zweite Vorhersage-Regel für Ein-Viewport-Screens gewesen. Die
+vorgeschlagene Größe — Bandaufteilung plus Verhältnismaß, mittlerer
+Bildanalyse-Anteil im oberen Viertel geteilt durch den im Rest — ist **vor**
+jeder Kalibrierung an Fällen mit bekannter Antwort geprüft worden. Sie besteht
+die Prüfung nicht.
+
+| Fall | erwartet | Bildanteil | fertige Karte |
+|---|---|---:|---:|
+| leer | undefiniert | — | 3,757 |
+| kräftiger Kopfbereich, ruhiger Inhalt | **hoch** | 1,246 | 2,637 |
+| ein kleiner Blickfang in der Mitte | niedrig | **—** | 2,437 |
+| ein großer Blickfang in der Mitte | niedrig | 0,000 | 1,572 |
+| ein kleiner Blickfang im Kopfbereich | **hoch** | **201,955** | 5,820 |
+| 3 gleich starke Blöcke | neutral | **1,280** | 2,410 |
+| 6 gleich starke Blöcke | neutral | 1,035 | 1,959 |
+| 12 gleich starke Blöcke | neutral | 0,953 | 1,870 |
+
+**Drei Gründe, jeder für sich hinreichend:**
+
+1. **Die Größe ist auf dem klarsten Fall undefiniert.** „Ein kleiner Blickfang
+   in der Mitte" hat im oberen Band gar keine Masse — der Bildanteil ist dort
+   nach der Perzentil-Normierung exakt null. Ein Verhältnis 0 ÷ x ist keine
+   kleine Zahl, sondern keine Zahl. Genau dort, wo die Antwort am eindeutigsten
+   ist, sagt die Größe nichts.
+2. **Der Wertebereich ist unbrauchbar.** Ein Verhältnis zweier Mittelwerte
+   explodiert, sobald der Nenner klein wird: 0,000 bis 201,955, mit Löchern
+   dazwischen. In einer solchen Verteilung liegt keine Schwelle sinnvoll.
+3. **Die Inhaltsmenge schiebt die Fälle über die Klassengrenze.** Drei gleich
+   starke Blöcke kommen auf **1,280** und liegen damit **über** dem Fall, der
+   „hoch" heißen soll (kräftiger Kopfbereich, 1,246). Das ist exakt die
+   `flat`-Falle: die Größe reagiert stärker auf die Menge an Inhalt als auf das,
+   was sie messen soll.
+
+Die Spalte „fertige Karte" steht daneben, weil sie die naheliegende Alternative
+erledigt: dort bekommt der **leere** Frame mit 3,757 den höchsten Wert von
+allen. Das ist der Ortsprior, der von sich aus oben-lastig ist — auf der
+fertigen Karte misst diese Größe die Positionsannahme, nicht den Entwurf.
+
+**Es gibt keinen zweiten Anlauf.** Weder ein anderes Band noch ein anderes
+Verhältnis: die Instabilität kommt aus der Konstruktion „Quotient zweier
+Mittelwerte" und nicht aus der Bandgröße, und `flat` hat fünf Anläufe gekostet,
+von denen vier nichts gefunden haben, was der erste nicht schon zeigte.
+
+**Was das kostet, und warum es tragbar ist.** Ein-Viewport-Screens behalten
+damit genau eine Vorhersage-Regel (`competition`, 15,2 %) plus `cta-rank`, wo
+ein Layer-Baum vorliegt. Die Lücke, die B2 hätte füllen sollen, füllt die
+[Contrastmap](#contrastmap-12-c) — und zwar besser, als diese Regel es gekonnt
+hätte: sie sagt auf jedem Screen etwas, und was sie sagt, ist nachrechenbar.
+
+---
 
 ### Offen für 1.2 — die abgeschalteten Regeln
 

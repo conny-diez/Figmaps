@@ -57,6 +57,7 @@ import {
 } from './finding-load'
 import { sweepCompetition } from './competition'
 import { runContrastCheck } from './contrast-check'
+import { judgeOrder, measureKnownCases, HEADER_BAND } from './header-weight'
 import { formatRatio } from '../src/contrast/wcag'
 import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
@@ -1347,6 +1348,47 @@ function contrastText(result: ReturnType<typeof runContrastCheck>[number], nodeI
 }
 
 // ---------------------------------------------------------------------------
+// header-weight — 1.2 B2, Schritt 1: taugt die Größe überhaupt?
+//
+//   npm run header-weight
+//
+// Prüft VOR jeder Kalibrierung an Fällen mit bekannter Antwort. Stimmt die
+// Ordnung nicht, wird die Regel nicht gebaut.
+// ---------------------------------------------------------------------------
+
+async function runHeaderWeight(): Promise<number> {
+  console.log(`B2, Schritt 1 — „Kopfbereich stärker als Inhalt", Band = obere ${(HEADER_BAND * 100).toFixed(0)} %.`)
+  console.log('Gemessen auf dem BILDANTEIL, nicht auf der fertigen Karte und nicht auf sectionSalience.')
+  console.log('Diese Messung entscheidet, ob die Regel gebaut wird — vor jeder Schwelle.')
+  console.log('')
+
+  const measurements = await measureKnownCases()
+  console.log(`  ${'Fall'.padEnd(38)}${'erwartet'.padStart(13)}${'Bildanteil'.padStart(12)}${'fertige Karte'.padStart(15)}`)
+  for (const entry of measurements) {
+    const format = (value: number | null): string => (value === null ? '—' : value.toFixed(3))
+    console.log(
+      `  ${entry.case.label.padEnd(38)}${entry.case.expect.padStart(13)}` +
+        `${format(entry.onImageTerm).padStart(12)}${format(entry.onAttention).padStart(15)}`,
+    )
+  }
+
+  const verdict = judgeOrder(measurements)
+  console.log('')
+  console.log(`  Trennung hoch/niedrig:        ${verdict.separated ? 'ja' : 'NEIN'}`)
+  console.log(`  neutrale Fälle dazwischen:    ${verdict.neutralBetween ? 'ja' : 'NEIN'}`)
+  console.log(`  Klassenabstand:               ${verdict.classGap.toFixed(3)}`)
+  console.log(`  Drift durch reine Inhaltsmenge: ${verdict.contentDrift.toFixed(3)}`)
+  console.log(`  Drift kleiner als Abstand:    ${verdict.driftSmallerThanGap ? 'ja' : 'NEIN'}`)
+  console.log('')
+  console.log(
+    verdict.usable
+      ? 'BEFUND: die Größe bringt die bekannten Fälle in die richtige Ordnung. Kalibrierung ist zulässig.'
+      : 'BEFUND: die Größe bringt die bekannten Fälle NICHT in die richtige Ordnung. Die Regel wird nicht gebaut.',
+  )
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
 //
 //   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
@@ -1710,6 +1752,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args['finding-load']) return await runFindingLoad(args)
     if (args.competition) return await runCompetition(args)
     if (args['contrast-check']) return runContrastCheckCommand(args)
+    if (args['header-weight']) return await runHeaderWeight()
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)

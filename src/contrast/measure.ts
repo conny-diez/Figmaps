@@ -42,36 +42,140 @@ export function pixelLuminance(r: number, g: number, b: number): number {
 }
 
 /**
- * Wie nah ein Pixel an der Textfarbe liegen darf und trotzdem noch als
- * Hintergrund zählt.
+ * Auflösung des Luminanz-Histogramms, mit dem der Hintergrund gefunden wird.
  *
- * Innerhalb des Textrahmens liegen Glyphen *und* Hintergrund. Die Glyphen
- * tragen die Textfarbe, also werden Pixel in ihrer Nähe verworfen — sonst
- * misste man den Text gegen sich selbst und bekäme ein Verhältnis nahe 1 auf
- * jedem Screen der Welt.
- *
- * Der Abstand ist bewusst großzügig: ein Antialiasing-Saum liegt irgendwo
- * zwischen Text und Grund, und ein halb gemischtes Pixel ist für diese Frage
- * keine Auskunft über den Hintergrund.
+ * Das Histogramm **wählt** nur die Fläche aus; der zurückgegebene Wert ist der
+ * Mittelwert der tatsächlichen Pixel darin. Sonst käme die Binbreite als Fehler
+ * ins Verhältnis, und bei einer Ausgabe, die auf 0,05 genau sein soll, ist das
+ * zu viel: 128 Bins wären allein schon ±0,08 im Verhältnis.
  */
-const GLYPH_LUMINANCE_DISTANCE = 0.12
+const HISTOGRAM_BINS = 128
 
 /**
- * So viele Hintergrundpixel müssen im Rahmen übrig bleiben, damit die Messung
- * darauf beruht. Darunter wird auf einen Ring **außerhalb** des Rahmens
- * ausgewichen — bei einem randlos gesetzten Text ist innen fast nur Glyphe.
+ * Fenster um die Textfarbe, das bei der Suche nach dem Hintergrund
+ * ausgeblendet wird — in Bins.
+ *
+ * Bewusst schmal (±1 Bin ≈ ±0,008 Luminanz): es soll den Textkern entfernen und
+ * nicht mehr. Läge ein Hintergrund knapp neben der Textfarbe, wäre das ein
+ * echter Kontrast nahe 1:1, und den soll die Messung finden, nicht wegblenden.
+ */
+const TEXT_BIN_WINDOW = 1
+
+/**
+ * Anteil, den die stärkste Fläche unter den Nicht-Text-Pixeln haben muss, damit
+ * der Hintergrund als **einheitlich** gilt.
+ *
+ * Darunter wechselt er wirklich — Foto, Verlauf, halbtransparente Fläche — und
+ * das Ergebnis wird als Näherung gekennzeichnet.
+ */
+const DOMINANT_SHARE = 0.5
+
+/**
+ * Mindestanteil, den eine Fläche haben muss, um als „schlechtester Hintergrund"
+ * gemeldet zu werden.
+ *
+ * **Das ist die Lehre aus dem Fehler, den diese Datei hatte.** Vorher wurde das
+ * Minimum über *alle* Pixel gebildet, und der schlechteste Pixel im Textbereich
+ * ist immer ein kantengeglätteter Randpixel — eine Mischung aus Text und Grund.
+ * Damit lief jedes Verhältnis gegen 1 und alle Werte stauchten sich auf 3–4:1,
+ * unabhängig vom tatsächlichen Aussehen. Ein Saum von wenigen Prozent darf das
+ * Ergebnis nicht bestimmen; eine dunkle Stelle in einem Foto, die ein Zehntel
+ * der Fläche einnimmt, sehr wohl.
+ */
+const MEANINGFUL_SHARE = 0.1
+
+/**
+ * So viele Nicht-Text-Pixel müssen im Rahmen liegen, damit die Messung darauf
+ * beruht. Darunter wird auf einen Ring **außerhalb** ausgewichen.
  */
 const MIN_BACKGROUND_PIXELS = 24
 
+export type BackgroundEstimate = {
+  /** Die vorherrschende Hintergrundluminanz. */
+  luminance: number
+  /** Die Hintergrundfläche mit dem **schlechtesten** Kontrast, ab MEANINGFUL_SHARE. */
+  worstLuminance: number
+  /** Die mit dem besten — die Spanne zeigt, wie uneinheitlich es ist. */
+  bestLuminance: number
+  /** Wechselt der Hintergrund wirklich? */
+  varies: boolean
+  sampleCount: number
+}
+
 /**
- * Ab dieser Spanne der Hintergrundluminanz gilt das Ergebnis als Näherung.
+ * Findet den Hintergrund hinter einem Text — als **Fläche**, nicht als Extremum.
  *
- * Über einem Foto oder einem Verlauf wechselt der Hintergrund je Pixel; es gibt
- * dann kein „das" Kontrastverhältnis, sondern eine Verteilung. Gemeldet wird
- * der **schlechteste** Wert im Textbereich — das ist die Aussage, die nicht zu
- * gut aussieht — und das Ergebnis wird als Näherung gekennzeichnet (C5).
+ * Vorgehen: Luminanzen im Rechteck sammeln, den Textkern ausblenden, den Rest
+ * in ein Histogramm werfen und die stärkste Fläche nehmen. Kantengeglättete
+ * Randpixel verteilen sich über viele Bins und bilden nie eine Fläche; ein
+ * echter Hintergrund ist ein scharfer Gipfel.
  */
-const APPROXIMATE_SPREAD = 0.1
+export function estimateBackground(luminances: readonly number[], textLuminance: number): BackgroundEstimate | null {
+  if (luminances.length === 0) return null
+
+  const bins: number[][] = Array.from({ length: HISTOGRAM_BINS }, () => [])
+  const binOf = (value: number): number =>
+    Math.min(HISTOGRAM_BINS - 1, Math.max(0, Math.floor(value * HISTOGRAM_BINS)))
+  for (const value of luminances) bins[binOf(value)].push(value)
+
+  const textBin = binOf(textLuminance)
+  const candidates = bins
+    .map((values, index) => ({ index, values }))
+    .filter((entry) => Math.abs(entry.index - textBin) > TEXT_BIN_WINDOW && entry.values.length > 0)
+
+  const total = candidates.reduce((sum, entry) => sum + entry.values.length, 0)
+  if (total === 0) return null
+
+  const mean = (values: readonly number[]): number => values.reduce((sum, value) => sum + value, 0) / values.length
+
+  const dominant = candidates.reduce((best, entry) => (entry.values.length > best.values.length ? entry : best))
+  const share = dominant.values.length / total
+  const varies = share < DOMINANT_SHARE
+
+  // „Schlechtester Hintergrund" heißt: die dunkelste bzw. hellste Fläche, die
+  // zusammen mindestens `MEANINGFUL_SHARE` der Fläche einnimmt — aufsummiert
+  // über Bins, nicht ein einzelner Bin.
+  //
+  // Aufsummiert, weil ein echter Verlauf seine Masse über viele Bins verteilt
+  // und dann **kein** einzelner die Schwelle erreicht. Die erste Fassung fiel
+  // dort auf die vorherrschende Fläche zurück und meldete für ein Foto
+  // denselben Wert wie für eine einfarbige Fläche.
+  const byContrast = candidates
+    .map((entry) => ({ luminance: mean(entry.values), count: entry.values.length }))
+    .sort(
+      (a, b) => contrastRatio(textLuminance, a.luminance) - contrastRatio(textLuminance, b.luminance),
+    )
+
+  const groupMean = (entries: typeof byContrast): number => {
+    let sum = 0
+    let count = 0
+    for (const entry of entries) {
+      sum += entry.luminance * entry.count
+      count += entry.count
+    }
+    return count > 0 ? sum / count : 0
+  }
+
+  const takeUntilShare = (entries: typeof byContrast): typeof byContrast => {
+    const out: typeof byContrast = []
+    let count = 0
+    for (const entry of entries) {
+      out.push(entry)
+      count += entry.count
+      if (count >= total * MEANINGFUL_SHARE) break
+    }
+    return out
+  }
+
+  const dominantMean = mean(dominant.values)
+  return {
+    luminance: dominantMean,
+    worstLuminance: varies ? groupMean(takeUntilShare(byContrast)) : dominantMean,
+    bestLuminance: varies ? groupMean(takeUntilShare([...byContrast].reverse())) : dominantMean,
+    varies,
+    sampleCount: total,
+  }
+}
 
 export type ContrastResult = {
   nodeId: string
@@ -109,13 +213,12 @@ export type MeasureOptions = {
   frameHeight: number
 }
 
-/** Alle Hintergrundluminanzen in einem Rechteck, ohne die Glyphen. */
-function sampleBackground(
+/** Alle Luminanzen in einem Rechteck, optional ohne einen inneren Bereich. */
+function luminancesIn(
   image: Bitmap,
   rect: { x: number; y: number; width: number; height: number },
   scaleX: number,
   scaleY: number,
-  textLuminance: number,
   exclude?: { x: number; y: number; width: number; height: number },
 ): number[] {
   const x0 = Math.max(0, Math.floor(rect.x * scaleX))
@@ -133,9 +236,7 @@ function sampleBackground(
     for (let x = x0; x < x1; x++) {
       if (exclude && x >= ex0 && x < ex1 && y >= ey0 && y < ey1) continue
       const p = (y * image.width + x) * 4
-      const luminance = pixelLuminance(image.data[p], image.data[p + 1], image.data[p + 2])
-      if (Math.abs(luminance - textLuminance) < GLYPH_LUMINANCE_DISTANCE) continue
-      out.push(luminance)
+      out.push(pixelLuminance(image.data[p], image.data[p + 1], image.data[p + 2]))
     }
   }
   return out
@@ -172,35 +273,26 @@ export function measureContrast(options: MeasureOptions): { results: ContrastRes
 
     const rect = { x: signal.x, y: signal.y, width: signal.width, height: signal.height }
     const textLuminance = signal.fillLuminance
-    let background = sampleBackground(image, rect, scaleX, scaleY, textLuminance)
+    let background = estimateBackground(luminancesIn(image, rect, scaleX, scaleY), textLuminance)
     let sampledOutside = false
 
-    if (background.length < MIN_BACKGROUND_PIXELS) {
-      // Randlos gesetzter Text: innen ist fast alles Glyphe. Dann ein Ring
-      // außerhalb, eine halbe Zeilenhöhe breit — nah genug, dass es noch
-      // derselbe Hintergrund ist.
+    if (!background || background.sampleCount < MIN_BACKGROUND_PIXELS) {
+      // Der Text füllt seinen Rahmen praktisch aus — dann liegt der einzige
+      // Hintergrund außerhalb. Eine halbe Zeilenhöhe breiter Ring, nah genug,
+      // dass es noch derselbe Grund ist.
       const pad = Math.max(2, fontSize * 0.5)
       const outer = { x: rect.x - pad, y: rect.y - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }
-      background = sampleBackground(image, outer, scaleX, scaleY, textLuminance, rect)
+      background = estimateBackground(luminancesIn(image, outer, scaleX, scaleY, rect), textLuminance)
       sampledOutside = true
     }
 
-    if (background.length === 0) {
-      skipped.push({ nodeId: signal.id, reason: 'kein Hintergrundpixel gefunden — Text füllt seinen Rahmen vollständig' })
+    if (!background) {
+      skipped.push({ nodeId: signal.id, reason: 'kein Hintergrund gefunden — Text füllt seinen Rahmen vollständig' })
       continue
     }
 
-    let worst = Infinity
-    let best = 0
-    let min = Infinity
-    let max = -Infinity
-    for (const luminance of background) {
-      const ratio = contrastRatio(textLuminance, luminance)
-      if (ratio < worst) worst = ratio
-      if (ratio > best) best = ratio
-      if (luminance < min) min = luminance
-      if (luminance > max) max = luminance
-    }
+    const worst = contrastRatio(textLuminance, background.worstLuminance)
+    const best = contrastRatio(textLuminance, background.bestLuminance)
 
     const fontWeight = signal.fontWeight ?? 400
     const required = requiredRatio(fontSize, fontWeight)
@@ -215,8 +307,11 @@ export function measureContrast(options: MeasureOptions): { results: ContrastRes
       ratio: worst,
       bestRatio: best,
       status: statusOf(worst, required),
-      approximate: max - min > APPROXIMATE_SPREAD,
-      sampleCount: background.length,
+      // Nur wenn der Hintergrund **wirklich** wechselt. Vorher stand hier eine
+      // Spanne über alle Pixel, und die war durch die Kantenglättung immer
+      // groß — jede Messung trug das „~", und damit sagte es nichts.
+      approximate: background.varies,
+      sampleCount: background.sampleCount,
       sampledOutside,
     })
   }
