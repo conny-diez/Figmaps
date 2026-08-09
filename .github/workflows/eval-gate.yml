@@ -16,10 +16,12 @@ on:
 # und mit ihm alles danach. **Sechs von sechs Läufen seit dem 8.8.2026 sind
 # genau daran gescheitert — das Eval-Gate aus A-7 hat deshalb nie ausgeführt.**
 #
-# `npm ci` ersetzt den Host aus dem Lockfile durch den konfigurierten, sobald
-# beide sich unterscheiden; die Integritäts-Hashes bleiben und werden geprüft,
-# es ist also kein Aufweichen der Lieferkette. Nachgemessen mit leerem Cache,
-# nicht angenommen.
+# `NPM_CONFIG_REGISTRY` allein genügt dafür **nicht** — lokal (npm 11.11)
+# ersetzt npm den Host aus dem Lockfile, auf dem Runner tut es das nicht.
+# Nachgemessen, nicht angenommen: der erste Versuch mit nur dieser Variablen ist
+# mit demselben 503 gescheitert. Deshalb entfernt `scripts/ci-lockfile.mjs` die
+# Adressen vor `npm ci` ganz aus der Arbeitskopie; `integrity` bleibt stehen und
+# wird geprüft, es ist also kein Aufweichen der Lieferkette.
 #
 # Das Lockfile bleibt unangetastet: es hier zu reparieren wäre folgenlos, weil
 # der nächste `npm install` auf einer intern konfigurierten Maschine die Hosts
@@ -42,6 +44,7 @@ jobs:
           # Laufzeit des Harness.
           node-version: '24'
           cache: npm
+      - run: node scripts/ci-lockfile.mjs
       - run: npm ci
       - run: npm run lint
       - run: npm run verify
@@ -65,6 +68,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - run: node scripts/ci-lockfile.mjs
       - run: npm ci
 
       - name: Restore reference data
@@ -86,6 +90,9 @@ jobs:
           git worktree add ../main-ref origin/main
           cp -R eval/fixtures ../main-ref/eval/fixtures
           cd ../main-ref
+          # Das Skript kommt aus *diesem* Checkout: `origin/main` kennt es noch
+          # nicht, und der Baseline-Lauf braucht es genauso.
+          node "$GITHUB_WORKSPACE/scripts/ci-lockfile.mjs" package-lock.json
           npm ci
           npm run eval -- --set quick --report /tmp/gate-main.md --gate --baseline "$GITHUB_WORKSPACE/gate-main.json" --write
 
