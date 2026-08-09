@@ -3,17 +3,44 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'v*']
+
+# Die Registry für **alle** npm-Aufrufe dieses Workflows, in jedem Job und auch
+# im verschachtelten `npm ci` des Baseline-Schritts.
+#
+# WARUM DAS HIER STEHT UND NICHT IM LOCKFILE: `package-lock.json` trägt in allen
+# 211 `resolved`-Feldern eine interne Artifactory-URL, weil `npm install` die
+# Registry aus der *Benutzer*konfiguration der Maschine übernimmt, auf der
+# zuletzt installiert wurde (eine `.npmrc` gibt es im Repo nicht). Ein
+# GitHub-Runner erreicht diesen Host nicht und bekommt `503`; `npm ci` bricht ab,
+# und mit ihm alles danach. **Sechs von sechs Läufen seit dem 8.8.2026 sind
+# genau daran gescheitert — das Eval-Gate aus A-7 hat deshalb nie ausgeführt.**
+#
+# `npm ci` ersetzt den Host aus dem Lockfile durch den konfigurierten, sobald
+# beide sich unterscheiden; die Integritäts-Hashes bleiben und werden geprüft,
+# es ist also kein Aufweichen der Lieferkette. Nachgemessen mit leerem Cache,
+# nicht angenommen.
+#
+# Das Lockfile bleibt unangetastet: es hier zu reparieren wäre folgenlos, weil
+# der nächste `npm install` auf einer intern konfigurierten Maschine die Hosts
+# zurückschreibt. Der dauerhafte Ort für diese Entscheidung ist eine
+# Repo-`.npmrc` oder die Benutzerkonfiguration — beides berührt, wie intern
+# gebaut wird, und liegt bei Security.
+env:
+  NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
 
 jobs:
   verify:
     name: Typecheck, Tests, Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          # Die Version, unter der auch entwickelt wird. `esbuild` zielt weiter
+          # auf node20 — das ist die Untergrenze des erzeugten Codes, nicht die
+          # Laufzeit des Harness.
+          node-version: '24'
           cache: npm
       - run: npm ci
       - run: npm run lint
@@ -31,18 +58,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
       - run: npm ci
 
       - name: Restore reference data
         id: fixtures
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: eval/fixtures
           key: figmaps-fixtures-v1
@@ -68,7 +95,7 @@ jobs:
 
       - name: Publish report
         if: always() && steps.fixtures.outputs.cache-hit == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: eval-gate
           path: |
