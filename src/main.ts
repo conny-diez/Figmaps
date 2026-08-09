@@ -58,7 +58,10 @@ function postError(code: ErrorCode, error?: unknown, frameName?: string): void {
 figma.showUI(__html__, {
   width: DEFAULT_PANEL_SIZE.width,
   height: DEFAULT_PANEL_SIZE.height,
-  themeColors: true,
+  // The panel ships its own two palettes and its own switch (`ui/theme.ts`).
+  // Letting Figma inject its theme variables would tie the readability of the
+  // disclaimer to the host's next redesign.
+  themeColors: false,
   title: 'Figmaps',
 })
 

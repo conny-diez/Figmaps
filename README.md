@@ -125,6 +125,71 @@ Abtastdichte gemessen, und 1× verliert genau die Kanten- und Textdetails, aus
 denen die Merkmale bestehen. Nur die technischen Grenzen unten schalten
 automatisch herunter.
 
+### Panel: Design, Theming, Bedienelemente
+
+**Zwei Themes, eigener Schalter.** Im Header sitzt eine Pille mit Mond und
+Sonne. Bewusst **nicht** `figma.showUI({ themeColors: true })`: die Farben des
+Panels — und damit die Lesbarkeit des Disclaimers unter den Maps — sollen nicht
+davon abhängen, was der Host als Nächstes tut. **Dark ist immer der Startwert**,
+auch beim ersten Öffnen und wenn Figma im Light-Mode läuft; die Wahl wird in
+`figma.clientStorage` gemerkt (`Settings.theme`, `ui/theme.ts`).
+
+**Der Kontrast ist eine Zusage, keine Absicht.** Beide Paletten stehen in
+TypeScript, nicht in der CSS-Datei, weil jeder Wert die Hälfte eines
+Kontrastpaares ist und `ui/__tests__/theme.test.ts` **jedes tatsächlich
+vorkommende Paar** gegen 4,5:1 prüft und darunter fehlschlägt. Der Anlass ist
+konkret: die Fußzeile war schon einmal mit 3,93:1 und 2,41:1 ausgeliefert,
+wurde behoben — und die nächste Design-Übergabe brachte exakt dieselben Werte
+zurück. Gemessen, beide Themes:
+
+| Paar | dark | light |
+|---|---:|---:|
+| `text` auf `bg` | 16,46:1 | 17,17:1 |
+| `text-body` auf `surface` | 8,94:1 | 10,31:1 |
+| `text-dim` auf `bg` | 8,25:1 | 7,37:1 |
+| `text-quiet` auf `bg-footer` (die drei Fußtext-Absätze) | 5,80:1 | 5,69:1 |
+| `text-quiet` auf `surface` | 5,38:1 | 5,46:1 |
+| `accent-text` auf `bg` (Reglerwert) | 11,90:1 | 5,94:1 |
+| `ink` auf `accent` (Knopfbeschriftung) | 11,90:1 | 11,19:1 |
+| `danger` auf `bg` | 7,63:1 | 6,54:1 |
+
+Zwei Entscheidungen dahinter:
+
+- **Zwei Abstufungen für leise Schrift, nicht drei.** Die Übergabe hatte
+  `dim`/`dim2`/`dim3`, alle drei unter der Grenze. Hebt man alle drei über
+  4,5:1, rücken sie so eng zusammen, dass die dritte Stufe nur noch eine
+  Gelegenheit ist, die falsche zu wählen: `text-dim` für Sekundärtext,
+  `text-quiet` für die leiseste Schrift, die noch Schrift ist.
+- **Das Gelb ist im Light-Theme keine Textfarbe.** `#F5C518` auf Weiß sind
+  1,63:1. Es bleibt Flächenfarbe; Text, der als Akzent lesen soll, nimmt
+  `accent-text` (`#7A6100`). Ein Test hält das fest. Aus demselben Grund heißt
+  die Farbe *auf* dem gelben Knopf `ink` und nicht „Hintergrundfarbe" — mit
+  `--bg` wäre die Beschriftung im Light-Theme weiß auf Gelb gewesen.
+
+**Balken-Slider.** Statt Schiene und Knopf 24 Balken, deren Höhe mit dem Wert
+wächst. Ein natives `input[type=range]` kann das nicht darstellen, also ist es
+ein `role="slider"` — und damit liegt alles, was das native Element geschenkt
+hätte, bei uns und ist Pflicht, nicht Kür: `aria-valuenow/min/max` **plus**
+`aria-valuetext` (die nackte Zahl liest sich als „80", wo das Panel „80 %"
+zeigt), Pfeiltasten, Home/End, Shift für den groben Schritt, ein sichtbarer
+Fokusring in beiden Themes, und `setPointerCapture` — ohne das springt der Wert,
+sobald der Zeiger die Leiste verlässt.
+
+**Map-Schema.** Neben jeder Map-Zeile steht ein 56 × 88 px großes Wireframe:
+vier feste Balken, darüber die für die Map typische Fläche, eine gestrichelte
+Schnittlinie und die Falz-Schraffur. Es ist ein **abstrakter Screen, kein
+Abbild der Auswahl** — kein Export, keine Engine, kein Caching, reines CSS.
+Deshalb heißt es im UI nirgends „Vorschau"; falls es je eine Beschriftung
+braucht, „Schema". Es reagiert aber auf die Einstellungen, sonst wäre es
+Dekoration statt Erklärung: Overlay-Deckkraft steuert die Schicht,
+Viewport-Höhe die Schnittlinie und die Schraffur, eine abgeschaltete Map dimmt
+das Ganze.
+
+**Schriften.** Manrope und JetBrains Mono, je ein Latin-Subset, zusammen 56 KB,
+als base64 in `build/ui.html`. `networkAccess` steht auf `"none"` — nachladen
+ist nicht möglich, alles muss ins Bundle. Die 12 woff2-Dateien aus der
+Design-Übergabe (~140 KB, alle Unicode-Bereiche) wurden **nicht** übernommen.
+
 ### Lange Frames (Epic B)
 
 Die Viewport-Höhe wird aus der Frame-Breite abgeleitet: ab 1.024 px gilt Desktop
@@ -1733,6 +1798,9 @@ App durchzugehen:
 | 15 | Zweiter Lauf auf demselben Frame | Neuer Wrapper, der erste bleibt unverändert |
 | 15a | Griff unten rechts über den ganzen Bildschirm ziehen | Panel folgt dem Cursor ohne Sprung, stoppt bei 720 × 2400, Layout bleibt intakt; Doppelklick stellt 320 × 680 her |
 | 15b | Panel auf 420 px Höhe ziehen | Fußtext bleibt vollständig sichtbar, der Bereich darüber scrollt |
+| 15d | Theme-Pille umschalten | Panel wechselt vollständig, nichts bleibt auf der alten Palette; nach Schließen und Öffnen ist die Wahl erhalten |
+| 15e | Plugin bei hellem Figma zum ersten Mal öffnen | Panel startet **dunkel** |
+| 15f | Regler nur mit der Tastatur bedienen | Tab setzt einen sichtbaren Fokusring, Pfeiltasten ändern den Wert, Shift+Pfeil grob, Home/End ans Ende |
 | 15c | Frame mit vielen Befunden erzeugen | Der Befunde-Frame ist so hoch wie sein Inhalt, kein Text angeschnitten |
 
 Zusätzlich für 1.1 (M4, M5):

@@ -26,8 +26,10 @@ import {
   type Settings,
   type UiToMain,
 } from './messages'
+import { viewportHeightFor } from './engine/segments'
 import { Logo } from './ui/logo'
 import { generateMaps, type FrameData } from './ui/pipeline'
+import { paletteFor } from './ui/theme'
 import { PLUGIN_VERSION } from './version'
 
 type Phase = 'empty' | 'ready' | 'working' | 'done' | 'error'
@@ -72,11 +74,178 @@ function splitLabel(label: string): { main: string; sub: string | null } {
   return match ? { main: match[1], sub: match[2] } : { main: label, sub: null }
 }
 
-/** Position of a range value on its track, in percent — drives `--fill`. */
-function fillPercent(value: number, min: number, max: number): string {
-  if (max <= min) return '0%'
-  const clamped = Math.min(Math.max(value, min), max)
-  return `${((clamped - min) / (max - min)) * 100}%`
+/**
+ * The little wireframe next to each map row.
+ *
+ * It is an **abstract screen, not the selected one** — four fixed bars, no
+ * export, no engine, no caching, pure CSS. That is also why nothing in the UI
+ * calls it a preview: it shows what the map *type* does to a screen, not what
+ * this screen looks like.
+ *
+ * It does read the settings, though, because a picture that ignores the
+ * controls next to it is decoration rather than explanation: overlay opacity
+ * drives the layer, the viewport height drives where the cut line sits and how
+ * much lies under the fold, and switching a map off dims the whole thing.
+ */
+function MapSchema({
+  kind,
+  settings,
+  frame,
+}: {
+  kind: Exclude<MapKind, 'fold'>
+  settings: Settings
+  frame?: FrameSummary
+}): preact.JSX.Element {
+  // How many viewports tall the selection is. Without a selection we show the
+  // segmentation threshold, which is the case the note next to it talks about.
+  const viewport =
+    settings.viewportHeight ??
+    (frame ? viewportHeightFor(frame.width) : ENGINE_CONFIG.viewport.desktopHeight)
+  const viewports = frame ? Math.min(3, Math.max(1, frame.height / viewport)) : ENGINE_CONFIG.viewport.segmentThreshold
+  const cut = 100 / viewports
+  // The focus threshold is a constant now, so the spread of the sharp area is
+  // one too — derived from it rather than restated.
+  const spread = 30 + (100 - ENGINE_CONFIG.focus.percentile) * 1.6
+
+  return (
+    <span
+      class="schema"
+      aria-hidden="true"
+      style={{
+        '--layer-opacity': settings.maps[kind] ? (settings.overlayOpacity / 100).toFixed(2) : '0',
+        '--cut-h': `${cut.toFixed(1)}%`,
+        '--fold-h': `${Math.max(0, 100 - cut).toFixed(1)}%`,
+        '--spread': `${spread.toFixed(0)}%`,
+      }}
+    >
+      <span class="schema__wire">
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
+      <span class={`schema__layer schema__layer--${kind}`} />
+      <span class="schema__cut" />
+      <span class="schema__fold" />
+    </span>
+  )
+}
+
+/** Number of bars in a slider. */
+const SLIDER_BARS = 24
+
+/**
+ * Bar slider — the design's control, and a `role="slider"` rather than an
+ * `input[type=range]`, because a native range cannot draw bars of growing
+ * height.
+ *
+ * Everything a native range would have given us for free is therefore ours to
+ * provide, and all of it is required, not optional: the ARIA value trio plus
+ * `aria-valuetext` (the number alone reads as „80" where the panel shows
+ * „80 %"), arrow keys, Home/End, Shift for the coarse step, a visible focus
+ * ring, and `setPointerCapture` — without which the value jumps as soon as the
+ * pointer leaves the strip mid-drag.
+ */
+function BarSlider({
+  label,
+  value,
+  valueText,
+  min,
+  max,
+  step,
+  disabled,
+  onChange,
+}: {
+  label: string
+  value: number
+  valueText: string
+  min: number
+  max: number
+  step: number
+  disabled: boolean
+  onChange: (value: number) => void
+}): preact.JSX.Element {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const fraction = max > min ? (Math.min(Math.max(value, min), max) - min) / (max - min) : 0
+
+  const quantise = (raw: number): number => {
+    const snapped = Math.round(raw / step) * step
+    // Steps of 0.1 accumulate float noise that would show up in the label.
+    const rounded = Math.round(snapped * 1000) / 1000
+    return Math.min(max, Math.max(min, rounded))
+  }
+
+  const setFromPointer = (clientX: number): void => {
+    const rect = ref.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0) return
+    const t = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    onChange(quantise(min + t * (max - min)))
+  }
+
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (disabled) return
+    const coarse = event.shiftKey ? Math.max(step, (max - min) / 10) : step
+    const key = event.key
+    let next: number | null = null
+    if (key === 'ArrowRight' || key === 'ArrowUp') next = value + coarse
+    else if (key === 'ArrowLeft' || key === 'ArrowDown') next = value - coarse
+    else if (key === 'PageUp') next = value + Math.max(step, (max - min) / 10)
+    else if (key === 'PageDown') next = value - Math.max(step, (max - min) / 10)
+    else if (key === 'Home') next = min
+    else if (key === 'End') next = max
+    if (next === null) return
+    event.preventDefault()
+    onChange(quantise(next))
+  }
+
+  return (
+    <div class="slider">
+      <div class="slider__head">
+        <span class="slider__name" id={`slider-${label}`}>
+          {label}
+        </span>
+        <span class="slider__value">{valueText}</span>
+      </div>
+      <div
+        ref={ref}
+        class="slider__bars"
+        role="slider"
+        tabIndex={disabled ? -1 : 0}
+        aria-labelledby={`slider-${label}`}
+        aria-valuenow={value}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        aria-valuetext={valueText}
+        aria-disabled={disabled}
+        onKeyDown={onKeyDown}
+        onPointerDown={(event: PointerEvent) => {
+          if (disabled || event.button !== 0) return
+          ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+          setFromPointer(event.clientX)
+        }}
+        onPointerMove={(event: PointerEvent) => {
+          if (disabled || event.buttons === 0) return
+          if (!(event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) return
+          setFromPointer(event.clientX)
+        }}
+        onPointerUp={(event: PointerEvent) => {
+          ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
+        }}
+      >
+        {Array.from({ length: SLIDER_BARS }, (_, index) => {
+          const centre = (index + 0.5) / SLIDER_BARS
+          const on = centre <= fraction
+          return (
+            <i
+              key={index}
+              class={on ? 'is-on' : ''}
+              style={{ height: `${(on ? 6 + centre * 19 : 6).toFixed(1)}px` }}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 function send(message: UiToMain): void {
@@ -349,6 +518,16 @@ function App(): preact.JSX.Element {
     return () => window.removeEventListener('message', onMessage)
   }, [handleFrameData, pushError])
 
+  // The palette is written as custom properties rather than swapped as a
+  // stylesheet, so every rule keeps referring to the same token names and the
+  // switch cannot leave half the panel on the old theme.
+  useEffect(() => {
+    const palette = paletteFor(settings.theme)
+    const root = document.documentElement
+    for (const [token, value] of Object.entries(palette)) root.style.setProperty(`--${token}`, value)
+    root.dataset.theme = settings.theme
+  }, [settings.theme])
+
   const patchSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((prev) => {
       const next = { ...prev, ...patch }
@@ -414,6 +593,21 @@ function App(): preact.JSX.Element {
         {/* The engine version stays with the maps (the line under each map
             title); the header names the version of the plugin. */}
         <p class="app__subtitle">{PLUGIN_VERSION}</p>
+        <button
+          type="button"
+          class="themepill"
+          aria-label={settings.theme === 'dark' ? 'Zum hellen Design wechseln' : 'Zum dunklen Design wechseln'}
+          aria-pressed={settings.theme === 'light'}
+          title="Design wechseln"
+          onClick={() => patchSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
+        >
+          <span class={settings.theme === 'dark' ? 'is-on' : ''} aria-hidden="true">
+            ☾
+          </span>
+          <span class={settings.theme === 'light' ? 'is-on' : ''} aria-hidden="true">
+            ☀
+          </span>
+        </button>
       </header>
 
       <div class="app__body">
@@ -513,6 +707,7 @@ function App(): preact.JSX.Element {
                   disabled={phase === 'working'}
                   onChange={(event) => toggleMap(kind, event.currentTarget.checked)}
                 />
+                <MapSchema kind={kind} settings={settings} frame={usableFrames[0]} />
                 <span class="maptoggle__track" aria-hidden="true">
                   <span class="maptoggle__knob" />
                 </span>
@@ -520,7 +715,6 @@ function App(): preact.JSX.Element {
                   <span class="maptoggle__label">{MAP_LABELS[kind]}</span>
                   <span class="maptoggle__desc">{MAP_DESCRIPTIONS[kind]}</span>
                 </span>
-                <span class={`maptoggle__swatch maptoggle__swatch--${kind}`} aria-hidden="true" />
               </label>
             ))}
           </div>
@@ -528,47 +722,27 @@ function App(): preact.JSX.Element {
         </section>
 
         <section class="section section--sliders">
-          <div class="slider">
-            <div class="slider__head">
-              <span class="slider__name">Overlay-Deckkraft</span>
-              <span class="slider__value">{settings.overlayOpacity} %</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={settings.overlayOpacity}
-              disabled={phase === 'working'}
-              style={{ '--fill': fillPercent(settings.overlayOpacity, 0, 100) }}
-              onInput={(event) =>
-                patchSettings({ overlayOpacity: Number(event.currentTarget.value) })
-              }
-            />
-          </div>
+          <BarSlider
+            label="Overlay-Deckkraft"
+            value={settings.overlayOpacity}
+            valueText={`${settings.overlayOpacity} %`}
+            min={0}
+            max={100}
+            step={1}
+            disabled={phase === 'working'}
+            onChange={(overlayOpacity) => patchSettings({ overlayOpacity: Math.round(overlayOpacity) })}
+          />
 
-          <div class="slider">
-            <div class="slider__head">
-              <span class="slider__name">Viewport-Höhe</span>
-              <span class="slider__value">
-                {settings.viewportHeight === null ? 'automatisch' : `${settings.viewportHeight} px`}
-              </span>
-            </div>
-            <input
-              type="range"
+          <div class="slider-with-hint">
+            <BarSlider
+              label="Viewport-Höhe"
+              value={settings.viewportHeight ?? ENGINE_CONFIG.viewport.desktopHeight}
+              valueText={settings.viewportHeight === null ? 'automatisch' : `${settings.viewportHeight} px`}
               min={ENGINE_CONFIG.viewport.desktopHeight - 500}
               max={ENGINE_CONFIG.viewport.desktopHeight + 700}
               step={50}
-              value={settings.viewportHeight ?? ENGINE_CONFIG.viewport.desktopHeight}
               disabled={phase === 'working'}
-              style={{
-                '--fill': fillPercent(
-                  settings.viewportHeight ?? ENGINE_CONFIG.viewport.desktopHeight,
-                  ENGINE_CONFIG.viewport.desktopHeight - 500,
-                  ENGINE_CONFIG.viewport.desktopHeight + 700,
-                ),
-              }}
-              onInput={(event) => patchSettings({ viewportHeight: Number(event.currentTarget.value) })}
+              onChange={(viewportHeight) => patchSettings({ viewportHeight: Math.round(viewportHeight) })}
             />
             <p class="hint">
               Ab {ENGINE_CONFIG.viewport.segmentThreshold} Viewport-Höhen wird der Frame abschnittsweise

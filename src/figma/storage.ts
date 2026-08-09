@@ -10,6 +10,7 @@ import {
   type Settings,
 } from '../messages'
 import { ENGINE_CONFIG } from '../engine/config'
+import { DEFAULT_THEME } from '../ui/theme'
 import { DEFAULT_PROFILE, shippedProfiles } from '../engine/params'
 import { hasPriorAsset, PRIOR_ASSET_IDS } from '../engine/priors'
 
@@ -50,6 +51,9 @@ export function normaliseSettings(raw: unknown): Settings {
       typeof input.viewportHeight === 'number' && Number.isFinite(input.viewportHeight)
         ? Math.round(clamp(input.viewportHeight, 200, 4000, ENGINE_CONFIG.viewport.desktopHeight))
         : null,
+    // Anything but an explicit `light` means dark — first start, a corrupted
+    // value, or a Figma running in light mode all land on the same default.
+    theme: input.theme === 'light' ? 'light' : DEFAULT_THEME,
   }
   return normalised
 }

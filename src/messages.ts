@@ -5,6 +5,9 @@
  */
 import { DEFAULT_PROFILE, type ProfileId } from './engine/params'
 import type { PriorAssetId } from './engine/priors'
+import { DEFAULT_THEME, type ThemeName } from './ui/theme'
+
+export type { ThemeName }
 
 export type { ProfileId, PriorAssetId }
 
@@ -133,6 +136,11 @@ export type Settings = {
    * Overridable because "900 px desktop" is an assumption, not a measurement.
    */
   viewportHeight: number | null
+  /**
+   * Panel skin. Deliberately not derived from Figma's theme — see `ui/theme.ts`.
+   * Dark is the default at first start and when the stored value is unusable.
+   */
+  theme: ThemeName
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -141,6 +149,7 @@ export const DEFAULT_SETTINGS: Settings = {
   profile: DEFAULT_PROFILE,
   uiType: 'auto',
   viewportHeight: null,
+  theme: DEFAULT_THEME,
 }
 
 /**
