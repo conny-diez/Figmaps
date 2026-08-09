@@ -48,6 +48,7 @@ import { measureCutoff } from './cutoff'
 import { buildGateFixtures } from './gate-fixtures'
 import { measureBandGate, type ThresholdCandidate } from './band-gate'
 import { measureColdFold } from './cold-fold'
+import { analyseCtaRank, measureFindingLoad } from './finding-load'
 import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
@@ -1185,6 +1186,59 @@ async function runColdFold(): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// finding-load — wie viele Befunde bekommt ein Screen, und warum ist cta-rank
+// der Ausreißer?
+//
+//   npm run finding-load
+// ---------------------------------------------------------------------------
+
+async function runFindingLoad(args: Args): Promise<number> {
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log('Befunde pro Screen — gezählt wird, was das Panel zeigt: nur ausgelieferte Regeln.')
+  const results = await measureFindingLoad({ ...(limit ? { limit } : {}), onProgress: (m) => console.log(`  ${m} …`) })
+
+  for (const result of results) {
+    console.log('')
+    console.log(`${result.population.label} — ${result.imageCount} Screens, Ø ${result.mean.toFixed(2)} Befunde`)
+    const width = Math.max(result.histogram.length, 1)
+    console.log(`  ${'Befunde'.padEnd(10)}${Array.from({ length: width }, (_, i) => String(i).padStart(8)).join('')}`)
+    console.log(
+      `  ${'Screens'.padEnd(10)}${result.histogram.map((count) => String(count).padStart(8)).join('')}`,
+    )
+    console.log(
+      `  ${'Anteil'.padEnd(10)}${result.histogram
+        .map((count) => `${((count / result.imageCount) * 100).toFixed(1)} %`.padStart(8))
+        .join('')}`,
+    )
+    const rules = Object.keys(result.perRule).sort((a, b) => result.perRule[b] - result.perRule[a])
+    for (const rule of rules) {
+      console.log(
+        `    ${rule.padEnd(16)} auf ${((result.perRule[rule] / result.imageCount) * 100).toFixed(1).padStart(5)} % der Screens sichtbar`,
+      )
+    }
+    for (const [rule, count] of Object.entries(result.blockedPerRule)) {
+      if (count === result.imageCount) console.log(`    ${rule.padEnd(16)} auf allen Screens strukturell blockiert`)
+    }
+  }
+
+  console.log('')
+  console.log('cta-rank: was macht die Regel so häufig?')
+  console.log('Der Verdacht ist der Generator — `layoutFor` stellt den CTA in 2 von 3 Varianten nach unten.')
+  for (const analysis of await analyseCtaRank()) {
+    const m = analysis.matrix
+    console.log('')
+    console.log(`  ${analysis.shapeLabel} — Rate ${(analysis.rate * 100).toFixed(1)} %`)
+    console.log(`    CTA unten,  Regel feuert   ${String(m.bottomFired).padStart(3)}`)
+    console.log(`    CTA unten,  Regel schweigt ${String(m.bottomSilent).padStart(3)}`)
+    console.log(`    CTA oben,   Regel feuert   ${String(m.topFired).padStart(3)}`)
+    console.log(`    CTA oben,   Regel schweigt ${String(m.topSilent).padStart(3)}`)
+    console.log(`    Übereinstimmung mit dem Aufbau: ${(analysis.agreement * 100).toFixed(1)} %`)
+  }
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
 //
 //   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
@@ -1545,6 +1599,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args['gate-fixtures']) return runGateFixtures(args)
     if (args['band-gate']) return await runBandGate(args)
     if (args['cold-fold']) return await runColdFold()
+    if (args['finding-load']) return await runFindingLoad(args)
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)

@@ -187,13 +187,21 @@ function hasValleyBetween(
  * unten und in 2 von 8 direkt unter den Hero (`layoutFor`, `variant % 3 === 2`).
  * Die Regel soll also in genau 6 Fällen feuern und in 2 schweigen:
  *
- *   Desktop scrollend   6/8 — feuert auf genau den 6 „CTA unten"-Varianten
- *   Telefon 1 Viewport  6/8 — dieselbe Aufteilung, keine Abweichung
- *   Telefon scrollend   7/8 — eine Fehlmeldung (v5, CTA oben)
+ *   Desktop scrollend   16/24 — feuert auf genau den 16 „CTA unten"-Varianten
+ *   Telefon 1 Viewport  16/24 — dieselbe Aufteilung, keine Abweichung
+ *   Telefon scrollend   16/24 — dieselbe Aufteilung, keine Abweichung
  *
- * 23 von 24 Urteilen stimmen mit der Konstruktion überein. Die Quote von rund
- * 79 % ist hoch, aber sie ist die Quote, die der Aufbau vorgibt — nicht das
- * Zeichen einer Regel, die immer feuert.
+ * **24 von 24 Urteilen stimmen in jeder Frame-Form mit der Konstruktion
+ * überein** (`npm run finding-load`). Keine Fehlmeldung, kein Versäumnis. Die
+ * einzige Abweichung, die hier früher stand — eine Fehlmeldung auf „Telefon
+ * scrollend" —, ist mit den Engine-Änderungen aus 1.2 A verschwunden.
+ *
+ * **Die 66,7 % sind die Quote des Generators, nicht die der Regel.**
+ * `constructed.ts` → `layoutFor` setzt `ctaAtBottom = variant % 3 !== 2`,
+ * stellt den CTA also in genau zwei Dritteln der Varianten nach unten. Wer
+ * diese Zahl als Eigenschaft der Regel liest, liest eine Eigenschaft von
+ * `layoutFor`. Auf echten Screens ist die Quote unbekannt und mit UEyes nicht
+ * messbar — ohne Layer-Baum gibt es keine Kandidaten.
  *
  * Solange der Flächenanteil im Score steckte, war das anders: er addierte 0,20
  * auf jede Ergebniskarte (230.400 px² gegen 17.784 px² beim CTA) und schob die

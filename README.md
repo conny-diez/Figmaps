@@ -2273,6 +2273,77 @@ wird von einer Seite mit Hero und viel Inhalt wieder gekippt.
 Erreichbarkeitstest bleibt (beide Richtungen), Zahlen stehen im Kommentar,
 Grund steht hier.
 
+### Wie viele Befunde bekommt ein Screen?
+
+```bash
+npm run finding-load
+```
+
+„Feuert diese Regel zu oft?" ist pro Regel nicht zu beantworten. Die Regeln
+konkurrieren um denselben Platz — `maxShown` ist 6, und wer einen Screen
+ansieht, liest die Liste als Ganzes. Was zählt, ist die Verteilung der
+**Befundzahl pro Screen**, und die ist eine Eigenschaft des Regelsatzes, nicht
+einer Regel. Gezählt wird, was das Panel zeigt: nur ausgelieferte Regeln, durch
+denselben `deriveFindings`-Pfad.
+
+| Population | 0 Befunde | 1 | 2 | Ø |
+|---|---:|---:|---:|---:|
+| UEyes Webseiten, segmentiert (495) | 57,6 % | 37,8 % | 4,6 % | 0,47 |
+| **UEyes Telefon, ein Viewport (495)** | **77,6 %** | 22,4 % | 0 % | **0,22** |
+| UEyes Telefon, segmentiert (495) | 58,6 % | 40,4 % | 1,0 % | 0,42 |
+
+**Kein einziger Screen bekommt mehr als zwei Befunde.** Die Obergrenze von 6
+wird nie erreicht, nicht annähernd. Damit ist die Frage, die diesen Abschnitt
+ausgelöst hat — ob `cold-fold` mit 40 % zu laut ist —, anders zu stellen: die
+Regeln nehmen einander nichts weg. Das Problem ist das Gegenteil.
+
+**Auf dem wichtigsten Fall sagt das Plugin nichts.** Ein Telefon-Screen in einem
+Viewport ist der häufigste Fall unserer Nutzung, und **77,6 % davon bekommen
+keinen einzigen Befund**. Die einzige Regel, die dort überhaupt erscheint, ist
+`competition` (22,4 %); `cta-rank` ist strukturell blockiert (keine
+Layer-Bäume in UEyes), `cold-fold` ebenfalls (nicht segmentiert). Das ist der
+offene Produktpunkt aus 1.1 — nur jetzt an 495 echten Screens gemessen statt an
+acht konstruierten.
+
+Für 1.2 B heißt das: **eine Schwelle zu senken, damit eine Regel häufiger
+feuert, ist die falsche Bewegung.** Was fehlt, sind Regeln, die auf einem
+Ein-Viewport-Screen überhaupt etwas zu sagen haben.
+
+#### `cta-rank` mit 67 % — das ist der Generator, nicht die Regel
+
+Die einzige Regel ohne bekannten Defekt ist auch die häufigste, und die 66,7 %
+sahen nach einem Ausreißer aus. Sie sind keiner. Gegenübergestellt, ob der
+Aufbau den CTA nach unten stellt und ob die Regel feuert, über 24 Varianten je
+Frame-Form:
+
+| Frame-Form | CTA unten, feuert | CTA unten, schweigt | CTA oben, feuert | CTA oben, schweigt | Übereinstimmung |
+|---|---:|---:|---:|---:|---:|
+| Desktop, scrollend | 16 | 0 | 0 | 8 | **100 %** |
+| Telefon, ein Viewport | 16 | 0 | 0 | 8 | **100 %** |
+| Telefon, scrollend | 16 | 0 | 0 | 8 | **100 %** |
+
+`constructed.ts` → `layoutFor` setzt `ctaAtBottom = variant % 3 !== 2`, stellt
+den CTA also in **genau zwei Dritteln** der Varianten nach unten. Die Regel
+feuert auf genau diesen und schweigt auf genau den anderen — **keine
+Fehlmeldung, kein Versäumnis, in keiner Frame-Form.** 66,7 % ist die Quote von
+`layoutFor`, nicht die von `cta-rank`.
+
+Wer 67 % als Eigenschaft der Regel liest, liest eine Eigenschaft des Generators.
+Und die Quote auf echten Screens ist **unbekannt und mit UEyes auch nicht
+messbar**: ohne Layer-Baum gibt es keine Kandidaten. Was hier gemessen wurde,
+ist nicht „wie oft der Fall vorkommt", sondern „ob die Regel den Fall erkennt" —
+und das tut sie vollständig.
+
+(Nebenbei erledigt: der Kommentar in `rules.ts` nannte für „Telefon scrollend"
+noch 7/8 mit einer Fehlmeldung. Die ist mit den Engine-Änderungen aus 1.2 A
+verschwunden — jetzt 24/24 in allen drei Formen.)
+
+**Was das über die Häufigkeit nicht sagt.** Ob eine Regel, die auf zwei Dritteln
+der Screens dasselbe sagt, überlesen wird, ist eine Frage an echte Nutzung und
+an ein Set mit Layer-Bäumen. Beides fehlt. Solange es fehlt, ist an dieser Regel
+nichts zu justieren — sie hat ohnehin keine Schwelle, „nicht auf Rang 1" ist
+eine Definition.
+
 ### Hinweis auf inhaltsarme Frames
 
 ```bash
