@@ -21,10 +21,15 @@ export type UiTypeSetting = PriorAssetId | 'auto'
 /** `fold` is derived, not selectable — see `SELECTABLE_MAP_KINDS`. */
 export type MapKind = 'heat' | 'click' | 'focus' | 'fold'
 
-/** The maps the user can switch on and off. */
-export const SELECTABLE_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = ['heat', 'click', 'focus']
+/**
+ * The maps the user can switch on and off, in the order they are shown in the
+ * panel — and the order the result frames are placed on the canvas (FR-8).
+ * Heatmap first (where attention goes at all), then Focusmap (what stays sharp),
+ * then Clickmap (what gets clicked).
+ */
+export const SELECTABLE_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = ['heat', 'focus', 'click']
 
-export const MAP_KINDS: readonly MapKind[] = ['heat', 'click', 'focus', 'fold']
+export const MAP_KINDS: readonly MapKind[] = ['heat', 'focus', 'click', 'fold']
 
 export const MAP_LABELS: Record<MapKind, string> = {
   heat: 'Heatmap',

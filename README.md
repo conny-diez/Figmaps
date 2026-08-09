@@ -79,7 +79,7 @@ Community vergibt Figma eine echte ID, die dann eingetragen wird.
 ## Bedienung
 
 1. Frame, Component, Instance, Section oder Group auswählen (Mehrfachauswahl = Batch)
-2. Maps an-/abwählen, Overlay-Deckkraft, Focus-Schwelle und ggf. Viewport-Höhe einstellen
+2. Maps an-/abwählen, Overlay-Deckkraft, Fokusbereich und ggf. Viewport-Höhe einstellen
 3. **Maps erstellen** — Ergebnis landet in einem neuen Wrapper-Frame
    `[Figmaps] {Frame-Name} — {Zeitstempel}` rechts daneben
 4. Befunde unter dem Ergebnis lesen; **Im Canvas zeigen** springt auf die
@@ -1549,7 +1549,7 @@ App durchzugehen:
 | 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps] … — …` rechts daneben, Viewport springt darauf, `3 Maps erstellt` |
 | 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt, Legende + Fußzeile mit `hybrid-v1` vorhanden |
 | 7 | Clickmap begutachten | Ranking im Panel; primärer CTA auf Platz 1 (mind. 2 von 3 Referenz-Screens) |
-| 8 | Focus-Schwelle 60 → 95, neu erzeugen | Sichtbare klare Fläche wird monoton kleiner |
+| 8 | Fokusbereich (Perzentil 60 → 95), neu erzeugen | Sichtbare klare Fläche wird monoton kleiner |
 | 9 | Overlay-Deckkraft ändern, neu erzeugen | Heatmap-Overlay entsprechend transparenter/kräftiger |
 | 10 | Frame ohne benannte Buttons/Reactions | Hinweis „Keine interaktiven Elemente erkannt…", Heat- und Focusmap entstehen trotzdem |
 | 11 | 5 Frames auswählen, erzeugen | „Frame 2 von 5", je Frame ein eigener Wrapper |

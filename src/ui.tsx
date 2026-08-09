@@ -6,7 +6,7 @@
  */
 import { render } from 'preact'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import { ENGINE_CONFIG, ENGINE_VERSION } from './engine/config'
+import { ENGINE_CONFIG } from './engine/config'
 import { PROFILE_LABELS, shippedProfiles, type ProfileId } from './engine/params'
 import { availablePriorCategories, PRIOR_ASSET_LABELS, shipsPriorAsset } from './engine/priors'
 import { SEVERITY_LABELS } from './findings/types'
@@ -27,6 +27,7 @@ import {
 } from './messages'
 import { Logo } from './ui/logo'
 import { generateMaps, type FrameData } from './ui/pipeline'
+import { PLUGIN_VERSION } from './version'
 
 type Phase = 'empty' | 'ready' | 'working' | 'done' | 'error'
 
@@ -406,9 +407,11 @@ function App(): preact.JSX.Element {
   return (
     <div class="app">
       <header class="app__header">
-        <Logo size={18} />
+        <Logo size={27} />
         <h1 class="app__title">Figmaps</h1>
-        <p class="app__subtitle">{ENGINE_VERSION}</p>
+        {/* The engine version stays on the maps themselves (legend footer);
+            the header names the version of the plugin. */}
+        <p class="app__subtitle">{PLUGIN_VERSION}</p>
       </header>
 
       <div class="app__body">
@@ -490,9 +493,9 @@ function App(): preact.JSX.Element {
               onChange={(uiType) => patchSettings({ uiType: uiType as Settings['uiType'] })}
             />
             <p class="hint">
-              {settings.uiType === 'auto'
-                ? 'Aus der Frame-Geometrie abgeleitet — unterscheidet Webseite und Mobile App zuverlässig, Desktop-Anwendung und Poster nicht.'
-                : 'Bestimmt, welcher Ortsprior verwendet wird.'}
+              Bestimmt, mit welchem typischen Blickverhalten verglichen wird.
+              {settings.uiType === 'auto' &&
+                ' Aus der Frame-Geometrie abgeleitet — unterscheidet Webseite und Mobile App zuverlässig, Desktop-Anwendung und Poster nicht.'}
             </p>
           </section>
         )}
@@ -544,8 +547,10 @@ function App(): preact.JSX.Element {
 
           <div class="slider">
             <div class="slider__head">
-              <span class="slider__name">Focus-Schwelle</span>
-              <span class="slider__value">{settings.focusThreshold}. Perzentil</span>
+              <span class="slider__name">Fokusbereich</span>
+              {/* The percentile stays the computed quantity; only the reading
+                  changes — the 80th percentile *is* the top 20 % of the map. */}
+              <span class="slider__value">oberste {100 - settings.focusThreshold} %</span>
             </div>
             <input
               type="range"
@@ -565,6 +570,7 @@ function App(): preact.JSX.Element {
                 patchSettings({ focusThreshold: Number(event.currentTarget.value) })
               }
             />
+            <p class="hint">Wie groß der scharfe Bereich ist</p>
           </div>
 
           <div class="slider">
@@ -734,10 +740,11 @@ function App(): preact.JSX.Element {
           </span>
           {PRIOR_ATTRIBUTION && (
             <p class="attribution">
-              Ortsprior abgeleitet aus dem UEyes-Datensatz (Jiang et al., CHI 2023), CC BY 4.0, gemittelt und
-              verkleinert.
+              Der Ortsprior basiert auf echten Blickdaten von 62 Testpersonen, gemessen auf 1.980 UI-Screens
+              (UEyes-Datensatz, Jiang et al., CHI 2023, CC BY 4.0), gemittelt und verkleinert.
             </p>
           )}
+          <p class="attribution attribution--author">Figmaps — entwickelt von Constantin Diessenbacher</p>
         </div>
       </footer>
 

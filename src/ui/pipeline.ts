@@ -176,9 +176,23 @@ export async function generateMaps(
       }
     }
 
+    // Order of the pushes is the order the frames end up in on the canvas
+    // (FR-8) — Heatmap, Focusmap, Clickmap, mirroring the panel.
+    if (settings.maps.focus) {
+      if (cancelled()) return { ...empty(), ranking, segments }
+      hooks.onStep?.('Focusmap wird gezeichnet', 0.7)
+      await yieldToUi()
+      const canvas = renderFocusmap(bitmap, attention, output.width, output.height, {
+        threshold: settings.focusThreshold,
+        ...footerLabels,
+        ...foldOptions,
+      })
+      maps.push({ kind: 'focus', png: await canvasToPngBytes(canvas) })
+    }
+
     if (settings.maps.click) {
       if (cancelled()) return { ...empty(), ranking, segments }
-      hooks.onStep?.('Clickmap wird gezeichnet', 0.7)
+      hooks.onStep?.('Clickmap wird gezeichnet', 0.85)
       await yieldToUi()
       candidates = scoreCandidates(data.signals, attention, data.width, data.height)
       if (candidates.length === 0) {
@@ -199,18 +213,6 @@ export async function generateMaps(
     } else {
       // The findings rules need candidates even when the clickmap is off.
       candidates = scoreCandidates(data.signals, attention, data.width, data.height)
-    }
-
-    if (settings.maps.focus) {
-      if (cancelled()) return { ...empty(), ranking, segments }
-      hooks.onStep?.('Focusmap wird gezeichnet', 0.85)
-      await yieldToUi()
-      const canvas = renderFocusmap(bitmap, attention, output.width, output.height, {
-        threshold: settings.focusThreshold,
-        ...footerLabels,
-        ...foldOptions,
-      })
-      maps.push({ kind: 'focus', png: await canvasToPngBytes(canvas) })
     }
 
     hooks.onStep?.('Befunde werden abgeleitet', 0.95)

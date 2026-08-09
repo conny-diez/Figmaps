@@ -128,11 +128,11 @@ body {
   font-weight: 700;
 }
 
+/* Plugin version, e.g. `v1.1` — set as written, so the lowercase `v` survives. */
 .app__subtitle {
   margin: 0;
   font-family: var(--mono);
   font-size: 9px;
-  text-transform: uppercase;
   color: var(--text-fainter);
 }
 
@@ -949,6 +949,11 @@ body {
   line-height: 1.45;
   color: var(--text-ghost);
   text-wrap: pretty;
+}
+
+/* Last line of the footer — the byline, set apart from the data provenance. */
+.attribution--author {
+  margin-top: 1px;
 }
 
 /* ----------------------------------------------------------------- resizer */
