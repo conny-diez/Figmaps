@@ -252,10 +252,25 @@ export const ENGINE_CONFIG = {
 
   /** Clickmap scoring (FR-5). */
   clickmap: {
+    /**
+     * Der Flächenanteil ist **entfernt**, nicht neu kalibriert.
+     *
+     * `sizeRank = Fläche ÷ größte Fläche` mit 0,2 war für die Clickmap
+     * gedacht: ein größeres Ziel wird häufiger getroffen. Seit die Kandidaten
+     * *Kästen* statt Beschriftungen sind, addierte er 0,20 auf jede
+     * Ergebniskarte (230.400 px² gegen 17.784 px² beim CTA) und entschied die
+     * Rangfolge allein. Die drei Regeln, die noch daran hängen, sprechen aber
+     * über **Aufmerksamkeit**, nicht über Klickwahrscheinlichkeit — und die
+     * Clickmap, für die der Term Sinn ergäbe, ist nicht im Panel. „Median statt
+     * Maximum" wäre eine zweite Zahl gegen dieselbe unvalidierte Population
+     * gewesen.
+     *
+     * Die verbleibenden zwei Gewichte sind die alten, auf 1 renormiert:
+     * 0,5/0,8 und 0,3/0,8.
+     */
     weights: {
-      attention: 0.5,
-      reaction: 0.3,
-      size: 0.2,
+      attention: 0.625,
+      reaction: 0.375,
     },
     reactionBonus: {
       reactions: 1.0,

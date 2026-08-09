@@ -180,29 +180,25 @@ function hasValleyBetween(
  * die den Fuß-CTA im Ranking nach unten schiebt.
  */
 /**
- * WARNUNG — die Rangfolge, auf die diese Regel und `cta-below-fold` sich
- * stützen, ist seit der Änderung der Kandidatenerkennung nicht mehr
- * kalibriert.
+ * Der primäre CTA liegt nicht auf einem der vordersten Ränge.
  *
- * `scoreCandidates` gewichtet `sizeRank = Fläche ÷ größte Fläche` mit 0,2. Als
- * Kandidaten Beschriftungen waren, lagen alle Flächen nah beieinander und der
- * Term entschied wenig. Jetzt sind Kandidaten *Kästen*: eine Stellenkarte hat
- * 230.400 px², das Suchfeld 56.320, der CTA 17.784 — `sizeRank` 1,00 gegen
- * 0,24 gegen 0,38. Der Term addiert damit 0,20 auf jede Karte und schiebt sie
- * auf Rang 1, unabhängig vom Entwurf.
+ * **Nach dem Ausbau des Flächenanteils gemessen, gegen die bekannte Antwort.**
+ * Die konstruierten Frames stellen den primären CTA in 6 von 8 Varianten nach
+ * unten und in 2 von 8 direkt unter den Hero (`layoutFor`, `variant % 3 === 2`).
+ * Die Regel soll also in genau 6 Fällen feuern und in 2 schweigen:
  *
- * Gemessen auf den konstruierten Frames mit deutschen Ebenennamen, je 8
- * Varianten, vorher -> nachher:
+ *   Desktop scrollend   6/8 — feuert auf genau den 6 „CTA unten"-Varianten
+ *   Telefon 1 Viewport  6/8 — dieselbe Aufteilung, keine Abweichung
+ *   Telefon scrollend   7/8 — eine Fehlmeldung (v5, CTA oben)
  *
- *   Desktop scrollend   cta-rank 1/8 -> 8/8   cta-below-fold 5/8 -> 0/8
- *   Telefon scrollend   cta-rank 0/8 -> 6/8   cta-below-fold 6/8 -> 0/8
- *   Telefon 1 Viewport  cta-rank 0/8 -> 6/8   cta-below-fold  strukturell 0/8
+ * 23 von 24 Urteilen stimmen mit der Konstruktion überein. Die Quote von rund
+ * 79 % ist hoch, aber sie ist die Quote, die der Aufbau vorgibt — nicht das
+ * Zeichen einer Regel, die immer feuert.
  *
- * Beide Enden sind entartet: `cta-rank` feuert fast immer, `cta-below-fold`
- * nie, weil `candidates[0]` jetzt die größte Karte ist und die steht weit oben.
- * Keine der beiden Zahlenreihen ist eine Bestätigung — die alte maß eine
- * kaputte Erkennung (deutsche Namen trafen kein Stichwort), die neue eine
- * unkalibrierte Rangfolge. Siehe README, „Rangfolge nicht kalibriert".
+ * Solange der Flächenanteil im Score steckte, war das anders: er addierte 0,20
+ * auf jede Ergebniskarte (230.400 px² gegen 17.784 px² beim CTA) und schob die
+ * Karten unabhängig vom Entwurf auf Rang 1. Die Regel feuerte dann 8/8. Siehe
+ * `ENGINE_CONFIG.clickmap.weights`.
  */
 const ctaRank: Rule = {
   id: 'cta-rank',
@@ -236,8 +232,38 @@ const ctaRank: Rule = {
  * Reaktions-Kandidaten weit unten aus. Sie ist nicht tot, aber sie meldet
  * seltener, als der Name vermuten lässt.
  */
+/**
+ * NICHT AUSGELIEFERT — strukturell blockiert, nicht falsch kalibriert.
+ *
+ * Die Regel liest `candidates[0]`, also den stärksten Kandidaten der
+ * komponierten Karte, und meldet, wenn der unterhalb des ersten Folds liegt.
+ * Zwei Eigenschaften der Vorhersage arbeiten dagegen, und beide sind
+ * beabsichtigt:
+ *
+ *   1. Der Ortsprior ist **oben-lastig** — er ist aus Einzel-Viewports
+ *      geschätzt, in denen der Blick oben beginnt.
+ *   2. Jeder Abschnitt wird zusätzlich mit `sectionAttenuation^i` gedämpft.
+ *      Ein Element unterhalb des Folds startet damit bei der Hälfte.
+ *
+ * Ein Kandidat unter dem Fold muss beides überkompensieren, um Rang 1 zu
+ * erreichen. Gemessen auf 24 konstruierten Frames mit deutschen Ebenennamen:
+ * **0 von 24**, in allen drei Frame-Formen. Der Erreichbarkeitstest zeigt, dass
+ * es geht — aber nur mit Prototype-Interaktion *und* einem starken Block
+ * dahinter *und* einem Gegenspieler, der beides nicht hat.
+ *
+ * **Die Dämpfung wird dafür nicht angefasst.** Sie ist ohnehin eine Annahme
+ * ohne Messung (`config.ts`); sie zu verstellen, damit eine Regel feuert, hieße
+ * die Vorhersage an die Regel anzupassen statt umgekehrt — genau der Fehler,
+ * der in diesem Projekt schon viermal passiert ist.
+ *
+ * Was die Regel stattdessen bräuchte: eine Größe, die den Kandidaten **innerhalb
+ * seines eigenen Abschnitts** bewertet statt auf der gedämpften Gesamtkarte.
+ * Das ist eine Neuentwicklung, kein Schwellenwert — siehe README, „Offen für
+ * 1.2".
+ */
 const ctaBelowFold: Rule = {
   id: 'cta-below-fold',
+  shipped: false,
   evaluate(input) {
     if (input.plan.folds.length === 0) return null
     const leader = input.candidates[0]

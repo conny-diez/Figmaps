@@ -18,7 +18,7 @@ export type ClickCandidate = {
   /** Normalised probability, all candidates of a frame sum to 1. */
   score: number
   /** Score components, kept for debugging and tuning. */
-  parts: { attention: number; reaction: number; size: number }
+  parts: { attention: number; reaction: number }
 }
 
 /**
@@ -120,8 +120,11 @@ function kindOf(signal: NodeSignal): CandidateKind {
 /**
  * FR-5 steps 3–4 — scoring and normalisation.
  *
- * `score = 0.5 * meanAttention + 0.3 * reactionBonus + 0.2 * sizeRank`,
- * afterwards normalised so all candidates sum to 1 (percentages).
+ * `score = 0.625 * meanAttention + 0.375 * reactionBonus`, afterwards
+ * normalised so all candidates sum to 1 (percentages).
+ *
+ * There used to be a third term, `0.2 * Fläche ÷ größte Fläche`. It is gone —
+ * see `ENGINE_CONFIG.clickmap.weights` for why removing beat recalibrating.
  */
 export function scoreCandidates(
   signals: readonly NodeSignal[],
@@ -133,9 +136,6 @@ export function scoreCandidates(
   const candidates = findCandidates(signals, frameWidth, frameHeight)
   if (candidates.length === 0) return []
 
-  let maxArea = 0
-  for (const signal of candidates) maxArea = Math.max(maxArea, signal.width * signal.height)
-
   const scored = candidates.map((signal) => {
     const rect = signalRect(signal, frameWidth, frameHeight, attention.width, attention.height)
     const meanAttention = meanInRect(attention.values, attention.width, attention.height, rect)
@@ -146,10 +146,7 @@ export function scoreCandidates(
         : kind === 'keyword'
           ? cfg.reactionBonus.keyword
           : cfg.reactionBonus.other
-    const sizeRank = maxArea > 0 ? (signal.width * signal.height) / maxArea : 0
-
-    const raw =
-      cfg.weights.attention * meanAttention + cfg.weights.reaction * reaction + cfg.weights.size * sizeRank
+    const raw = cfg.weights.attention * meanAttention + cfg.weights.reaction * reaction
 
     return {
       id: signal.id,
@@ -160,7 +157,7 @@ export function scoreCandidates(
       width: signal.width,
       height: signal.height,
       score: raw,
-      parts: { attention: meanAttention, reaction, size: sizeRank },
+      parts: { attention: meanAttention, reaction },
     } satisfies ClickCandidate
   })
 

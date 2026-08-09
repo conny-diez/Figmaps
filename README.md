@@ -1081,18 +1081,25 @@ wird nach Severity, angezeigt werden maximal sechs.
 | ID | Auslöser | ausgeliefert |
 |---|---|---|
 | `cta-rank` | Primärer Kandidat der Clickmap nicht auf Rang 1 | ja |
-| `cta-below-fold` | Höchstbewerteter Kandidat unterhalb Fold 1 | ja |
+| `cta-below-fold` | Höchstbewerteter Kandidat unterhalb Fold 1 | **nein** (siehe unten) |
 | `competition` | Zwei Regionen über 65 % Intensität, weit auseinander, mit Tal dazwischen | ja |
 | `cold-fold` | Above-the-fold-Abschnitt bündelt Aufmerksamkeit schwächer als ein späterer | ja |
 | `dead-cta` | Interaktives Element unter 45 % des stärksten Kandidaten seines Viewports | **nein** (siehe unten) |
 | `flat` | Konzentration des Bildanalyse-Anteils unter Schwellwert | **nein** (siehe unten) |
 
-Beide sind abgeschaltet, aus derselben Ursache in zwei Ausprägungen: die
-Entscheidungsgröße misst nicht das, was die Regel behauptet. Bei `dead-cta` ist
-es ein Minimum über alle Kandidaten, das mit deren Anzahl sinkt; bei `flat` ist
-es ein Massenanteil, der auf die Fläche der stärksten Stelle reagiert statt auf
-die Deutlichkeit der Hierarchie. Beide Regeln bleiben implementiert und
-erreichbarkeitsgetestet — siehe die Abschnitte unten.
+Drei von sechs Regeln sind abgeschaltet, aus zwei verschiedenen Gründen.
+
+`dead-cta` und `flat`: die **Entscheidungsgröße misst nicht das, was die Regel
+behauptet**. Bei `dead-cta` ist es ein Minimum über alle Kandidaten, das mit
+deren Anzahl sinkt; bei `flat` ein Massenanteil, der auf die *Fläche* der
+stärksten Stelle reagiert statt auf die Deutlichkeit der Hierarchie.
+
+`cta-below-fold`: **strukturell blockiert**, nicht falsch kalibriert. Der
+oben-lastige Prior und die Scroll-Dämpfung zusammen sorgen dafür, dass der
+stärkste Kandidat fast nie unter dem Fold liegt — 0 von 24 konstruierten
+Frames.
+
+Alle drei bleiben implementiert und erreichbarkeitsgetestet — siehe unten.
 
 Die Reihenfolge der Regeln in `rules.ts` ist die Reihenfolge, in der Befunde
 gelistet werden — als **Tie-Break innerhalb einer Severity**, denn sortiert
@@ -1560,75 +1567,114 @@ messbar. Er hat die Vorhersage auf allen deutschen Dateien systematisch
 geschwächt, ohne je aufzufallen, weil die englischen Testnamen
 („Primary Button", „SearchInputField") immer trafen.
 
-### Rangfolge nicht kalibriert — `cta-rank` und `cta-below-fold`
+### Der Flächenanteil ist raus — und was das an den Regeln geändert hat
 
-Die Änderung der Kandidatenerkennung hat die Kandidatenmenge verschoben (auf
-den konstruierten Frames mit deutschen Namen 96 → 87 Desktop, 65 → 47 Telefon),
-und beide ausgelieferten Regeln, die an der **Rangfolge** hängen, sind dadurch
-entartet. Gemessen, je 8 Varianten:
+Die Änderung der Kandidatenerkennung (deutsche Stichwörter, Suche über die
+Vorfahrenkette, Kandidat ist der *Kasten* statt der Beschriftung) hat beide
+ausgelieferten Regeln, die an der Rangfolge hängen, aus dem Tritt gebracht:
+`cta-rank` feuerte plötzlich 8/8, `cta-below-fold` 0/8.
 
-| Frame | `cta-rank` | `cta-below-fold` | `competition` | `cold-fold` |
-|---|---|---|---|---|
-| Desktop scrollend | 1/8 → **8/8** | 5/8 → **0/8** | 0/8 → 0/8 | 7/8 → 7/8 |
-| Telefon scrollend | 0/8 → **6/8** | 6/8 → **0/8** | 0/8 → 0/8 | 7/8 → 8/8 |
-| Telefon 1 Viewport | 0/8 → **6/8** | 0/8 → 0/8 | 0/8 → 0/8 | 0/8 → 0/8 |
-
-**Die Ursache ist der Größenanteil im Score.** `scoreCandidates` rechnet
+**Ursache war der Flächenanteil im Score.** `scoreCandidates` rechnete
 `sizeRank = Fläche ÷ größte Fläche` mit Gewicht 0,2. Solange Kandidaten
-*Beschriftungen* waren, lagen die Flächen nah beieinander. Jetzt sind es
-*Kästen*:
+Beschriftungen waren, lagen die Flächen nah beieinander. Als Kästen nicht mehr:
 
-| Element | Fläche | `sizeRank` | Aufmerksamkeit | Score |
-|---|---:|---:|---:|---:|
-| Stellenkarte (oberste) | 230.400 px² | 1,00 | 0,55 | 0,147 |
-| Suchfeld | 56.320 px² | 0,24 | 0,61 | 0,118 |
-| Jetzt bewerben (CTA) | 17.784 px² | 0,38 | 0,16 | — |
+| Element | Fläche | `sizeRank` | Aufmerksamkeit |
+|---|---:|---:|---:|
+| Stellenkarte | 230.400 px² | 1,00 | 0,55 |
+| Suchfeld | 56.320 px² | 0,24 | 0,61 |
+| Jetzt bewerben (CTA) | 17.784 px² | 0,38 | 0,16 |
 
-Der Term addiert 0,20 auf jede Karte und hebt sie auf Rang 1. `cta-below-fold`
-liest `candidates[0]`, und die größte Karte steht weit oben — die Regel kann
-nicht mehr feuern. `cta-rank` findet den primären CTA dadurch immer auf einem
-hinteren Rang — die Regel feuert fast immer. Ohne den Größenanteil lautet die
-Ordnung `Suchfeld > Stellenkarte > CTA`.
+Der Term addierte 0,20 auf jede Karte und entschied die Rangfolge allein.
 
-**Keine der beiden Zahlenreihen ist eine Bestätigung.** Die alte maß eine
-kaputte Erkennung (deutsche Namen trafen kein Stichwort), die neue eine
-Rangfolge, deren Gewichte gegen eine Kandidatenpopulation kalibriert wurden, die
-es nicht mehr gibt. **Offene Entscheidung**, nicht eigenmächtig getroffen:
-entweder beide Regeln auf `shipped: false`, bis der Score gegen die neue
-Population gemessen ist, oder den Größenanteil robust machen (Fläche relativ zum
-*Median* der Kandidaten statt zum Maximum, oder gedeckelt) und danach neu
-messen.
+**Entfernt, nicht neu kalibriert.** Der Flächenanteil war für die *Clickmap*
+gedacht — ein größeres Ziel wird häufiger getroffen. Die drei Regeln, die noch
+an der Rangfolge hängen, sprechen aber über **Aufmerksamkeit**, nicht über
+Klickwahrscheinlichkeit, und die Clickmap steht nicht im Panel. „Median statt
+Maximum" wäre eine zweite Zahl gegen dieselbe unvalidierte Population gewesen.
+Der Score ist jetzt `0,625 · meanAttention + 0,375 · reactionBonus` — die alten
+zwei Gewichte, auf 1 renormiert. Die Ordnung lautet damit
+`Suchfeld > Stellenkarte > CTA`.
 
-### Auf einem Handy-Screen feuert fast nichts
+**`cta-rank` bleibt ausgeliefert.** Die konstruierten Frames stellen den
+primären CTA in 6 von 8 Varianten nach unten und in 2 von 8 direkt unter den
+Hero — die richtige Antwort ist also bekannt:
 
-Ein typischer Onboarding-Screen (393 × 852) ist **nicht segmentiert**: 852 ÷
-786 = 1,08 Viewport-Höhen, die Schwelle liegt bei 1,5. Damit fallen zwei der
-vier ausgelieferten Regeln strukturell aus, bevor irgendetwas gerechnet wird:
+| Frame | Quote | Übereinstimmung mit der Konstruktion |
+|---|---|---|
+| Desktop scrollend | 6/8 | feuert auf genau den 6 „CTA unten"-Varianten |
+| Telefon 1 Viewport | 6/8 | dieselbe Aufteilung, keine Abweichung |
+| Telefon scrollend | 7/8 | eine Fehlmeldung (v5, CTA oben) |
+
+23 von 24 Urteilen stimmen. Die Quote von rund 79 % ist hoch, aber sie ist die
+Quote, die der Aufbau vorgibt — kein Zeichen einer Regel, die immer feuert.
+
+**`cta-below-fold` steht auf `shipped: false`, und der Grund ist strukturell.**
+Nicht „die Schwelle ist falsch", sondern: die Regel liest `candidates[0]` auf der
+komponierten Karte, und diese Karte ist zweifach oben-lastig — der Ortsprior ist
+aus Einzel-Viewports geschätzt, und jeder Abschnitt wird zusätzlich mit
+`sectionAttenuation^i` gedämpft. Ein Element unter dem Fold startet bei der
+Hälfte. **0 von 24** konstruierten Frames, in allen drei Formen. Der
+Erreichbarkeitstest zeigt, dass es geht — aber nur mit Prototype-Interaktion
+*und* einem starken Block dahinter *und* einem Gegenspieler ohne beides.
+
+Die Dämpfung wird dafür **nicht** angefasst. Sie ist selbst eine Annahme ohne
+Messung; sie zu verstellen, damit eine Regel feuert, hieße die Vorhersage an die
+Regel anzupassen. Was die Regel bräuchte, ist eine Größe, die den Kandidaten
+**innerhalb seines Abschnitts** bewertet statt auf der gedämpften Gesamtkarte —
+eine Neuentwicklung, kein Schwellenwert.
+
+Damit sind **drei von sechs** Regeln ausgeliefert: `cta-rank`, `competition`,
+`cold-fold`.
+
+### Auf einem Handy-Screen feuert fast nichts — der wichtigste offene Punkt
+
+Ein typischer Onboarding-Screen (393 × 852) ist **nicht segmentiert**: 852 ÷ 786
+= 1,08 Viewport-Höhen, die Schwelle liegt bei 1,5. Von den drei ausgelieferten
+Regeln fällt damit eine strukturell aus, bevor irgendetwas gerechnet wird:
 
 | Regel | auf einem Ein-Viewport-Handy | Grund |
 |---|---|---|
 | `cold-fold` | **kann nicht feuern** | verlangt `plan.segmented` und ≥ 2 Abschnitte |
-| `cta-below-fold` | **kann nicht feuern** | verlangt `plan.folds.length > 0` |
-| `competition` | kann | liest nur die Karte — feuerte in der Messung aber 0/8 |
-| `cta-rank` | kann | feuerte 6/8, und zwar aus dem entarteten Grund oben |
+| `competition` | kann — feuerte in der Messung 0/8 | Mindestabstand am Kartenbreitenanteil, siehe oben |
+| `cta-rank` | kann — feuerte 6/8, korrekt gegen die Konstruktion | |
 
-**Zwei von vier strukturell, in der Messung effektiv eine.** Das ist der
-wichtigste offene Produktpunkt: der häufigste Fall unserer Nutzung — ein
-Handy-Screen, der in einen Viewport passt — bekommt aus dem Befundsystem
-praktisch nichts. Die Regeln sind für scrollende Seiten entworfen. Was ein
-Ein-Viewport-Screen bräuchte, sind Regeln über die *Anordnung innerhalb* eines
-Bildschirms (konkurrierende Blickfänge, CTA in der ruhigsten Zone, Kopfbereich
-stärker als der Inhalt) statt über Abschnittsgrenzen. Das ist Entwurfsarbeit,
-keine Schwellenfrage.
+**Effektiv bleibt eine Regel.** Das ist der wichtigste offene Produktpunkt: der
+häufigste Fall unserer Nutzung — ein Handy-Screen, der in einen Viewport passt —
+bekommt aus dem Befundsystem fast nichts. Die Regeln sind für scrollende Seiten
+entworfen; sie sprechen über Abschnittsgrenzen, und auf einem Screen ohne
+Abschnitte gibt es nichts zu sagen.
 
-### Offen für 1.2 — die zwei abgeschalteten Regeln
+#### Was 1.2 dafür bauen müsste — und was schon da ist
 
-Beide brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle. In
-beiden Fällen ist der Umbau benannt und die Messung fehlt noch:
+Drei Regeln, die ohne Folds und ohne Abschnitte auskommen:
+
+| Regel-Idee | vorhanden | neu zu bauen |
+|---|---|---|
+| **Konkurrierende Blickfänge** — zwei etwa gleich starke, weit auseinanderliegende Spitzen | `competition` gibt es bereits: Zwei-Maxima-Suche, Talprüfung, Schwellen in `config.ts` | Der Mindestabstand misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Höhe (Tabelle oben). Für Hochkant-Screens braucht es die Diagonale oder getrennte x/y-Schwellen — und danach eine Neukalibrierung |
+| **CTA in der ruhigsten Zone** — der primäre Kandidat liegt dort, wo die Karte kalt ist | `meanInRect` über die Kandidatengeometrie, `percentile` über die ganze Karte, `isPrimaryCandidate` | Die Entscheidungsgröße muss der Rang des CTA **innerhalb der Kartenverteilung** sein (z. B. „unter dem 30. Perzentil aller Pixel"), nicht relativ zu den anderen Kandidaten — genau der Fehler, an dem `dead-cta` hängt. Schwelle aus Daten |
+| **Kopfbereich stärker als Inhalt** — die Aufmerksamkeit bleibt im oberen Band hängen | Die Karte selbst, `sectionSalience` als Konzentrationsmaß, Geometrie aller Knoten | Bandaufteilung (z. B. obere 25 % gegen Rest) und ein Verhältnismaß. Dieselbe Vorsicht wie bei `flat`: die Größe darf nicht auf die *Menge* an Inhalt reagieren |
+
+**Der entscheidende Vorteil dieser drei:** sie lesen nur die Karte und die
+Geometrie, nicht die Abschnittsstruktur — und damit sind sie **an UEyes
+kalibrierbar**. Der Datensatz besteht aus 1.980 Einzel-Viewport-Screenshots,
+also genau der Population, um die es hier geht. Nur der CTA-Teil der zweiten
+Regel braucht Layer-Bäume (PRD Set 2); die anderen beiden nicht. Das ist der
+Unterschied zu `flat` und `dead-cta`, die ohne das fehlende Set gar nicht
+messbar sind.
+
+**Die Contrastmap ist die naheliegende Kompensation.** Sie braucht weder Folds
+noch Abschnitte und funktioniert auf einem Ein-Viewport-Screen vollständig —
+damit deckt sie genau die Lücke ab, die die Befunde dort lassen. (In diesem
+Branch existiert sie noch nicht; hier steht sie als Vormerkung für 1.2.)
+
+### Offen für 1.2 — die abgeschalteten Regeln
+
+Alle drei brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle.
+In allen Fällen ist der Umbau benannt und die Messung fehlt noch:
 
 | Regel | neue Größe | warum sie das Problem löst |
 |---|---|---|
-| `cta-rank` / `cta-below-fold` | Größenanteil des Scores gegen den **Median** der Kandidaten statt gegen das Maximum, danach neu messen | Der Term ist der Grund, warum beide Regeln nach der Änderung der Kandidatenerkennung entartet sind (immer / nie). Siehe „Rangfolge nicht kalibriert". |
+| `cta-below-fold` | Bewertung des Kandidaten **innerhalb seines Abschnitts** statt auf der gedämpften Gesamtkarte | Die Regel ist nicht falsch kalibriert, sie ist blockiert: oben-lastiger Prior plus `sectionAttenuation^i`. Auf der ungedämpften Abschnittskarte ist „stärkster Kandidat dieses Viewports" wieder eine beantwortbare Frage. |
 | `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
 | `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
 
