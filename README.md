@@ -2286,28 +2286,78 @@ ansieht, liest die Liste als Ganzes. Was zählt, ist die Verteilung der
 einer Regel. Gezählt wird, was das Panel zeigt: nur ausgelieferte Regeln, durch
 denselben `deriveFindings`-Pfad.
 
+#### Mit Layer-Baum — die Zahl, die für eine Figma-Datei gilt
+
+Eine Figma-Datei hat immer Ebenen. Die konstruierten Frames sind die einzige
+Population, auf der deshalb der **vollständige** Regelsatz laufen kann:
+
+| Population (24 Varianten) | 0 Befunde | 1 | 2 | Ø |
+|---|---:|---:|---:|---:|
+| Desktop, scrollend | 0,0 % | 33,3 % | **66,7 %** | **1,67** |
+| Telefon, scrollend | 0,0 % | 37,5 % | 62,5 % | 1,63 |
+| **Telefon, ein Viewport** | **33,3 %** | 66,7 % | 0 % | **0,67** |
+
+Dazu der Onboarding-Nachbau (393 × 852, 6 Kandidaten), der Prüffall aus A4 —
+**ein** Befund:
+
+> `cta-rank`: „Jetzt loslegen Button" liegt auf Rang 5 der vorhergesagten
+> Klicks — Rang 1 hat „Wetter".
+
+Auf gescrollten Frames bekommt damit **jeder** Screen mindestens einen Befund
+und zwei Drittel bekommen zwei. Auf dem Ein-Viewport-Telefon bekommt ein Drittel
+nichts, und der Rest bekommt genau einen — immer `cta-rank`.
+
+#### Ohne Layer-Baum — und warum diese Zahlen zu niedrig sind
+
 | Population | 0 Befunde | 1 | 2 | Ø |
 |---|---:|---:|---:|---:|
 | UEyes Webseiten, segmentiert (495) | 57,6 % | 37,8 % | 4,6 % | 0,47 |
-| **UEyes Telefon, ein Viewport (495)** | **77,6 %** | 22,4 % | 0 % | **0,22** |
+| UEyes Telefon, ein Viewport (495) | 77,6 % | 22,4 % | 0 % | 0,22 |
 | UEyes Telefon, segmentiert (495) | 58,6 % | 40,4 % | 1,0 % | 0,42 |
 
-**Kein einziger Screen bekommt mehr als zwei Befunde.** Die Obergrenze von 6
-wird nie erreicht, nicht annähernd. Damit ist die Frage, die diesen Abschnitt
-ausgelöst hat — ob `cold-fold` mit 40 % zu laut ist —, anders zu stellen: die
-Regeln nehmen einander nichts weg. Das Problem ist das Gegenteil.
+**Diese Zahlen unterschätzen die Befundlast systematisch, und zwar um den
+Faktor drei.** UEyes besteht aus Screenshots; ein Screenshot hat keine Ebenen,
+also keine Klick-Kandidaten, also kann `cta-rank` dort **nie** feuern — die
+einzige Regel ohne bekannten Defekt fehlt in jeder dieser Zeilen. Auf dem
+Ein-Viewport-Telefon steht 0,22 gegen 0,67 mit Layer-Baum.
 
-**Auf dem wichtigsten Fall sagt das Plugin nichts.** Ein Telefon-Screen in einem
-Viewport ist der häufigste Fall unserer Nutzung, und **77,6 % davon bekommen
-keinen einzigen Befund**. Die einzige Regel, die dort überhaupt erscheint, ist
-`competition` (22,4 %); `cta-rank` ist strukturell blockiert (keine
-Layer-Bäume in UEyes), `cold-fold` ebenfalls (nicht segmentiert). Das ist der
-offene Produktpunkt aus 1.1 — nur jetzt an 495 echten Screens gemessen statt an
-acht konstruierten.
+**Wer 0,22 zitiert, zitiert eine untere Schranke als Ergebnis.** Die Zahl für
+eine Figma-Datei ist die aus der Tabelle davor.
+
+Was beide Tabellen gemeinsam sagen: **kein Screen bekommt mehr als zwei
+Befunde.** Die Obergrenze von 6 wird nicht annähernd erreicht — die Regeln
+nehmen einander nichts weg. Die Frage, die diesen Abschnitt ausgelöst hat, ob
+`cold-fold` mit 40 % zu laut sei, ist damit anders zu stellen: das Problem ist
+das Gegenteil.
 
 Für 1.2 B heißt das: **eine Schwelle zu senken, damit eine Regel häufiger
 feuert, ist die falsche Bewegung.** Was fehlt, sind Regeln, die auf einem
 Ein-Viewport-Screen überhaupt etwas zu sagen haben.
+
+#### Die Aufteilung ist keine Einschränkung, sondern die Struktur
+
+Die beiden Vorhersage-Regeln, die **ohne** Layer-Baum auskommen, schließen
+einander aus — nicht durch Absicht, sondern durch ihre Voraussetzungen:
+
+| | Ein Viewport | segmentiert |
+|---|---:|---:|
+| `competition` | **15,2 %** (Telefon) / 15,8 % (Web) | 0,0 % (Telefon) / 7,1 % (Web) |
+| `cold-fold` | **blockiert** (keine Abschnitte) | **39,8 %** (Telefon) / 40,0 % (Web) |
+
+`competition` ist faktisch eine **Ein-Viewport-Regel**: auf der komponierten
+Karte ist jeder tiefere Abschnitt gedämpft, das zweite Maximum erreicht die
+Intensitätsschwelle nicht mehr. `cold-fold` ist eine **Abschnitts-Regel**: ohne
+zwei Abschnitte hat sie nichts zu vergleichen und wird gar nicht erst gefragt.
+
+**Jede Frame-Form hat damit genau eine Vorhersage-Regel, die feuern kann, ohne
+jede Überdeckung.** Fällt sie aus — durch eine Kalibrierung, einen Umbau, eine
+Engine-Änderung —, bekommt diese Form nichts. Das ist keine Redundanz, die man
+verliert, sondern eine, die es nie gab.
+
+`cta-rank` ist die einzige Regel, die **beide** Formen bedient. Sie braucht
+dafür einen Layer-Baum — in Figma immer vorhanden, in jedem Datensatz, den wir
+messen können, nie. Das macht sie strukturell zur wichtigsten der drei und
+erklärt nebenbei, warum sie in den UEyes-Zahlen fehlt.
 
 #### `cta-rank` mit 67 % — das ist der Generator, nicht die Regel
 

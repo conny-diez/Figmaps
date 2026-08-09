@@ -36,16 +36,50 @@ export type LoadPopulation = {
   label: string
   setName?: string
   priorAsset: PriorAssetId
-  /** Erzwungene Viewport-Höhe. Fehlt sie, läuft der Frame als ein Viewport. */
+  /** Erzwungene Viewport-Höhe. */
   viewport?: number
+  /**
+   * `true` erzwingt einen einzigen Abschnitt.
+   *
+   * Nötig für UEyes-Telefon-Screenshots: sie kommen in Gerätepixeln, und die
+   * Geometrie würde sie segmentieren, obwohl sie ein Viewport **sind**. Für
+   * konstruierte Frames wäre es falsch — deren Höhe ist echt, und die
+   * Segmentierung ist Teil dessen, was gemessen werden soll.
+   */
+  singleViewport?: boolean
   /** Konstruierte Frames statt eines Sets — die einzige Quelle mit Kandidaten. */
   constructedShape?: string
 }
 
+/**
+ * Die Populationen **ohne** Layer-Baum. UEyes besteht aus Screenshots, und ein
+ * Screenshot hat keine Ebenen — also keine Klick-Kandidaten und damit keine
+ * Chance für `cta-rank`.
+ *
+ * **Diese Zahlen unterschätzen die Befundlast systematisch.** Sie messen den
+ * Regelsatz ohne die einzige Regel ohne bekannten Defekt. Wer sie zitiert, ohne
+ * das dazuzusagen, zitiert eine untere Schranke als Ergebnis.
+ */
 export const LOAD_POPULATIONS: readonly LoadPopulation[] = [
   { id: 'web-segmentiert', label: 'UEyes Webseiten, segmentiert', setName: 'ueyes-web', priorAsset: 'web', viewport: 500 },
-  { id: 'mobile-1vp', label: 'UEyes Telefon, ein Viewport', setName: 'ueyes-mobile', priorAsset: 'mobile' },
+  { id: 'mobile-1vp', label: 'UEyes Telefon, ein Viewport', setName: 'ueyes-mobile', priorAsset: 'mobile', singleViewport: true },
   { id: 'mobile-segmentiert', label: 'UEyes Telefon, segmentiert', setName: 'ueyes-mobile', priorAsset: 'mobile', viewport: 400 },
+]
+
+/**
+ * Die Populationen **mit** Layer-Baum — konstruiert, und deshalb die einzigen,
+ * auf denen der vollständige Regelsatz laufen kann.
+ *
+ * Der Vorbehalt aus `constructed.ts` gilt unverändert: diese Screens sind
+ * gebaut, nicht beobachtet. Eine Verteilung sagt, wie sich der Regelsatz auf
+ * konventionellen Layouts verhält — nicht, wie häufig solche Layouts vorkommen.
+ * Aber es ist die Zahl, die einer echten Figma-Datei am nächsten kommt, denn
+ * eine Figma-Datei hat immer einen Layer-Baum.
+ */
+export const LOAD_POPULATIONS_WITH_LAYERS: readonly LoadPopulation[] = [
+  { id: 'k-desktop', label: 'Desktop, scrollend (konstruiert)', constructedShape: 'desktop-lang', priorAsset: 'web' },
+  { id: 'k-mobil-1vp', label: 'Telefon, ein Viewport (konstruiert)', constructedShape: 'mobile-1vp', priorAsset: 'mobile' },
+  { id: 'k-mobil-lang', label: 'Telefon, scrollend (konstruiert)', constructedShape: 'mobile-lang', priorAsset: 'mobile' },
 ]
 
 export type LoadResult = {
@@ -120,7 +154,8 @@ export async function measureFindingLoad(options: LoadOptions = {}): Promise<Loa
         signals: item.signals,
         frameWidth: item.frameWidth,
         frameHeight: item.frameHeight,
-        ...(population.viewport ? { viewportOverride: population.viewport } : { segment: false }),
+        ...(population.viewport ? { viewportOverride: population.viewport } : {}),
+        ...(population.singleViewport ? { segment: false } : {}),
       })
       if (!analysis) continue
 
@@ -243,4 +278,35 @@ export async function analyseCtaRank(variants = 24): Promise<CtaRankAnalysis[]> 
   }
 
   return out
+}
+
+/**
+ * Der Onboarding-Nachbau als Einzelfall — 393 x 852, mit Layer-Baum.
+ *
+ * Ein Frame ergibt keine Verteilung; er steht hier, weil er der Prüffall aus
+ * 1.2 A4 ist und weil man an ihm *sieht*, was ein Nutzer bekommt. Die
+ * Befundliste ist die Antwort, nicht eine Quote.
+ */
+export async function onboardingFindings(): Promise<{ findings: string[]; candidateCount: number }> {
+  const { buildOnboardingFrame } = await import('./onboarding')
+  const { scoreCandidates } = await import('../src/engine/clickmap')
+  const frame = buildOnboardingFrame()
+  const engine = new HeuristicAttentionEngine({ priorAsset: 'mobile' })
+  const analysis = await analyzeFrame(engine, nodeImageOps, {
+    source: frame.image,
+    signals: frame.signals,
+    frameWidth: frame.frameWidth,
+    frameHeight: frame.frameHeight,
+  })
+  if (!analysis) throw new Error('Onboarding-Analyse abgebrochen')
+
+  const candidates = scoreCandidates(frame.signals, analysis.attention, frame.frameWidth, frame.frameHeight)
+  const findings = deriveFindings({
+    analysis,
+    signals: frame.signals,
+    frameWidth: frame.frameWidth,
+    frameHeight: frame.frameHeight,
+    priorCategory: 'mobile',
+  })
+  return { findings: findings.map((finding) => `${finding.id}: ${finding.text}`), candidateCount: candidates.length }
 }

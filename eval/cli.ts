@@ -48,7 +48,13 @@ import { measureCutoff } from './cutoff'
 import { buildGateFixtures } from './gate-fixtures'
 import { measureBandGate, type ThresholdCandidate } from './band-gate'
 import { measureColdFold } from './cold-fold'
-import { analyseCtaRank, measureFindingLoad } from './finding-load'
+import {
+  analyseCtaRank,
+  LOAD_POPULATIONS,
+  LOAD_POPULATIONS_WITH_LAYERS,
+  measureFindingLoad,
+  onboardingFindings,
+} from './finding-load'
 import { sweepCompetition } from './competition'
 import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
@@ -1197,31 +1203,26 @@ async function runFindingLoad(args: Args): Promise<number> {
   const limit = args.limit ? num(args, 'limit', 0) : undefined
 
   console.log('Befunde pro Screen — gezählt wird, was das Panel zeigt: nur ausgelieferte Regeln.')
-  const results = await measureFindingLoad({ ...(limit ? { limit } : {}), onProgress: (m) => console.log(`  ${m} …`) })
+  console.log('')
+  console.log('MIT Layer-Baum (konstruiert) — die einzigen Populationen, auf denen der')
+  console.log('vollständige Regelsatz laufen kann. Eine Figma-Datei hat immer Ebenen.')
+  const withLayers = await measureFindingLoad({
+    populations: LOAD_POPULATIONS_WITH_LAYERS,
+    onProgress: (m) => console.log(`  ${m} …`),
+  })
+  printLoad(withLayers)
 
-  for (const result of results) {
-    console.log('')
-    console.log(`${result.population.label} — ${result.imageCount} Screens, Ø ${result.mean.toFixed(2)} Befunde`)
-    const width = Math.max(result.histogram.length, 1)
-    console.log(`  ${'Befunde'.padEnd(10)}${Array.from({ length: width }, (_, i) => String(i).padStart(8)).join('')}`)
-    console.log(
-      `  ${'Screens'.padEnd(10)}${result.histogram.map((count) => String(count).padStart(8)).join('')}`,
-    )
-    console.log(
-      `  ${'Anteil'.padEnd(10)}${result.histogram
-        .map((count) => `${((count / result.imageCount) * 100).toFixed(1)} %`.padStart(8))
-        .join('')}`,
-    )
-    const rules = Object.keys(result.perRule).sort((a, b) => result.perRule[b] - result.perRule[a])
-    for (const rule of rules) {
-      console.log(
-        `    ${rule.padEnd(16)} auf ${((result.perRule[rule] / result.imageCount) * 100).toFixed(1).padStart(5)} % der Screens sichtbar`,
-      )
-    }
-    for (const [rule, count] of Object.entries(result.blockedPerRule)) {
-      if (count === result.imageCount) console.log(`    ${rule.padEnd(16)} auf allen Screens strukturell blockiert`)
-    }
-  }
+  const onboarding = await onboardingFindings()
+  console.log('')
+  console.log(`Onboarding-Nachbau (393 x 852, ${onboarding.candidateCount} Kandidaten): ${onboarding.findings.length} Befunde`)
+  for (const finding of onboarding.findings) console.log(`    ${finding}`)
+
+  console.log('')
+  console.log('OHNE Layer-Baum (UEyes) — dieselbe Messung ohne cta-rank, die Regel braucht')
+  console.log('Kandidaten. Diese Zahlen UNTERSCHÄTZEN die Befundlast systematisch.')
+  const results = await measureFindingLoad({ populations: LOAD_POPULATIONS, ...(limit ? { limit } : {}), onProgress: (m) => console.log(`  ${m} …`) })
+
+  printLoad(results)
 
   console.log('')
   console.log('cta-rank: was macht die Regel so häufig?')
@@ -1237,6 +1238,30 @@ async function runFindingLoad(args: Args): Promise<number> {
     console.log(`    Übereinstimmung mit dem Aufbau: ${(analysis.agreement * 100).toFixed(1)} %`)
   }
   return 0
+}
+
+function printLoad(results: Awaited<ReturnType<typeof measureFindingLoad>>): void {
+  for (const result of results) {
+    console.log('')
+    console.log(`${result.population.label} — ${result.imageCount} Screens, Ø ${result.mean.toFixed(2)} Befunde`)
+    const width = Math.max(result.histogram.length, 1)
+    console.log(`  ${'Befunde'.padEnd(10)}${Array.from({ length: width }, (_, i) => String(i).padStart(8)).join('')}`)
+    console.log(`  ${'Screens'.padEnd(10)}${result.histogram.map((count) => String(count).padStart(8)).join('')}`)
+    console.log(
+      `  ${'Anteil'.padEnd(10)}${result.histogram
+        .map((count) => `${((count / result.imageCount) * 100).toFixed(1)} %`.padStart(8))
+        .join('')}`,
+    )
+    const rules = Object.keys(result.perRule).sort((a, b) => result.perRule[b] - result.perRule[a])
+    for (const rule of rules) {
+      console.log(
+        `    ${rule.padEnd(16)} auf ${((result.perRule[rule] / result.imageCount) * 100).toFixed(1).padStart(5)} % der Screens sichtbar`,
+      )
+    }
+    for (const [rule, count] of Object.entries(result.blockedPerRule)) {
+      if (count === result.imageCount) console.log(`    ${rule.padEnd(16)} auf allen Screens strukturell blockiert`)
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
