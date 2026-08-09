@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { PROFILE_DURATIONS, PROFILE_IDS, type EngineParams, type ProfileId } from '../src/engine/params'
+import { ACTIVE_CONFIG_ID, PROFILE_DURATIONS, PROFILE_IDS, type EngineParams, type ProfileId } from '../src/engine/params'
 import { analyzeFrame } from '../src/engine/analyze'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
@@ -131,7 +131,20 @@ function logTable(results: readonly PredictorResult[]): void {
 async function runEval(args: Args): Promise<number> {
   const setName = str(args, 'fixtures', 'ueyes-web')
   const split = str(args, 'set', 'test') as SplitName
-  const engine = str(args, 'engine', 'heuristic')
+  // Voreinstellung ist die **ausgelieferte** Konfiguration, nicht mehr die
+  // eingefrorene 1.0-Referenz.
+  //
+  // Bis 1.2 stand hier `'heuristic'`, und das hat das Regressions-Gate aus A-7
+  // wirkungslos gemacht: `heuristic-v1` ist als Baseline markiert, also fiel
+  // `primary` auf sie zurück, und das Gate schrieb ihren CC in die
+  // Referenzdatei (0,2981). Diese Zahl kann sich nicht ändern — die
+  // Konfiguration ist eingefroren. Das Gate hätte also **nie** ausgelöst,
+  // gleich was mit der ausgelieferten Engine passiert. Gemessen am selben
+  // Split: `hybrid-v1` liegt bei 0,4721.
+  //
+  // Dieselbe Fehlerklasse wie bei `cold-fold` und `flat`: eine Prüfung, die
+  // grün ist, weil sie das Falsche ansieht.
+  const engine = str(args, 'engine', ACTIVE_CONFIG_ID)
   const duration = num(args, 'duration', 3)
   const limit = args.limit ? num(args, 'limit', 0) : undefined
 
@@ -1113,7 +1126,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     console.log(
       [
         'npm run eval -- [options]',
-        '  --engine <id>       heuristic | heuristic-v1 | <config>[:glance|scan|read] | all   (default: heuristic)',
+        '  --engine <id>       heuristic | heuristic-v1 | <config>[:glance|scan|read] | all',
+        '                      (default: die ausgelieferte Konfiguration)',
         '  --set <split>       tuning | test | quick                                          (default: test)',
         '  --fixtures <name>   Referenz-Set unter eval/fixtures/                              (default: ueyes-web)',
         '  --duration <s>      Betrachtungsdauer der Ground Truth: 1 | 3 | 7                  (default: 3)',
