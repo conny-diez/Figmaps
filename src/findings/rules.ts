@@ -294,18 +294,37 @@ const ctaBelowFold: Rule = {
 /**
  * Two far-apart regions both reach near-maximum predicted attention.
  *
- * Auf echten Bildern nicht entartet: 3,3 % (Webseite, segmentiert) und 10,0 %
- * (Telefon, ein Viewport), Schwelle bei p3 bzw. p10. Die selektivste Regel,
- * wie beabsichtigt.
+ * Auf echten Bildern nicht entartet: 2,2 % (Webseite, segmentiert) und 10,3 %
+ * (Telefon, ein Viewport) bei α = 0,3. Die selektivste Regel, wie beabsichtigt.
  *
- * **ACHTUNG — diese Quoten sind die einzige positive Evidenz dieser Regel, und
- * sie wurden mit genau dem Abstandsmaß gemessen, das unten als falsch skaliert
- * dokumentiert ist.** „Weit auseinander" bedeutete bei jeder der beiden
- * Messungen etwas anderes (48,0 % bzw. 13,9 % der Kartenhöhe), die 3,3 % und
- * 10,0 % sind also nicht dieselbe Frage, zweimal beantwortet. Sobald der
- * Abstand in 1.2 auf die Diagonale oder auf getrennte x/y-Schwellen umgestellt
- * wird, ist die Feuerrate **neu zu messen** — die alten Zahlen dürfen nicht
- * übernommen werden, auch nicht als Plausibilitätsanker.
+ * **ALLE DIESE QUOTEN SIND ZWEIFACH VERALTET, UND ZWAR AUS ZWEI UNABHÄNGIGEN
+ * GRÜNDEN.** Beide sind Gründe, sie nicht als Anker zu benutzen:
+ *
+ * 1. *Das Abstandsmaß.* „Weit auseinander" ist ein Anteil der Karten**breite**
+ *    und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Höhe (Tabelle unten).
+ *    Die Zahlen beantworten also nicht dieselbe Frage zweimal.
+ * 2. *Die Karte selbst.* Mit dem Umstieg auf `blendAlpha` 0,5 (1.2 A) ist die
+ *    Rate ohne eine einzige Änderung an dieser Regel gestiegen — gemessen mit
+ *    `npm run side-effects`:
+ *
+ *      Webseite, segmentiert       2,2 %  →  11,9 %
+ *      Telefon, ein Viewport      10,3 %  →  31,1 %
+ *      Desktop scrollend (konstr.) 0,0 %  →   8,3 %
+ *      Telefon scrollend (konstr.) 0,0 %  →  20,8 %
+ *      Telefon 1 VP (konstruiert)  0,0 %  →  20,8 %
+ *
+ *    Der Grund steht in der Verteilung: das Tal zwischen den beiden Maxima
+ *    fällt, weil der stärker gewichtete Bildanteil die Fläche zwischen zwei
+ *    Blickfängen absenkt. Median Tal ÷ zweites Maximum auf Telefon-Screens
+ *    1,002 → 0,967, p5 0,848 → 0,703; die Schwelle 0,9 liegt damit plötzlich
+ *    mitten in der Verteilung statt an ihrem unteren Rand.
+ *
+ * **Nicht nachjustiert, mit Absicht.** 0,9 an die neue Verteilung anzupassen
+ * wäre eine zweite unkalibrierte Bewegung im selben Schritt. Die Regel wird in
+ * 1.2 B1 ohnehin umgebaut (Abstand auf Diagonale oder getrennte x/y-Schwellen)
+ * und **danach** neu kalibriert — auf der Karte mit α = 0,5, in jeder der drei
+ * Frame-Formen getrennt. Bis dahin gilt: 11,9 % / 31,1 % ist der Stand, nicht
+ * 3,3 % / 10,0 %.
  *
  * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
  * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um
@@ -364,14 +383,28 @@ const competition: Rule = {
  *
  * Anders als `flat` und `dead-cta` liest diese Regel die **ungedämpften**
  * Abschnittskarten, ist also von der Komposition unabhängig. Auf echten Bildern
- * ist sie gutmütig: UEyes-Webseiten, Viewport 500 erzwungen — Verteilung
- * −0,179 bis 0,276, Schwelle 0,08 bei p70, Rate 29,8 %.
+ * ist sie gutmütig: UEyes-Webseiten, Viewport 500 erzwungen — Rate 27,7 %
+ * bei α = 0,3.
  *
  * Auf konstruierten Frames mit einem farbigen Fuß oder Hero weiter unten
- * feuert sie dagegen in 83–100 % der Fälle (Schwelle bei p17 bzw. unter dem
- * Minimum). 0,08 ist keine falsche, aber eine sehr durchlässige Grenze; ob sie
- * trägt, entscheidet sich an echten Designs, nicht an Screenshots einzelner
- * Viewports.
+ * feuert sie dagegen in 83–100 % der Fälle. 0,08 ist keine falsche, aber eine
+ * sehr durchlässige Grenze; ob sie trägt, entscheidet sich an echten Designs,
+ * nicht an Screenshots einzelner Viewports.
+ *
+ * **Auch diese Rate hängt an `blendAlpha`**, obwohl die Regel abschnittsweise
+ * misst: die Konzentration eines Abschnitts steigt mit dem Gewicht des
+ * Bildanteils, und tiefere Abschnitte haben mehr Inhalt als der Kopfbereich.
+ * Gemessen beim Umstieg auf 0,5 (`npm run side-effects`):
+ *
+ *   Webseite, Viewport 500 erzwungen   27,7 %  →  34,9 %   (Median 0,021 → 0,031)
+ *   Desktop scrollend (konstruiert)    83,3 %  →  95,8 %
+ *   Telefon scrollend (konstruiert)   100,0 %  → 100,0 %
+ *
+ * 95,8 % auf einer der drei konstruierten Formen ist nah an „feuert immer" und
+ * damit nah an „sagt nichts". Auf echten Bildern bleibt die Regel mit 34,9 %
+ * im brauchbaren Bereich; die konstruierten Frames stellen den Hero aber
+ * absichtlich weiter unten auf, ihre Quote ist die des Aufbaus. Neu zu
+ * bewerten ist 0,08 trotzdem — an echten Designs mit Layer-Baum (PRD Set 2).
  */
 const coldFold: Rule = {
   id: 'cold-fold',
@@ -421,8 +454,8 @@ const coldFold: Rule = {
  * Inhalt.
  *
  * **Zweiter Anlauf: den Prior raus.** Unter `hybrid-v1` ist die fertige Karte
- * `norm(Prior) + 0,3 · Bild`, also weitgehend der Prior — und der ist auf jedem
- * Screen derselbe. Gemessen auf dem **Bildanalyse-Anteil** (`aboveFoldImageTerm`)
+ * `norm(Prior) + α · Bild` (α = 0,5 seit 1.2, davor 0,3), also weitgehend der
+ * Prior — und der ist auf jedem Screen derselbe. Gemessen auf dem **Bildanalyse-Anteil** (`aboveFoldImageTerm`)
  * stimmt die Ordnung:
  *
  *   leer                       0,000     3 gleich starke Blöcke   0,096

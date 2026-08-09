@@ -37,6 +37,18 @@ Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 | **Befunde** | Ein deterministisches Regelwerk formuliert, was gemessen wurde — mit „Im Canvas zeigen" auf die betroffene Ebene. |
 | **Betrachtungsdauer** | Drei Profile (`glance` 1 s, `scan` 3 s, `read` 7 s), **gemessen belegt**: sie tauschen den Ortsprior, nicht die Gewichte. |
 
+### Was 1.2 bisher ändert
+
+1.2 läuft in drei Blöcken (A Alpha-Kurve, B Regeln für Ein-Viewport-Screens,
+C Contrastmap). **Fertig ist A.**
+
+| | |
+|---|---|
+| **`blendAlpha` 0,3 → 0,5** | Kreuzvalidiert und out-of-sample nachgemessen statt in-sample abgelesen. AUC, CC und NSS haben ihr Optimum einstimmig bei 0,5, in beiden Kategorien. Siehe [Alpha-Kurve](#alpha-kurve-12-a). |
+| **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
+| **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
+| **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.1" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
+
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
 `hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt in
 einer 5-fachen Kreuzvalidierung über je 495 Bilder **jede bildunabhängige
@@ -72,6 +84,11 @@ npm run eval:fixtures -- --ueyes /pfad/zum/UEyes_dataset
 
 npm run eval -- --fixtures ueyes-web --set test --duration 3 --report out/eval.md
 npm run eval -- --help
+
+# 1.2 A — die Alpha-Kurve (siehe „Alpha-Kurve")
+npm run alpha                                     # Sweep, Tuning-Split, kreuzvalidiert
+npm run visual-check                              # die zwei Prüffälle als Bild
+npm run side-effects -- --before 0.3 --after 0.5  # Feuerraten vorher/nachher
 ```
 
 Die `id` in `manifest.json` ist ein lokaler Platzhalter. Beim Publishing in die
@@ -126,6 +143,21 @@ denen die Merkmale bestehen. Nur die technischen Grenzen unten schalten
 automatisch herunter.
 
 ### Panel: Design, Theming, Bedienelemente
+
+**Der Kopf trägt einen Beta-Marker.** Neben dem Produktnamen steht „Beta v1.1".
+Der Marker ist eine Aussage über die **Vorhersage**, nicht über die Stabilität
+des Codes: die Engine ist gegen einen einzigen öffentlichen Datensatz gemessen,
+drei der sechs Befundregeln sind abgeschaltet, und für die eigenen Screens fehlt
+weiterhin ein Validierungsset. Wer das Panel öffnet, soll das sehen, bevor er
+eine Karte für eine Messung hält.
+
+Die Zahl selbst kommt aus **`package.json` und nur von dort**; `scripts/build.mjs`
+und `vitest.config.ts` setzen sie beim Bündeln als Konstante ein
+(`src/version.ts`). Vorher stand sie als Literal im Code mit der Bitte, sie mit
+`package.json` synchron zu halten — eine Konstante, deren Richtigkeit von einem
+Kommentar abhängt, ist genau so lange richtig, bis jemand die andere Stelle
+anfasst. Die Engine-Version (`hybrid-v1`) ist davon getrennt und steht weiterhin
+an den Maps, nicht im Kopf: sie sagt, welche Vorhersage eine Karte erzeugt hat.
 
 **Zwei Themes, eigener Schalter.** Im Header sitzt eine Pille mit Mond und
 Sonne. Bewusst **nicht** `figma.showUI({ themeColors: true })`: die Farben des
@@ -462,7 +494,7 @@ ersetzen und die Bildanalyse additiv darüberlegen. Genau das ist `hybrid-v1`.
 `heuristic-v1` bleibt unverändert erhalten.
 
 ```
-Vorhersage = norm(Ortsprior)  +  0,3 · norm(Bildanalyse)
+Vorhersage = norm(Ortsprior)  +  0,5 · norm(Bildanalyse)
 ```
 
 - **Ortsprior:** je eine 32 × 32-Graustufen-Map für Webpage und Mobile UI,
@@ -471,9 +503,12 @@ Vorhersage = norm(Ortsprior)  +  0,3 · norm(Bildanalyse)
   `atob` — die Figma-Main-Thread-Umgebung garantiert keines davon.
 - **Rastergröße:** gemessen, nicht geschätzt. Ein Ortsprior ist glatt; schon
   16 × 16 erreicht denselben CC wie 128 × 128. 32 × 32 ist mit Reserve gewählt.
-- **α = 0,3**, nicht 0,5: 0,5 maximiert zwar CC (0,448 statt 0,444), **verliert
-  aber KL gegen die Mean Map** — und S-2 verlangt alle vier Metriken. Bei 0,3
-  gewinnen auf dem Tuning-Split alle vier, in beiden Kategorien.
+- **α = 0,5 seit 1.2**, vorher 0,3. Der alte Wert war in-sample abgelesen und
+  an einem einzigen Kriterium entschieden (KL gegen die Mean Map). Kreuzvalidiert
+  und out-of-sample nachgemessen liegt das Optimum von AUC, CC und NSS
+  einstimmig bei 0,5, in beiden Kategorien. Siehe
+  [Alpha-Kurve](#alpha-kurve-12-a) — dort steht auch, warum KL dabei nicht das
+  Kriterium ist und was der Wechsel **nicht** behebt.
 - **Kategorie-Wahl:** im Plugin über die Frame-Breite (dieselbe Schwelle wie die
   Viewport-Ableitung). Im Harness wird die Kategorie explizit gesetzt — UEyes
   speichert Handy-Screenshots mit 1080 px Gerätebreite, was die Breitenregel als
@@ -835,6 +870,281 @@ Aufmerksamkeit entsprechend breit — die gemessene Aufmerksamkeit ist vertikal 
 Faktor 1,5 enger konzentriert als die vorhergesagte.
 
 Der Engpass ist **Selektivität**, nicht Position.
+
+---
+
+## Alpha-Kurve (1.2 A)
+
+```bash
+npm run alpha                                    # Sweep, Tuning-Split, kreuzvalidiert
+npm run alpha -- --confirm-only --chosen 0.5     # der eine Blick auf den Test-Split
+npm run visual-check                             # A4, die zwei Prüffälle als Bild
+npm run side-effects -- --before 0.3 --after 0.5 # A5, Feuerraten vorher/nachher
+```
+
+`blendAlpha` stand seit 1.1 auf 0,3 — und zwar aus einem einzigen Grund: bei 0,5
+verlor KL gegen die Mean Map, und S-2 verlangte einen Sieg in allen vier
+Metriken. Der Wert war damit an der schwächsten der vier Metriken aufgehängt,
+in-sample abgelesen und nie gegen eine Alternative geprüft. Das ist hier
+nachgeholt.
+
+**Ergebnis vorweg: 0,5, einstimmig in AUC, CC und NSS, in beiden Kategorien.**
+Und ein zweiter Befund, der wichtiger ist als der erste: der Verdacht, unsere
+Karten seien systematisch zu weich, **stimmt** — aber `blendAlpha` ist nicht das
+Mittel dagegen. Ein höheres α macht die Karten *weicher*, nicht schärfer.
+
+### Wie gemessen wurde
+
+5-fache Kreuzvalidierung, aber **nur auf dem Tuning-Split** (468 Bilder je
+Kategorie), nicht wie `npm run crossval` über Tuning + Test zusammen. Der
+Unterschied ist Absicht: `crossval` *berichtet* ein Ergebnis, hier wird ein
+Parameter *entschieden*, und dafür darf der Test-Split nicht mitlaufen. Pro Fold
+werden Ortsprior **und** Mean-Map-Baseline ausschließlich aus den übrigen vier
+Folds geschätzt, der Prior inklusive 8-Bit-Quantisierung auf 32 × 32 — also in
+der Form, die ausgeliefert wird.
+
+Der Sweep rechnet den Bildanteil einmal je Bild und mischt ihn danach für jeden
+α-Wert neu; dass diese Abkürzung Zeichen für Zeichen dieselbe Mischung ergibt
+wie `combineFeatureParts`, ist in `eval/__tests__/alpha.test.ts` festgenagelt.
+Eine Abkürzung, die still von der Engine wegdriftet, wäre genau der Fehler, für
+den A-1 existiert.
+
+### A1 — sind unsere Karten weicher als die Wirklichkeit?
+
+Gemessene Größe: **Anteil der Gesamtmasse in den stärksten 5 % der Pixel.** Eine
+gleichmäßige Karte liegt bei 0,05, eine mit einem einzigen scharfen Blickfang
+nahe 1. Beide Seiten werden vorher identisch normiert (Minimum *und* Maximum) —
+die Größe ist invariant gegen Skalierung, aber nicht gegen einen Sockel.
+
+| Webpage | p5 | p25 | Median | p75 | p95 | Mittel |
+|---|---:|---:|---:|---:|---:|---:|
+| **UEyes Ground Truth** | 0,278 | 0,383 | 0,483 | 0,578 | 0,681 | **0,482** |
+| Vorhersage, α = 0,3 (bisher) | 0,120 | 0,127 | 0,136 | 0,150 | 0,167 | 0,141 |
+| Vorhersage, α = 0,5 (jetzt) | 0,110 | 0,118 | 0,128 | 0,148 | 0,167 | 0,133 |
+| Vorhersage, α = 1,2 | 0,092 | 0,102 | 0,115 | 0,147 | 0,167 | 0,124 |
+| nur Ortsprior (α = 0) | | | | | | 0,164 |
+| Mean-Map-Baseline | | | | | | 0,165 |
+
+Mobile UI liegt gleichartig: Ground Truth 0,383, Vorhersage 0,145 (α = 0,3) bzw.
+0,138 (α = 0,5).
+
+**Der Verdacht ist bestätigt, und deutlicher als erwartet.** Die gemessene
+Aufmerksamkeit ist um den **Faktor 3,4** konzentrierter als unsere Vorhersage
+(Webpage; Mobile 2,6). Die beiden Verteilungen überlappen praktisch nicht: das
+95. Perzentil unserer Vorhersage (0,167) liegt unter dem 5. Perzentil der Ground
+Truth (0,278). Es gibt kein einziges Bild, auf dem unsere Karte so scharf ist
+wie eine durchschnittliche echte.
+
+**Warum das in AUC kaum sichtbar ist.** AUC-Judd bewertet die *Reihenfolge* der
+Pixel, nicht die Schärfe der Verteilung. Eine Karte, die dieselben Stellen
+richtig einsortiert, sie aber alle breit verschmiert, bekommt denselben Wert.
+CC und NSS sind ebenfalls weitgehend blind dafür — CC ist gegen lineare
+Reskalierung invariant, NSS z-normiert. Von den vier Metriken bestraft **nur KL**
+diesen Fehler, und KL ist genau die Metrik, an der die 0,3 hing. Das ist kein
+Zufall, sondern die Erklärung: der alte Wert war für die falsche Eigenschaft
+optimiert.
+
+Der Befund war im Ansatz schon da — „die gemessene Aufmerksamkeit ist vertikal
+um Faktor 1,5 enger konzentriert" (siehe [Kontaktbogen](#was-der-kontaktbogen-zeigt)).
+Vertikal um 1,5 und insgesamt um 3,4 sind aber zwei verschiedene Größenordnungen
+von Problem.
+
+### A2 — der Sweep
+
+Webpage, 468 Bilder, out-of-sample:
+
+| α | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ | Konzentration |
+|---|---:|---:|---:|---:|---:|
+| 0 (nur Prior) | 0,768 | 0,420 | 0,991 | 1,088 | 0,164 |
+| 0,3 | 0,780 | 0,443 | 1,049 | **1,078** | 0,141 |
+| **0,5** | **0,783** | **0,447** | **1,061** | 1,091 | 0,133 |
+| 0,8 | 0,782 | 0,444 | 1,055 | 1,111 | 0,127 |
+| 1,2 | 0,777 | 0,431 | 1,028 | 1,133 | 0,124 |
+| Mean Map (je Fold) | 0,766 | 0,420 | 0,990 | 1,090 | 0,165 |
+
+Mobile UI, 468 Bilder — derselbe Verlauf, dasselbe Optimum:
+
+| α | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ | Konzentration |
+|---|---:|---:|---:|---:|---:|
+| 0 (nur Prior) | 0,766 | 0,507 | 0,995 | 0,795 | 0,164 |
+| 0,3 | 0,779 | 0,546 | 1,076 | **0,774** | 0,145 |
+| **0,5** | **0,781** | **0,552** | **1,091** | 0,785 | 0,138 |
+| 0,8 | 0,779 | 0,545 | 1,080 | 0,805 | 0,133 |
+| 1,2 | 0,771 | 0,523 | 1,042 | 0,829 | 0,130 |
+| Mean Map (je Fold) | 0,764 | 0,507 | 0,995 | 0,796 | 0,164 |
+
+Gepaart je Bild gegen α = 0,3, 95-%-Intervalle ohne Null in allen sechs Fällen:
+
+| | ΔAUC | ΔCC | ΔNSS |
+|---|---:|---:|---:|
+| Webpage | +0,0025 (t = 7,0) | +0,0040 (t = 4,7) | +0,0117 (t = 5,8) |
+| Mobile UI | +0,0018 (t = 4,5) | +0,0061 (t = 5,5) | +0,0149 (t = 6,9) |
+
+**Verlängert wurde nicht.** Die Kurve fällt nach 0,5 in allen drei
+Entscheidungsmetriken, in beiden Kategorien — die Bedingung „falls die Kurve am
+Ende noch steigt" ist nicht erfüllt. Der Sweep prüft das selbst
+(`stillRising` in `eval/alpha.ts`) und hätte automatisch verlängert.
+
+**Der Gewinn ist klein und soll klein aussehen.** +0,004 CC ist ein Fünftel
+dessen, was der Ortsprior gebracht hat. Er ist belastbar, aber er ist keine
+neue Fähigkeit — er ist das Aufräumen einer Entscheidung, die an der falschen
+Metrik hing. Bei Webpage liegt die **Trefferquote in CC sogar bei 44,2 %**: der
+Mittelwert steigt, die Mehrheit der Einzelbilder wird leicht schlechter und eine
+Minderheit deutlich besser. Bei Mobile ist es einheitlicher (56,6 %).
+
+### A3 — warum KL nicht entscheidet
+
+**Ausdrücklich und nicht stillschweigend:** KL wird berichtet, aber es
+entscheidet nicht. Der Grund ist kein Ausweichen vor einer unbequemen Zahl,
+sondern dass KL genau die Eigenschaft bestraft, die hier geprüft wird. KL misst,
+wie viel Masse die Vorhersage dort liegen lässt, wo die Ground Truth Masse hat.
+Eine zugespitzte Karte räumt die Ränder leer und wird dafür voll bestraft —
+Zuspitzung ist aber die *gesuchte* Eigenschaft (A1). KL als Kriterium hieße, die
+Frage mit der Antwort zu beantworten.
+
+Der Preis steht in jeder Tabelle: KL wird von 1,078 auf 1,091 (Webpage) bzw.
+0,774 auf 0,785 (Mobile) schlechter. Das ist die Zeile, die man zitieren muss,
+wenn man diese Entscheidung angreifen will.
+
+**Der historische Grund für 0,3 hält der Nachmessung nicht stand.** Gepaart je
+Bild und out-of-sample ist KL bei α = 0,5 gegen die Mean Map **kein Verlust,
+sondern ein Unentschieden** — Webpage −0,0014, Mobile +0,0112, beide Intervalle
+enthalten die Null. Der alte Vergleich war in-sample und über Mittelwerte statt
+gepaart:
+
+| α | ΔAUC | ΔCC | ΔNSS | ΔKL | |
+|---|---:|---:|---:|---:|---|
+| 0,3 | +0,0137 | +0,0233 | +0,0590 | +0,0123 | alle vier besser |
+| 0,5 | +0,0163 | +0,0273 | +0,0706 | −0,0014 | KL unentschieden |
+| 0,8 | +0,0159 | +0,0235 | +0,0646 | −0,0212 | KL belastbar schlechter |
+| 1,2 | +0,0109 | +0,0108 | +0,0376 | −0,0427 | KL belastbar schlechter |
+
+(Webpage, gegen die Mean Map des jeweiligen Folds.)
+
+Damit bleibt **S-2 erfüllt**: `hybrid-v1` mit α = 0,5 schlägt die Mean Map in
+AUC, CC und NSS belastbar und verliert in KL nicht.
+
+### Der Test-Split, einmalig
+
+Je 27 Bilder, mit dem **ausgelieferten** Prior statt einem Fold-Prior — hier
+soll stehen, was das Plugin tut:
+
+| | AUC | CC | NSS | KL | Konz. |
+|---|---:|---:|---:|---:|---:|
+| Webpage α = 0,3 | 0,796 | 0,464 | 1,153 | 1,111 | 0,139 |
+| Webpage α = 0,5 | 0,797 | 0,463 | 1,152 | 1,136 | 0,132 |
+| Mobile α = 0,3 | 0,794 | 0,547 | 1,171 | 0,834 | 0,144 |
+| Mobile α = 0,5 | 0,794 | 0,548 | 1,181 | 0,853 | 0,137 |
+
+**Der Test-Split kann diese Frage nicht beantworten, und das ist die ehrliche
+Auskunft.** Alle drei Entscheidungsmetriken zeigen Differenzen, deren
+95-%-Intervalle die Null einschließen (z. B. Webpage ΔCC −0,0010 [−0,0090,
++0,0070]). Das halbe Intervall ist mit ±0,008 doppelt so breit wie der Effekt,
+den die Kreuzvalidierung über 468 Bilder gemessen hat (+0,004). 27 Bilder können
+einen Unterschied dieser Größe nicht auflösen — der Lauf widerlegt ihn also
+nicht, er ist nur blind dafür. Nur KL ist auch hier belastbar schlechter
+(t = −3,4 bzw. −3,3), was die Erwartung bestätigt.
+
+Die Konzentration bestätigt sich unabhängig davon: Ground Truth 0,505 (Webpage)
+bzw. 0,412 (Mobile) gegen 0,132–0,144 in der Vorhersage.
+
+### A4 — die zwei Prüffälle am Bild
+
+Ein Onboarding-Screen, 393 × 852, vier Kategorie-Kacheln, ein gelber CTA unten
+(`eval/onboarding.ts`). **Konstruiert, nicht beobachtet** — der Zweck ist, zwei
+Fragen mit *bekannter* Antwort zu stellen. Keine Zahl von hier gehört in eine
+Feuerrate.
+
+![A4 — Onboarding-Prüffall über den Alpha-Sweep](assets/messungen/a4-onboarding.png)
+
+Links das Original, dann α = 0,3 / 0,5 / 0,8 / 1,2.
+
+| Element | α = 0,3 | α = 0,5 | α = 0,8 | α = 1,2 |
+|---|---|---|---|---|
+| dunkle Kachel „Nachrichten", Spitze | 0,569 gelbgrün | 0,591 gelbgrün | 0,619 gelbgrün | 0,655 **warm** |
+| gelber CTA unten, Spitze | 0,287 **blau** | 0,370 türkis | 0,460 türkis | 0,542 gelbgrün |
+
+**Die Bilder und die Zahlen sind sich nicht einig, und das wird hier nicht
+aufgelöst.** Die Metriken haben ihr Optimum bei 0,5 und fallen danach; die
+beiden Prüfelemente werden aber erst jenseits von 0,8 sichtbar wärmer. Der gelbe
+CTA erreicht auf **keinem** der geprüften Werte „heiß" — bei 1,2 liegt seine
+Spitze bei 0,542, also gelbgrün, im 70. Perzentil der Karte. Die dunkle Kachel
+wird erst bei 1,2 warm.
+
+Was dagegen bei jedem α gleich bleibt: die Überschrift dominiert den Screen, und
+der Rang des CTA unter den Klick-Kandidaten steht unverändert auf 5 von 6. Der
+Parameter verschiebt Helligkeit, keine Rangfolge.
+
+**Deutung, ohne den Konflikt wegzuräumen.** Beide Beobachtungen zeigen in
+dieselbe Richtung wie A1: was hier fehlt, ist nicht Gewicht, sondern *Schärfe*.
+Ein höheres α hebt den ganzen Bildanteil an — die Kachel wird wärmer, der
+Hintergrund aber auch, und die Konzentration sinkt dabei sogar (0,141 → 0,124).
+Die Bilder verlangen also nicht nach einem größeren α, sondern nach einem
+Bildanteil, der überhaupt selektiver ist. Das ist eine andere Baustelle
+(Nachbearbeitung: `blurSigmaRatio`, `gamma`, Perzentil-Clip — oder ein anderes
+Modell) und ausdrücklich **nicht** in diesem Schritt erledigt.
+
+### A5 — was der Wechsel an den Befundregeln verändert hat
+
+Die Schwellen von `cta-rank`, `competition` und `cold-fold` sind auf der Karte
+mit α = 0,3 kalibriert. Keine Zeile in `rules.ts` wurde angefasst, trotzdem:
+
+| Regel | Population | α = 0,3 | α = 0,5 |
+|---|---|---:|---:|
+| `cta-rank` | Desktop scrollend / Telefon 1 VP / Telefon scrollend | 66,7 % | 66,7 % |
+| `competition` | UEyes Webseiten (Viewport 500 erzwungen) | 2,2 % | **11,9 %** |
+| `competition` | UEyes Telefon-Screens (ein Viewport) | 10,3 % | **31,1 %** |
+| `competition` | Telefon, ein Viewport (konstruiert) | 0,0 % | 20,8 % |
+| `competition` | Telefon scrollend (konstruiert) | 0,0 % | 20,8 % |
+| `competition` | Desktop scrollend (konstruiert) | 0,0 % | 8,3 % |
+| `cold-fold` | UEyes Webseiten (Viewport 500 erzwungen) | 27,7 % | **34,9 %** |
+| `cold-fold` | Desktop scrollend (konstruiert) | 83,3 % | 95,8 % |
+| `cold-fold` | Telefon scrollend (konstruiert) | 100,0 % | 100,0 % |
+
+`cta-rank` ist unbeeindruckt, und das ist erwartbar: die Regel vergleicht Ränge,
+und der Parameter verschiebt keine Rangfolgen (dasselbe Bild wie in A4).
+
+**`competition` verdreifacht seine Quote.** Der Grund steht in der Verteilung:
+die Entscheidungsgröße ist Tal ÷ zweites Maximum, und der stärker gewichtete
+Bildanteil senkt die Fläche *zwischen* zwei Blickfängen ab. Auf Telefon-Screens
+fällt der Median von 1,002 auf 0,967 und das 5. Perzentil von 0,848 auf 0,703 —
+die Schwelle 0,9 liegt damit plötzlich mitten in der Verteilung statt an ihrem
+unteren Rand.
+
+**Nicht nachjustiert, mit Absicht.** 0,9 jetzt an die neue Verteilung
+anzupassen wäre eine zweite unkalibrierte Bewegung im selben Schritt. Die Regel
+wird in 1.2 B1 ohnehin umgebaut — der Mindestabstand wandert von einem Anteil
+der Kartenbreite auf die Diagonale oder auf getrennte x/y-Schwellen — und
+**danach** neu kalibriert, auf der Karte mit α = 0,5. Genau dafür steht A vor B.
+
+Bei `cold-fold` ist die Bewegung kleiner, aber die konstruierte Desktop-Form
+landet mit 95,8 % nahe bei „feuert immer". Auf echten Bildern bleibt die Regel
+mit 34,9 % im brauchbaren Bereich; 0,08 ist trotzdem neu zu bewerten, und dafür
+fehlt weiterhin das Set mit echten Layer-Bäumen.
+
+**Ein vierter Effekt, außerhalb der Tabelle.** Der Erreichbarkeitstest von
+`cta-below-fold` (nicht ausgeliefert) schlug nach dem Wechsel fehl. Die Ursache
+war nicht die Regel, sondern der Testaufbau: der CTA unter dem Fold gewann dort
+mit 0,5227 gegen 0,4773 — vier Tausendstel —, und das Verhältnis kippt schon bei
+α ≈ 0,35. „Diese Regel ist erreichbar" hing damit an der dritten
+Nachkommastelle eines Engine-Parameters. Der Wettbewerber steht jetzt dort, wo
+ein Impressum-Link wirklich steht, unten rechts im ersten Viewport; der CTA
+führt damit über den ganzen geprüften Alpha-Bereich. Siehe
+`findings/__tests__/end-to-end.test.ts`.
+
+### Was offen bleibt
+
+1. **Die Schärfe.** Der eigentliche A1-Befund ist ungelöst: Faktor 3,4. `alpha`
+   ist dafür der falsche Hebel, weil er den Bildanteil als Ganzes skaliert statt
+   ihn selektiver zu machen. Die nächsten Kandidaten sind die Nachbearbeitung
+   (`post.blurSigmaRatio` 0,025 auf der 512er-Kante ist eine breite
+   Weichzeichnung, `post.gamma` 0,8 hebt schwache Werte zusätzlich an) und der
+   Perzentil-Clip. Jeder davon ist eine eigene Messung mit eigener
+   Nebenwirkungsprüfung — keiner ist in 1.2 A erledigt.
+2. **`competition` neu kalibrieren**, nach dem Umbau in B1, auf der Karte mit
+   α = 0,5, getrennt je Frame-Form.
+3. **`cold-fold` bei 0,08 nachprüfen**, sobald ein Set mit echten Layer-Bäumen
+   existiert.
 
 ---
 
@@ -2041,10 +2351,10 @@ Zusätzlich für 1.1 (M4, M5):
 1. **`hybrid-v1` scharfschalten — oder nicht.** Der Code steht, die Zahl steht
    (S-2 erfüllt), das Umschalten ist eine Zeile. Zwei Dinge sprechen dagegen und
    gehören auf den Tisch: die Engine wird damit **datensatzabhängig** (der Prior stammt aus
-   UEyes und passt auf meinestadt-Screens nur, soweit die dem Durchschnitt
+   UEyes und passt auf die eigenen Screens nur, soweit die dem Durchschnitt
    ähneln), und mit dem Asset kommt die **CC-BY-Pflicht** ins Produkt
    ([`NOTICE.md`](NOTICE.md)). Dafür spricht der gemessene Sprung.
-2. **Vorab prüfen, ob der Prior auf meinestadt-Screens trägt.** Der billigste
+2. **Vorab prüfen, ob der Prior auf den eigenen Screens trägt.** Der billigste
    Test ist das eigene First-Click-Set — es beantwortet gleichzeitig die
    Teilmessungs-Frage.
 3. **Trainiertes Modell (1.2)** bleibt der sauberere Weg: ONNX Runtime Web im

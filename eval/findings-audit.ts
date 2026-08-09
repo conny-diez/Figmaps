@@ -24,6 +24,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { analyzeFrame, type AnalyzeResult } from '../src/engine/analyze'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
+import { cloneParams, resolveParams } from '../src/engine/params'
 import { sectionSalience } from '../src/engine/segments'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import type { NodeSignal } from '../src/messages'
@@ -60,6 +61,14 @@ export type RuleStats = {
 export type AuditResult = {
   setName: string
   imageCount: number
+  /**
+   * Der Mischungsanteil der Bildanalyse, mit dem gemessen wurde.
+   *
+   * Steht hier, weil eine Feuerrate nur für die Karte gilt, auf der sie
+   * gemessen wurde — und `blendAlpha` ändert genau diese Karte. Drei der
+   * Schwellen sind auf α = 0,3 kalibriert; wer α verstellt, misst neu.
+   */
+  blendAlpha: number
   viewportOverride: number | undefined
   /** The configuration the rates below are valid for — never leave it implicit. */
   priorAsset: PriorAssetId | 'aus der Geometrie abgeleitet'
@@ -259,6 +268,8 @@ export type AuditOptions = {
    * otherwise.
    */
   segment?: boolean
+  /** Overrides `blendAlpha` — see `AuditResult.blendAlpha`. */
+  blendAlpha?: number
 }
 
 /** One frame to score, whatever it came from. */
@@ -272,6 +283,8 @@ type AuditCase = {
   category?: string
   viewportOverride?: number
   segment?: boolean
+  /** Overrides `blendAlpha` of `hybrid-v1` — see `AuditResult.blendAlpha`. */
+  blendAlpha?: number
 }
 
 const VARIABLE_NAMES: Record<string, string> = {
@@ -319,7 +332,18 @@ async function tally(
 
   for await (const item of cases) {
     if (item.signals.length > 0) withSignals++
-    const engine = new HeuristicAttentionEngine(item.priorAsset ? { priorAsset: item.priorAsset } : {})
+    // A rate belongs to the map it was measured on, and `blendAlpha` *is* the
+    // map — so the override goes through the same parameter object the plugin
+    // resolves, not through a second code path.
+    let params
+    if (item.blendAlpha !== undefined) {
+      params = cloneParams(resolveParams())
+      params.blendAlpha = item.blendAlpha
+    }
+    const engine = new HeuristicAttentionEngine({
+      ...(item.priorAsset ? { priorAsset: item.priorAsset } : {}),
+      ...(params ? { params } : {}),
+    })
 
     const analysis: AnalyzeResult | null = await analyzeFrame(engine, nodeImageOps, {
       source: item.image,
@@ -379,6 +403,7 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
         ...(options.priorAsset ? { priorAsset: options.priorAsset, category: options.priorAsset } : {}),
         ...(options.viewportOverride ? { viewportOverride: options.viewportOverride } : {}),
         ...(options.segment === false ? { segment: false } : {}),
+        ...(options.blendAlpha !== undefined ? { blendAlpha: options.blendAlpha } : {}),
       }
     }
   }
@@ -397,6 +422,7 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
   return {
     setName,
     imageCount: count,
+    blendAlpha: options.blendAlpha ?? resolveParams().blendAlpha ?? Number.NaN,
     viewportOverride: options.viewportOverride,
     priorAsset: options.priorAsset ?? 'aus der Geometrie abgeleitet',
     // Read off the plans, not off the option: `--viewport` only *requests*
@@ -410,6 +436,8 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
 export type ConstructedAuditOptions = {
   /** Layout variants per shape. Each varies hierarchy, hero, CTA position, card count. */
   variants?: number
+  /** Overrides `blendAlpha` — see `AuditResult.blendAlpha`. */
+  blendAlpha?: number
   onProgress?: (done: number, total: number) => void
 }
 
@@ -438,6 +466,7 @@ export async function auditConstructed(options: ConstructedAuditOptions = {}): P
           frameHeight: shape.frameHeight,
           priorAsset: shape.prior,
           category: shape.category,
+          ...(options.blendAlpha !== undefined ? { blendAlpha: options.blendAlpha } : {}),
         }
       }
     }
@@ -446,6 +475,7 @@ export async function auditConstructed(options: ConstructedAuditOptions = {}): P
     out.push({
       setName: shape.label,
       imageCount: result.count,
+      blendAlpha: options.blendAlpha ?? resolveParams().blendAlpha ?? Number.NaN,
       viewportOverride: undefined,
       priorAsset: shape.prior,
       segmented: result.segmented > 0,

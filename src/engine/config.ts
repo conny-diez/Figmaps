@@ -29,11 +29,12 @@ export const ENGINE_VERSION = 'hybrid-v1'
  * is listed: `melden` covers „Anmelden" and „Abmelden", `schalter` covers
  * „Umschalter", `feld` covers „Eingabefeld" und „Suchfeld".
  *
- * **Deutsch gehört dazu, nicht als Zugabe.** Bei meinestadt.de sind sämtliche
- * Ebenennamen deutsch, und mit der rein englischen Liste traf davon *keiner*
- * (gemessen an 24 typischen Namen: 0 Treffer). Das betrifft nicht nur die
- * ausgeblendete Clickmap: `cta-rank` und `cta-below-fold` sind ausgeliefert und
- * hängen an denselben Kandidaten.
+ * **Deutsch gehört dazu, nicht als Zugabe.** Figma-Dateien werden in der
+ * Sprache benannt, in der das Team arbeitet, und in einer durchgängig deutsch
+ * benannten Bibliothek traf die rein englische Liste *keinen einzigen* Namen
+ * (gemessen an 24 typischen deutschen Ebenennamen: 0 Treffer). Das betrifft
+ * nicht nur die ausgeblendete Clickmap: `cta-rank` und `cta-below-fold` sind
+ * ausgeliefert und hängen an denselben Kandidaten.
  *
  * Bekannte Fehlgriffe, bewusst in Kauf genommen: `karte` trifft auch eine
  * „Standortkarte", `reiter` steckt in „breiter", `feld` in „Umfeld". Ein

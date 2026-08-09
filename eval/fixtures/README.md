@@ -95,7 +95,7 @@ Der Import misst das an einer Stichprobe und schreibt es als Hinweis in `index.j
 
 ## Set 2 — eigenes Validierungsset (offen)
 
-10 meinestadt-Screens mit First-Click-Test (Lyssna oder Maze, ca. 50 Teilnehmer). Kleiner und lauter als UEyes, aber domänennah — und vor allem das **einzige** Set, mit dem sich `textSalience`, `interactiveSalience` und `imageSalience` überhaupt bewerten lassen, weil dort ein Layer-Baum existiert. Solange es fehlt, bleibt jede Messung eine Teilmessung über rund 60 % der Engine-Gewichtung.
+10 eigene Produkt-Screens mit First-Click-Test (Lyssna oder Maze, ca. 50 Teilnehmer). Kleiner und lauter als UEyes, aber domänennah — und vor allem das **einzige** Set, mit dem sich `textSalience`, `interactiveSalience` und `imageSalience` überhaupt bewerten lassen, weil dort ein Layer-Baum existiert. Solange es fehlt, bleibt jede Messung eine Teilmessung über rund 60 % der Engine-Gewichtung.
 
 ## Set 3 — synthetisch (Rauchtest)
 

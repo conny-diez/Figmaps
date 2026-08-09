@@ -30,7 +30,7 @@ import { viewportHeightFor } from './engine/segments'
 import { Logo } from './ui/logo'
 import { generateMaps, type FrameData } from './ui/pipeline'
 import { paletteFor } from './ui/theme'
-import { PLUGIN_VERSION } from './version'
+import { PLUGIN_LABEL } from './version'
 
 type Phase = 'empty' | 'ready' | 'working' | 'done' | 'error'
 
@@ -591,8 +591,10 @@ function App(): preact.JSX.Element {
         <Logo size={27} />
         <h1 class="app__title">Figmaps</h1>
         {/* The engine version stays with the maps (the line under each map
-            title); the header names the version of the plugin. */}
-        <p class="app__subtitle">{PLUGIN_VERSION}</p>
+            title); the header names the product the user installed — plus the
+            Beta marker, which is a statement about the prediction, not about
+            the code (see `version.ts`). */}
+        <p class="app__subtitle">{PLUGIN_LABEL}</p>
         <button
           type="button"
           class="themepill"

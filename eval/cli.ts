@@ -19,6 +19,18 @@ import { iterateSamples, loadSamples, readIndex, type SplitName } from './datase
 import { PRIOR_ASSET_IDS, PRIOR_DURATIONS, type PriorAssetId } from '../src/engine/priors'
 import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
 import { crossValidate, ENGINE_LABELS, FOLDS } from './crossval'
+import {
+  alphaSweep,
+  confirmOnTest,
+  DEFAULT_ALPHAS,
+  extendedAlphas,
+  stillRising,
+  type AlphaSweepResult,
+  type TestConfirmation,
+} from './alpha'
+import { buildAlphaReport, buildTestConfirmationSection, decisionFor, DECISION_METRICS } from './alpha-report'
+import { runVisualCheck } from './visual-check'
+import { buildSideEffectReport, measureSideEffects, SHIPPED_RULES } from './side-effects'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -457,6 +469,266 @@ async function runEpicD(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// alpha — 1.2 A: how much the image analysis may count
+//
+//   npm run alpha
+//   npm run alpha -- --alphas 0.3,0.5,0.8,1.2,1.8,2.7 --extend
+//   npm run alpha -- --confirm            (der eine erlaubte Blick auf test)
+//
+// Läuft auf dem Tuning-Split, kreuzvalidiert, Ortsprior und Mean Map je Fold
+// neu geschätzt. `--confirm` ist ein eigener Schalter, weil der Test-Split
+// nicht nebenbei verbraucht werden darf.
+// ---------------------------------------------------------------------------
+
+const ALPHA_SETS: ReadonlyArray<{ setName: string; priorAsset: PriorAssetId }> = [
+  { setName: 'ueyes-web', priorAsset: 'web' },
+  { setName: 'ueyes-mobile', priorAsset: 'mobile' },
+]
+
+async function runAlpha(args: Args): Promise<number> {
+  const duration = num(args, 'duration', 3)
+  const folds = num(args, 'folds', 5)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+  const requested = typeof args.alphas === 'string' ? args.alphas.split(',').map(Number).filter(Number.isFinite) : undefined
+  const sets = typeof args.fixtures === 'string'
+    ? ALPHA_SETS.filter((entry) => (args.fixtures as string).split(',').includes(entry.setName))
+    : ALPHA_SETS
+
+  let alphas = requested ?? [...DEFAULT_ALPHAS]
+  const notes: string[] = []
+  const results: AlphaSweepResult[] = []
+
+  // `--confirm-only` überspringt den Sweep und macht ausschließlich den einen
+  // Blick auf den Test-Split. Der Sweep dauert eine halbe Stunde je Kategorie,
+  // und ihn allein für die Bestätigung zu wiederholen wäre kein zweites
+  // Ergebnis — sondern dasselbe, zweimal bezahlt.
+  if (args['confirm-only']) {
+    const chosen = num(args, 'chosen', Number.NaN)
+    if (!Number.isFinite(chosen)) {
+      console.error('--confirm-only braucht --chosen <α>: welcher Wert bestätigt werden soll.')
+      return 2
+    }
+    const referenceAlpha = num(args, 'reference', 0.3)
+    console.log(`Test-Split, einmalig: α = ${chosen} gegen α = ${referenceAlpha}.`)
+    const confirmations: TestConfirmation[] = []
+    for (const set of sets) {
+      const confirmation = await confirmOnTest({
+        setName: set.setName,
+        duration,
+        alphas: [chosen],
+        priorAsset: set.priorAsset,
+        referenceAlpha,
+      })
+      confirmations.push(confirmation)
+      console.log(`  ${set.setName}: ${confirmation.imageCount} Bilder`)
+      for (const alpha of confirmation.alphas) {
+        const metrics = confirmation.metrics.get(alpha)!
+        console.log(
+          `    α ${String(alpha).padEnd(4)} ` +
+            `${METRIC_IDS.map((id) => `${METRIC_LABELS[id]} ${metrics[id].mean.toFixed(3)}`).join('  ')}` +
+            `  Konz. ${confirmation.concentration.get(alpha)!.mean.toFixed(3)}`,
+        )
+      }
+      console.log(`    Ground-Truth-Konzentration ${confirmation.truthConcentration.mean.toFixed(3)}`)
+      for (const alpha of confirmation.alphas) {
+        if (alpha === referenceAlpha) continue
+        for (const delta of confirmation.paired.get(alpha)!) {
+          console.log(
+            `    Δ ${METRIC_LABELS[delta.metric].padEnd(9)} ${delta.mean >= 0 ? '+' : ''}${delta.mean.toFixed(4)}  ` +
+              `95%-KI [${delta.ci95[0].toFixed(4)}, ${delta.ci95[1].toFixed(4)}]  t=${delta.tStatistic.toFixed(1)}`,
+          )
+        }
+      }
+    }
+    const path = str(args, 'report', 'out/alpha-test-split.md')
+    writeFile(path, buildTestConfirmationSection(confirmations))
+    console.log('')
+    console.log(`Report: ${path}`)
+    return 0
+  }
+
+  for (let round = 0; ; round++) {
+    results.length = 0
+    for (const set of sets) {
+      console.log(`Alpha-Sweep "${set.setName}" / tuning / ${duration}s — α ∈ {${alphas.join(', ')}}, ${folds} Folds.`)
+      let last = 0
+      const result = await alphaSweep({
+        setName: set.setName,
+        duration,
+        folds,
+        alphas,
+        ...(limit ? { limit } : {}),
+        onProgress: (done, total) => {
+          if (done - last >= 25 || done === total) {
+            last = done
+            process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+          }
+        },
+      })
+      process.stdout.write(`\r  ${result.imageCount} Bilder out-of-sample bewertet     \n`)
+      printAlpha(result)
+      results.push(result)
+    }
+
+    // A2: „und weiter, falls die Kurve am Ende noch steigt".
+    // `--no-extend` landet als eigener Schlüssel im Parser, nicht als
+    // `extend: false` — dieselbe Schreibweise wie bei `--no-mean-map`.
+    if (args['no-extend'] === true || args.extend === false || round >= 2) break
+    const rising = new Set(results.flatMap((result) => stillRising(result)))
+    if (rising.size === 0) break
+    const next = extendedAlphas(alphas)
+    console.log('')
+    console.log(
+      `Die Kurve steigt am oberen Ende noch (${[...rising].map((id) => METRIC_LABELS[id]).join(', ')}) — ` +
+        `verlängert um α = ${next.join(', ')}.`,
+    )
+    notes.push(
+      `Der Sweep wurde verlängert: bei α = ${Math.max(...alphas)} stiegen ${[...rising]
+        .map((id) => METRIC_LABELS[id])
+        .join(', ')} gegenüber dem vorletzten Punkt noch über den Standardfehler hinaus.`,
+    )
+    alphas = [...alphas, ...next]
+  }
+
+  const reportPath = str(args, 'report', 'out/alpha.md')
+  let markdown = buildAlphaReport(results, timestamp(), notes)
+
+  if (args.confirm) {
+    const winners = results.map((result) => decisionFor(result).winner).filter((alpha): alpha is number => alpha !== null)
+    const chosen = num(args, 'chosen', winners.length > 0 ? Math.max(...winners) : results[0].referenceAlpha)
+    console.log('')
+    console.log(`Test-Split, einmalig: α = ${chosen} gegen α = ${results[0].referenceAlpha}.`)
+    const confirmations: TestConfirmation[] = []
+    for (const set of sets) {
+      const confirmation = await confirmOnTest({
+        setName: set.setName,
+        duration,
+        alphas: [chosen],
+        priorAsset: set.priorAsset,
+        referenceAlpha: results.find((result) => result.setName === set.setName)?.referenceAlpha ?? 0.3,
+      })
+      confirmations.push(confirmation)
+      console.log(`  ${set.setName}: ${confirmation.imageCount} Bilder`)
+      for (const alpha of confirmation.alphas) {
+        const metrics = confirmation.metrics.get(alpha)!
+        console.log(
+          `    α ${String(alpha).padEnd(4)} ${METRIC_IDS.map((id) => `${METRIC_LABELS[id]} ${metrics[id].mean.toFixed(3)}`).join('  ')}`,
+        )
+      }
+    }
+    markdown += '\n\n---\n\n' + buildTestConfirmationSection(confirmations)
+  }
+
+  writeFile(reportPath, markdown)
+  console.log('')
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+function printAlpha(result: AlphaSweepResult): void {
+  console.log('')
+  console.log(`  Konzentration (Top-5-%-Masse): Ground Truth ${result.truthConcentration.mean.toFixed(3)}`)
+  console.log(`  ${'α'.padEnd(6)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}${'Konz.'.padStart(10)}`)
+  for (const point of result.points) {
+    const cells = METRIC_IDS.map((id) => point.metrics[id].mean.toFixed(3).padStart(10)).join('')
+    console.log(`  ${String(point.alpha).padEnd(6)}${cells}${point.concentration.mean.toFixed(3).padStart(10)}`)
+  }
+  const meanMapCells = METRIC_IDS.map((id) => result.meanMap.metrics[id].mean.toFixed(3).padStart(10)).join('')
+  console.log(`  ${'Mean'.padEnd(6)}${meanMapCells}${result.meanMap.concentration.mean.toFixed(3).padStart(10)}`)
+  const decision = decisionFor(result)
+  console.log(
+    `  Bester Wert — ${DECISION_METRICS.map((id) => `${METRIC_LABELS[id]} α=${decision.best[id]}`).join(', ')}` +
+      `   (KL α=${decision.best.kl}, nicht Kriterium)`,
+  )
+  console.log('')
+}
+
+// ---------------------------------------------------------------------------
+// visual-check — 1.2 A4: die zwei Prüffälle am Onboarding-Screen
+//
+//   npm run visual-check -- --alphas 0.3,0.5
+// ---------------------------------------------------------------------------
+
+async function runVisualCheckCommand(args: Args): Promise<number> {
+  const alphas = typeof args.alphas === 'string'
+    ? args.alphas.split(',').map(Number).filter(Number.isFinite)
+    : [0.3, 0.5, 0.8, 1.2]
+
+  console.log(`Prüffall Onboarding-Screen 393 x 852 — α ∈ {${alphas.join(', ')}}`)
+  console.log('KONSTRUIERT, nicht beobachtet: der Screen prüft zwei Fragen mit bekannter Antwort.')
+  console.log('Keine Zahl von hier gehört in eine Feuerrate oder in einen Metrik-Vergleich.')
+  const result = await runVisualCheck({ alphas })
+
+  for (const region of result.regions) {
+    console.log('')
+    console.log(`${region.label} — ${region.question}`)
+    console.log(`  ${'α'.padEnd(6)}${'Mittel'.padStart(9)}${'Spitze'.padStart(9)}${'Perzentil'.padStart(11)}   Farbe der Spitze`)
+    for (const picture of result.pictures) {
+      const measurement = picture.measurements.find((entry) => entry.regionId === region.id)!
+      console.log(
+        `  ${String(picture.alpha).padEnd(6)}${measurement.mean.toFixed(3).padStart(9)}` +
+          `${measurement.max.toFixed(3).padStart(9)}${(measurement.percentileOfMax * 100).toFixed(1).padStart(10)} %   ` +
+          measurement.bandOfMax,
+      )
+    }
+  }
+
+  console.log('')
+  console.log('Rang des CTA unter den Klick-Kandidaten:')
+  for (const picture of result.pictures) {
+    console.log(`  α ${String(picture.alpha).padEnd(5)} Rang ${picture.ctaRank ?? '—'} von ${picture.candidateCount}`)
+  }
+
+  const target = str(args, 'out', 'out/a4-onboarding.png')
+  writeFile(target, result.sheet)
+  console.log('')
+  console.log(`Bild: ${target}  (links das Original, danach je Alpha eine Spalte)`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// side-effects — 1.2 A5: Feuerraten der ausgelieferten Regeln vor und nach
+// einer Änderung an blendAlpha
+//
+//   npm run side-effects -- --before 0.3 --after 0.5
+// ---------------------------------------------------------------------------
+
+async function runSideEffects(args: Args): Promise<number> {
+  const before = num(args, 'before', 0.3)
+  const after = num(args, 'after', 0.5)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log(`A5 — Feuerraten der ausgelieferten Regeln bei α = ${before} gegen α = ${after}.`)
+  const result = await measureSideEffects({
+    before,
+    after,
+    ...(limit ? { limit } : {}),
+    onProgress: (message) => console.log(`  ${message} …`),
+  })
+
+  console.log('')
+  for (const ruleId of SHIPPED_RULES) {
+    console.log(`${ruleId}`)
+    for (const entry of result.before.entries.filter((item) => item.ruleId === ruleId)) {
+      const other = result.after.entries.find((item) => item.ruleId === ruleId && item.population === entry.population)
+      const rate = (value: number | null): string => (value === null ? '     —' : `${(value * 100).toFixed(1).padStart(6)}%`)
+      console.log(
+        `  ${entry.population.padEnd(46)} ${rate(entry.rate)} → ${rate(other?.rate ?? null)}` +
+          `   (${entry.evaluated} bewertet, ${entry.blocked} blockiert)`,
+      )
+    }
+  }
+
+  const notes: string[] = []
+  if (limit) notes.push(`Auf ${limit} Bilder je echter Population begrenzt (\`--limit\`) — keine Abnahmezahl.`)
+  const reportPath = str(args, 'report', 'out/a5-nebenwirkungen.md')
+  writeFile(reportPath, buildSideEffectReport(result, timestamp(), notes))
+  console.log('')
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // crossval — k-fold over the whole category, both data-dependent parts refit
 // ---------------------------------------------------------------------------
 
@@ -734,6 +1006,23 @@ export async function main(argv: readonly string[]): Promise<number> {
         'npm run epic-d -- [options]      misst, ob Betrachtungsdauer ein Prior-Effekt ist',
         '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
         '',
+        'npm run alpha -- [options]       1.2 A — Alpha-Kurve, Tuning-Split, kreuzvalidiert',
+        '  --alphas <liste>    Kommaliste der Alpha-Werte                        (default: 0.3,0.5,0.8,1.2)',
+        '  --fixtures <liste>  Kommaliste der Sets                (default: ueyes-web,ueyes-mobile)',
+        '  --no-extend         nicht verlängern, auch wenn die Kurve am Ende noch steigt',
+        '  --confirm           danach EINMAL den Test-Split, mit dem gewählten Wert',
+        '  --confirm-only      nur den Test-Split, ohne den Sweep zu wiederholen',
+        '  --chosen <α>        überschreibt, welcher Wert bestätigt wird',
+        '  --reference <α>     Vergleichswert für --confirm-only              (default: 0.3)',
+        '',
+        'npm run visual-check -- [options]  1.2 A4 — der Onboarding-Prüffall, je Alpha ein Bild',
+        '  --alphas <liste>    Kommaliste der Alpha-Werte                    (default: 0.3,0.5,0.8,1.2)',
+        '  --out <pfad>        Zielpfad des PNG                        (default: out/a4-onboarding.png)',
+        '',
+        'npm run side-effects -- [options]  1.2 A5 — Feuerraten vor und nach einer Alpha-Änderung',
+        '  --before <α> --after <α>   die beiden verglichenen Werte              (default: 0.3 / 0.5)',
+        '  --limit <n>         Bilder je echter Population begrenzen',
+        '',
         'npm run crossval -- [options]    k-fache Kreuzvalidierung über Tuning + Test',
         '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
         '  --folds <k>         Anzahl Folds                                                  (default: 5)',
@@ -752,6 +1041,9 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   try {
     if (args['findings-audit']) return await runFindingsAudit(args)
+    if (args.alpha) return await runAlpha(args)
+    if (args['visual-check']) return await runVisualCheckCommand(args)
+    if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)
     if (args.crossval) return await runCrossval(args)
     if (args['build-prior']) return runBuildPrior(args)

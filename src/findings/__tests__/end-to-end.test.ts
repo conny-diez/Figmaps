@@ -276,10 +276,26 @@ describe('end-to-end reachability of every rule', () => {
     // that has neither, for the deeper one to lead. On the constructed frames
     // that combination does not occur, and the rule fires 0 of 24 times — see
     // `rules.ts` for why it is not shipped.
+    //
+    // DER WETTBEWERBER STAND BIS 1.2 OBEN LINKS (x 80, y 500), UND DAS WAR EIN
+    // FEHLER IM TESTAUFBAU. Mit `blendAlpha` 0,3 gewann der CTA dort mit
+    // 0,5227 gegen 0,4773 — vier Tausendstel Vorsprung im Score. Beim Umstieg
+    // auf 0,5 (siehe `params.ts`) kippte das Verhältnis, und zwar schon bei
+    // etwa 0,35: 0,4941 gegen 0,5059. „Diese Regel ist erreichbar" hing damit
+    // an der dritten Nachkommastelle eines Engine-Parameters, ohne dass
+    // irgendetwas an der Regel falsch gewesen wäre.
+    //
+    // Der Wettbewerber steht jetzt dort, wo ein Impressum-Link wirklich steht —
+    // unten rechts im ersten Viewport, also in der ruhigsten Ecke eines
+    // oben-links-lastigen Priors. Der CTA führt damit über den ganzen geprüften
+    // Alpha-Bereich (0,3 → 0,6875, 0,5 → 0,6521, 0,8 → 0,6067). Der Test prüft
+    // wieder, was er prüfen soll: dass die Regel *überhaupt* auslösbar ist —
+    // nicht, ob zwei fast gleich starke Kandidaten in dieser Engine-Version
+    // gerade in dieser Reihenfolge stehen.
     const source = canvas(720, 1000, [248, 249, 250])
     box(source, 40, 470, 620, 200, [0, 0, 0]) // just past fold 1
     const signals = [
-      signal({ name: 'Impressum', nameHints: ['link'], x: 80, y: 500, width: 160, height: 40 }),
+      signal({ name: 'Impressum', nameHints: ['link'], x: 1240, y: 820, width: 160, height: 40 }),
       signal({ name: 'Jetzt anfragen', nameHints: ['button', 'cta'], hasReactions: true, x: 100, y: 1000, width: 1200, height: 380 }),
     ]
     const ids = await run({ source, signals, frameWidth: 1440, frameHeight: 2000, includeUnshipped: true })

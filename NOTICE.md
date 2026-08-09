@@ -119,9 +119,9 @@ Veröffentlichung zu klären sind:
    abgeleitetes Werk gilt und die Namensnennung tragen müsste, ist eine
    juristische Bewertung. Technisch wäre es umsetzbar (die Fußzeile jeder Map
    ließe sich um eine Zeile ergänzen); ob es nötig ist, entscheiden wir nicht.
-2. **Interne vs. öffentliche Nutzung.** Für die interne Verwendung bei
-   meinestadt.de gelten dieselben CC-BY-Pflichten; beim Publishing in die
-   Figma Community kommt die Sichtbarkeit in der Store-Beschreibung hinzu.
+2. **Interne vs. öffentliche Nutzung.** Für die rein interne Verwendung gelten
+   dieselben CC-BY-Pflichten; beim Publishing in die Figma Community kommt die
+   Sichtbarkeit in der Store-Beschreibung hinzu.
 
 ## Manrope und JetBrains Mono — Schriften in `assets/fonts/`
 

@@ -44,7 +44,7 @@ describe('extractNameHints', () => {
     expect(extractNameHints('')).toEqual([])
   })
 
-  it('matches German layer names — the whole library at meinestadt.de is German', () => {
+  it('matches German layer names — a library can be named entirely in German', () => {
     expect(extractNameHints('Anmelden')).toEqual(['melden'])
     expect(extractNameHints('Kategorie-Kachel')).toEqual(['kachel', 'kategorie'])
     expect(extractNameHints('Weiter zur Auswahl')).toEqual(['auswahl', 'weiter'])

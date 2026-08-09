@@ -221,7 +221,7 @@ type SourceNode = Parameters<typeof placeMaps>[0]
 
 const sourceNode = {
   id: 'frame:1',
-  name: 'Meine Jobs - beworben',
+  name: 'Übersicht - Detailansicht',
   width: 1440,
   height: 4000,
   absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 4000 },
