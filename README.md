@@ -1079,11 +1079,24 @@ eine. Keine Konstante ist über die Populationen hinweg trennscharf — 0,45
 feuert auf 100/100/100/0 %, 0,18 auf 29/50/54/0 %, 0,12 auf 0/0/13/0 %. Und was
 überwiegend gemeldet würde, ist die neunte von zwölf gleichartigen Listenkarten.
 
-Offen ist damit nicht die Schwelle, sondern wieder eine Bedeutungsfrage: ob
-wiederholte Listeneinträge als eigenständige Bedienelemente zählen, oder ob der
-Vergleich auf Kandidaten vergleichbarer Rolle zu beschränken ist. Dazu fehlt
-außerdem das Set mit echten Layer-Bäumen (PRD Set 2) — ohne Layer-Baum gibt es
-keine Kandidaten, also an UEyes grundsätzlich keine Messung.
+**Der Weg zurück ist entschieden, aber nicht Teil dieses Stands** (1.2 oder
+später): vor der Minimum-Bildung werden **gleichartige, wiederholte Kandidaten
+zu einer Gruppe zusammengefasst und nur einmal gewertet** — gleicher
+Elementtyp, ähnliche Größe, Teil eines wiederholten Layout-Musters. Erst danach
+ist die Größe wieder sinnvoll kalibrierbar.
+
+Damit wird aus „die neunte von zwölf Listenkarten ist die leiseste" wieder die
+Aussage, die die Regel machen will: von den *unterscheidbaren* Bedienelementen
+dieses Screens ist dieses das leiseste. Die Kandidatenzahl hängt dann an der
+Zahl der Rollen statt an der Zahl der Listeneinträge — und damit fällt der
+Grund weg, aus dem keine Konstante über die Frame-Formen hinweg trennscharf
+war. `NodeSignal` trägt schon alles, was ein Erkenner braucht (`parentId`,
+`name`, `type`, `width`/`height`); dasselbe Muster erkennt `label.ts` bereits,
+um „3. von 3" zu schreiben.
+
+Für die Neukalibrierung danach fehlt weiterhin das Set mit echten Layer-Bäumen
+(PRD Set 2) — ohne Layer-Baum gibt es keine Kandidaten, also an UEyes
+grundsätzlich keine Messung.
 
 ### Dieselbe Frage für alle sechs Regeln
 
@@ -1602,3 +1615,6 @@ Bewusst ausgelassen, obwohl fachlich attraktiv (PRD §2):
 - **Kein Import echter Analytics-Daten.**
 - **Keine Scanpath-Animation** — sieht spektakulär aus, ist deutlich schwerer
   vorherzusagen als eine Saliency-Map und ändert keine Design-Entscheidung.
+- **`dead-cta` bleibt abgeschaltet.** Der nächste Schritt ist festgelegt:
+  gleichartige, wiederholte Kandidaten vor der Minimum-Bildung gruppieren und
+  einmal werten, dann neu kalibrieren. Siehe „`dead-cta` ist ausgeschaltet".

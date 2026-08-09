@@ -442,12 +442,30 @@ const flat: Rule = {
  * auf 0/0/13/0 %. Was dabei überwiegend gemeldet würde, ist die neunte von
  * zwölf gleichartigen Listenkarten, und das ist keine Aussage über den Entwurf.
  *
- * Offen ist damit nicht mehr die Schwelle, sondern wieder eine Bedeutungsfrage:
- * ob wiederholte Listeneinträge überhaupt als eigenständige Bedienelemente
- * zählen sollen, oder ob der Vergleich auf Kandidaten vergleichbarer Rolle zu
- * beschränken ist. Dazu fehlt außerdem das Set mit echten Layer-Bäumen
- * (PRD Set 2) — ohne Layer-Baum gibt es keine Kandidaten, also an UEyes
- * grundsätzlich keine Messung.
+ * ENTSCHIEDEN FÜR 1.2 ODER SPÄTER, nicht in diesem Stand umgesetzt:
+ *
+ *   Vor der Minimum-Bildung werden **gleichartige, wiederholte Kandidaten zu
+ *   einer Gruppe zusammengefasst und nur einmal gewertet** — gleicher
+ *   Elementtyp, ähnliche Größe, Teil eines wiederholten Layout-Musters. Erst
+ *   danach ist die Größe wieder sinnvoll kalibrierbar.
+ *
+ * Damit wird aus „die neunte von zwölf Listenkarten ist die leiseste" wieder
+ * die Aussage, die die Regel machen will: „von den *unterscheidbaren*
+ * Bedienelementen dieses Screens ist dieses das leiseste". Die Kandidatenzahl
+ * hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge, und
+ * damit fällt der Grund weg, aus dem keine Konstante über die Frame-Formen
+ * hinweg trennscharf war.
+ *
+ * `NodeSignal` trägt bereits, was ein Erkenner dafür braucht: `parentId`
+ * (Geschwister im selben Container), `name` und `type` (gleiche Art), sowie
+ * `width`/`height` (ähnliche Größe). Ein erster Schnitt wären Geschwister mit
+ * demselben Elternteil, demselben Namen und Flächen innerhalb weniger Prozent
+ * voneinander — das ist genau das Muster, das `label.ts` schon benutzt, um
+ * „3. von 3" zu erkennen.
+ *
+ * Erst danach neu kalibrieren, und dafür fehlt weiterhin das Set mit echten
+ * Layer-Bäumen (PRD Set 2) — ohne Layer-Baum gibt es keine Kandidaten, also an
+ * UEyes grundsätzlich keine Messung.
  */
 const deadCta: Rule = {
   id: 'dead-cta',
