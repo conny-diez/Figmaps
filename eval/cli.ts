@@ -49,6 +49,7 @@ import { buildGateFixtures } from './gate-fixtures'
 import { measureBandGate, type ThresholdCandidate } from './band-gate'
 import { measureColdFold } from './cold-fold'
 import { analyseCtaRank, measureFindingLoad } from './finding-load'
+import { sweepCompetition } from './competition'
 import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
@@ -1239,6 +1240,44 @@ async function runFindingLoad(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// competition — 1.2 B1: nach der Umstellung des Abstandsmaßes neu kalibrieren
+//
+//   npm run competition
+// ---------------------------------------------------------------------------
+
+async function runCompetition(args: Args): Promise<number> {
+  const distances = typeof args.distances === 'string'
+    ? args.distances.split(',').map(Number).filter(Number.isFinite)
+    : [0.15, 0.2, 0.25, 0.3, 0.35]
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log('competition — Abstand jetzt als Anteil der DIAGONALE. Alle alten Quoten sind ungültig.')
+  console.log(`Ausgeliefert: Abstand ${ENGINE_CONFIG.findings.competitionMinDistanceDiagonal}, Tal ${ENGINE_CONFIG.findings.competitionValleyRatio}, Intensität ${ENGINE_CONFIG.findings.competitionIntensity}`)
+  const results = await sweepCompetition({ distances, ...(limit ? { limit } : {}), onProgress: (m) => console.log(`  ${m} …`) })
+
+  for (const result of results) {
+    console.log('')
+    console.log(`${result.population.label} — ${result.frameCount} Frames`)
+    console.log(`  ${'Abstand'.padEnd(9)}${'2. Max'.padStart(9)}${'Tal p5'.padStart(9)}${'Median'.padStart(9)}${'p95'.padStart(9)}${'Schwelle'.padStart(10)}${'Rate'.padStart(9)}`)
+    for (const point of result.points) {
+      console.log(
+        `  ${String(point.distance).padEnd(9)}` +
+          `${point.secondPeakQuantiles[2].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[0].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[2].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[4].toFixed(3).padStart(9)}` +
+          `${`p${(point.valleyThresholdQuantile * 100).toFixed(0)}`.padStart(10)}` +
+          `${`${(point.rate * 100).toFixed(1)} %`.padStart(9)}`,
+      )
+    }
+  }
+  console.log('')
+  console.log('„Schwelle" ist die Stelle, an der competitionValleyRatio in der Talverteilung sitzt.')
+  console.log('Liegt sie bei p0 oder p100, kann die Regel nur nie oder immer feuern.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
 //
 //   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
@@ -1600,6 +1639,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args['band-gate']) return await runBandGate(args)
     if (args['cold-fold']) return await runColdFold()
     if (args['finding-load']) return await runFindingLoad(args)
+    if (args.competition) return await runCompetition(args)
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)

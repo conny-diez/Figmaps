@@ -2344,6 +2344,71 @@ an ein Set mit Layer-Bäumen. Beides fehlt. Solange es fehlt, ist an dieser Rege
 nichts zu justieren — sie hat ohnehin keine Schwelle, „nicht auf Rang 1" ist
 eine Definition.
 
+### B1 — `competition` misst den Abstand jetzt auf der Diagonale
+
+```bash
+npm run competition
+```
+
+Der Mindestabstand der beiden Spitzen war ein Anteil der Karten**breite** und
+bedeutete je nach Frame-Form 3,9 % bis 48,0 % der Höhe. Er ist jetzt ein Anteil
+der **Diagonale** — die Größe, die mit der Form skaliert, statt eine Kante
+willkürlich auszuzeichnen. **Alle Quoten dieser Regel von vor 1.2 B1 sind damit
+ungültig**, auch die 3,3 % / 10,0 % aus 1.1; das stand seit 1.1 so im Code und
+ist hiermit eingelöst.
+
+Getrennte x/y-Schwellen wären ausdrucksstärker — „nebeneinander" ist etwas
+anderes als „untereinander" —, sind aber **zwei** Konstanten auf einer
+Population, auf der die Regel selten feuert. Zwei Werte an so wenigen Auslösern
+zu kalibrieren hieße, Rauschen zu kalibrieren.
+
+Feuerrate über je 495 Bilder, die beiden Ein-Viewport-Populationen — der Fall,
+um den es in B geht:
+
+| Abstand (Anteil Diagonale) | Webseiten | Telefon |
+|---|---:|---:|
+| 0,15 | 47,1 % | 22,2 % |
+| 0,20 | 31,1 % | 18,6 % |
+| **0,25** | **15,8 %** | **15,2 %** |
+| 0,30 | 4,0 % | 10,5 % |
+| 0,35 | 0,8 % | 6,3 % |
+
+**Bei 0,25 sind die beiden Formen praktisch gleich.** Darunter unterscheiden sie
+sich um mehr als das Doppelte, darüber kippt das Verhältnis um. Genau diese
+Formunabhängigkeit war der Zweck der Umstellung — und sie ist der Grund für den
+Wert, nicht die Rate selbst, für die es keine Ground Truth gibt.
+
+Die bindende Bedingung ist dabei **nicht** der Abstand, sondern
+`competitionIntensity`: je weiter der Suchradius, desto schwächer das zweite
+Maximum. Sein Median fällt auf Webseiten von 0,873 (bei 0,15) auf 0,390 (bei
+0,35) und unterschreitet die Schwelle 0,65 zwischen 0,25 und 0,30. Das
+Talverhältnis sitzt bei 0,25 in beiden Ein-Viewport-Populationen innerhalb der
+Verteilung (p22 bzw. p34) — die Regel kann dort also beides, feuern und
+schweigen.
+
+#### Ein neuer Befund: auf segmentierten Telefon-Frames feuert sie nicht mehr
+
+| Population | Rate bei 0,25 |
+|---|---:|
+| UEyes Webseiten, ein Viewport | 15,8 % |
+| UEyes Webseiten, segmentiert | 7,1 % |
+| UEyes Telefon, ein Viewport | 15,2 % |
+| **UEyes Telefon, segmentiert** | **0,0 %** |
+| Telefon, ein Viewport (konstruiert) | 0,0 % |
+| beide konstruierten Scroll-Formen | 0,0 % |
+
+Der Grund ist strukturell und nicht der Abstand: auf der komponierten Karte ist
+jeder tiefere Abschnitt um `sectionAttenuation^i` gedämpft, das zweite Maximum
+erreicht `competitionIntensity` = 0,65 dort nicht mehr. **Dieselbe Blockade wie
+bei `cta-below-fold`**, und dieselbe Konsequenz: die Dämpfung wird dafür nicht
+angefasst, sie ist eine nicht gemessene Annahme.
+
+`competition` ist damit faktisch eine **Ein-Viewport-Regel**. Für B ist das
+keine schlechte Nachricht — der Ein-Viewport-Screen ist genau der Fall, für den
+B gebaut wird —, aber es heißt, dass von den zwei belastbaren Regeln auf einer
+gescrollten Telefonseite keine übrig bleibt: `cold-fold` braucht Abschnitte und
+feuert dort, `competition` kann dort nicht.
+
 ### Hinweis auf inhaltsarme Frames
 
 ```bash
@@ -2430,7 +2495,7 @@ siehe [Hinweis auf inhaltsarme Frames](#hinweis-auf-inhaltsarme-frames).
 
 | Was | Beleg | warum jetzt nicht |
 |---|---|---|
-| `competitionMinDistance` misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Kartenhöhe | Tabelle oben | Die Regel ist mit 3–10 % nicht entartet. Eine Umstellung auf die Diagonale oder auf getrennte x/y-Schwellen ändert die Verteilung und verlangt eine eigene Neukalibrierung — ein eigener Schritt. **Die 3–10 % selbst stammen von diesem Maß und sind danach ungültig.** |
+| `competition` kann auf segmentierten Telefon-Frames nicht feuern (0,0 % bei 495 Bildern) | [B1](#b1--competition-misst-den-abstand-jetzt-auf-der-diagonale) | Die Ursache ist `sectionAttenuation`: das zweite Maximum erreicht die Intensitätsschwelle auf der gedämpften Karte nicht mehr. Dieselbe Blockade wie bei `cta-below-fold`, und dieselbe Antwort — die Dämpfung ist eine nicht gemessene Annahme und wird nicht verstellt, damit eine Regel feuert. |
 | `cta-below-fold` ist durch `sectionAttenuation` strukturell unterdrückt (0 von 48 konstruierten Scrollframes) | Tabelle oben | Die Ursache ist die Scroll-Dämpfung, laut `config.ts` ausdrücklich eine **Annahme ohne Messung**. Sie zu ändern, um eine Regel häufiger feuern zu lassen, hieße die Vorhersage an die Regel anzupassen statt umgekehrt. Erst die Dämpfung belegen, dann die Regel. |
 
 Beide stehen zusätzlich als Kommentar an der jeweiligen Regel in

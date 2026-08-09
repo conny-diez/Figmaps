@@ -139,7 +139,9 @@ export function decisionVariable(id: string, input: FindingsInput): number | nul
       for (let i = 0; i < map.values.length; i++) if (map.values[i] > peak) { peak = map.values[i]; peakIndex = i }
       const x1 = peakIndex % map.width
       const y1 = Math.floor(peakIndex / map.width)
-      const minDistance = 0.3 * map.width
+      // Dasselbe Maß wie in der Regel — sonst misst der Audit eine andere Größe
+      // als die, die entscheidet.
+      const minDistance = ENGINE_CONFIG.findings.competitionMinDistanceDiagonal * Math.hypot(map.width, map.height)
       let second = 0
       let secondIndex = -1
       for (let i = 0; i < map.values.length; i++) {

@@ -340,17 +340,29 @@ const ctaBelowFold: Rule = {
  * neu kalibriert — auf der ausgelieferten Karte, in jeder der drei Frame-Formen
  * getrennt. Bis dahin gilt: 10,3 % / 22,4 % ist der Stand, nicht 3,3 % / 10,0 %.
  *
- * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
- * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um
- * eine Größenordnung schwankt. Derselbe Wert 0,3 bedeutet
+ * **Der Abstand ist in 1.2 B1 auf die Diagonale umgestellt und neu
+ * kalibriert.** Vorher war er ein Anteil der Karten*breite* und bedeutete je
+ * nach Frame-Form 3,9 % bis 48,0 % der Höhe — „weit auseinander" hieß auf einem
+ * Telefon etwas völlig anderes als auf einem Desktop. Gemessen mit dem neuen
+ * Maß, je 495 Bilder, die beiden Ein-Viewport-Populationen:
  *
- *   Desktop, ein Viewport   154 px = 48,0 % der Kartenhöhe
- *   Telefon, ein Viewport    71 px = 13,9 %
- *   Telefon, scrollend       77 px =  3,9 %
+ *   Abstand   Webseiten   Telefon
+ *   0,15        47,1 %     22,2 %
+ *   **0,25**    15,8 %     15,2 %
+ *   0,35         0,8 %      6,3 %
  *
- * „weit auseinander" heißt also je nach Frame-Form etwas völlig anderes. Nicht
- * geändert, weil jede Änderung ohne neue Kalibrierung genau der Fehler wäre,
- * um den es hier geht.
+ * Bei 0,25 sind die Raten praktisch gleich — genau die Formunabhängigkeit, die
+ * der Umstellung zugrunde lag. **Alle Quoten von vor 1.2 B1 sind ungültig**,
+ * auch die 3,3 % / 10,0 % aus 1.1: sie stammen vom alten Maß.
+ *
+ * **Auf segmentierten Telefon-Frames feuert die Regel gar nicht mehr** (0,0 %
+ * bei 0,25, ebenso auf beiden konstruierten Scroll-Formen). Der Grund ist
+ * strukturell und nicht der Abstand: auf der komponierten Karte ist jeder
+ * tiefere Abschnitt um `sectionAttenuation^i` gedämpft, das zweite Maximum
+ * erreicht `competitionIntensity` = 0,65 dort nicht mehr. Dieselbe Blockade wie
+ * bei `cta-below-fold`, und dieselbe Konsequenz: die Dämpfung wird dafür nicht
+ * angefasst. `competition` ist damit faktisch eine Ein-Viewport-Regel; auf
+ * Webseiten mit Segmentierung feuert sie noch (7,1 %).
  */
 const competition: Rule = {
   id: 'competition',
@@ -361,7 +373,10 @@ const competition: Rule = {
 
     const x1 = first % attention.width
     const y1 = Math.floor(first / attention.width)
-    const minDistance = cfg.competitionMinDistance * attention.width
+    // Anteil der **Diagonale**, nicht der Breite — siehe `config.ts`. Der alte
+    // Bezug auf die Breite machte „weit auseinander" auf einem Telefon zu etwas
+    // anderem als auf einem Desktop.
+    const minDistance = cfg.competitionMinDistanceDiagonal * Math.hypot(attention.width, attention.height)
 
     const second = argmax(attention.values, (index) => {
       const dx = (index % attention.width) - x1

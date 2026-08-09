@@ -582,8 +582,58 @@ export const ENGINE_CONFIG = {
      * die eigentliche Aussage trägt („zwei getrennte Regionen").
      */
     competitionIntensity: 0.65,
-    /** `competition`: minimum distance between the two peaks, share of width. */
-    competitionMinDistance: 0.3,
+    /**
+     * `competition`: Mindestabstand der beiden Spitzen, als Anteil der
+     * **Bilddiagonale**.
+     *
+     * **Umgestellt in 1.2 B1 — vorher ein Anteil der Karten*breite*.** Das war
+     * der dokumentierte Fehler: derselbe Wert 0,3 bedeutete je nach Frame-Form
+     *
+     *   Desktop, ein Viewport   154 px = 48,0 % der Kartenhöhe
+     *   Telefon, ein Viewport    71 px = 13,9 %
+     *   Telefon, scrollend       77 px =  3,9 %
+     *
+     * „Weit auseinander" hieß also auf einem Telefon etwas völlig anderes als
+     * auf einem Desktop. Auf der Diagonale hieße dasselbe 0,3 zwischen 26 % und
+     * 13 % — immer noch nicht identisch, aber die Diagonale ist die Größe, die
+     * mit der Form skaliert, statt eine Kante willkürlich auszuzeichnen.
+     *
+     * **Warum die Diagonale und nicht getrennte x/y-Schwellen.** Getrennte
+     * Schwellen wären ausdrucksstärker — „nebeneinander" ist etwas anderes als
+     * „untereinander" —, aber sie sind **zwei** Konstanten statt einer, auf
+     * einer Population, auf der die Regel ohnehin selten feuert (2,6 % bis
+     * 22,4 %). Zwei Werte an so wenigen Auslösern zu kalibrieren hieße, Rauschen
+     * zu kalibrieren. Die Diagonale ist die sparsamere Wahl; getrennte Schwellen
+     * bleiben möglich, sobald es eine Population gibt, die sie trägt.
+     *
+     * Der Name trägt die Einheit, weil der alte Wert sonst stillschweigend
+     * weitergelesen würde.
+     *
+     * **0,25 ist gemessen** (`npm run competition`, je 495 Bilder). Die
+     * Feuerrate der beiden Ein-Viewport-Populationen — der Fall, um den es in
+     * 1.2 B geht:
+     *
+     *   Abstand   Webseiten   Telefon
+     *   0,15        47,1 %     22,2 %
+     *   0,20        31,1 %     18,6 %
+     *   **0,25**    15,8 %     15,2 %
+     *   0,30         4,0 %     10,5 %
+     *   0,35         0,8 %      6,3 %
+     *
+     * **Bei 0,25 sind die beiden Formen praktisch gleich** (15,8 gegen 15,2 %).
+     * Darunter unterscheiden sie sich um mehr als das Doppelte, darüber kippt
+     * das Verhältnis um. Genau diese Formunabhängigkeit war der Zweck der
+     * Umstellung, und sie ist der Grund für den Wert — nicht die Rate selbst,
+     * für die es keine Ground Truth gibt.
+     *
+     * Die bindende Bedingung ist dabei **nicht** der Abstand, sondern
+     * `competitionIntensity`: je weiter der Suchradius, desto schwächer das
+     * zweite Maximum. Sein Median fällt auf Webseiten von 0,873 (0,15) auf
+     * 0,390 (0,35) und unterschreitet die Schwelle 0,65 zwischen 0,25 und 0,30.
+     * Das Talverhältnis sitzt bei 0,25 in beiden Ein-Viewport-Populationen
+     * innerhalb der Verteilung (p22 bzw. p34), die Regel kann dort also beides.
+     */
+    competitionMinDistanceDiagonal: 0.25,
     /**
      * `competition`: the path between the two peaks must dip below
      * `zweites Maximum x this`. Without the valley test a single wide bright
