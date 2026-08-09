@@ -151,6 +151,15 @@ export function shipsPriorAsset(): boolean {
   return Object.keys(PRIOR_ASSETS).length > 0
 }
 
+/**
+ * The attribution in the form that fits on a rendered map's footer.
+ *
+ * An exported PNG leaves Figma without the panel, so the notice has to be on
+ * the image too — CC BY 4.0 attaches to the derived asset, not to the UI that
+ * happened to produce it. The panel carries the long form.
+ */
+export const PRIOR_ATTRIBUTION_SHORT = 'Ortsprior: UEyes (Jiang et al. 2023), CC BY 4.0'
+
 /** Categories that have a prior for every shipped duration. */
 export function availablePriorCategories(): PriorAssetId[] {
   return PRIOR_ASSET_IDS.filter((id) => PRIOR_DURATIONS.every((duration) => hasPriorAsset(id, duration) === true))

@@ -7,11 +7,11 @@
  */
 import { ENGINE_CONFIG } from '../engine/config'
 import { RULES } from './rules'
-import { SEVERITY_ORDER, type Finding, type FindingsInput } from './types'
+import { SEVERITY_ORDER, type Finding, type FindingsInput, type Rule } from './types'
 
-export function collectFindings(input: FindingsInput): Finding[] {
+export function collectFindings(input: FindingsInput, rules: readonly Rule[] = RULES): Finding[] {
   const found: Finding[] = []
-  for (const rule of RULES) {
+  for (const rule of rules) {
     const finding = rule.evaluate(input)
     if (finding) found.push(finding)
   }
@@ -23,5 +23,6 @@ export function collectFindings(input: FindingsInput): Finding[] {
     .map((entry) => entry.finding)
 }
 
-export { RULES, formatPercent, isPrimaryCandidate } from './rules'
+export { ALL_RULES, RULES, formatPercent, isPrimaryCandidate } from './rules'
+export { describeElement, elementLabel, elementText, quote } from './label'
 export * from './types'

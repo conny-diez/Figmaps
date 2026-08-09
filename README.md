@@ -163,7 +163,9 @@ src/
 │  ├─ imageops-node.ts     A-1  ImageOps für Node
 │  └─ png.ts               A-1  abhängigkeitsfreier PNG-Codec
 ├─ findings/
-│  ├─ rules.ts             C-1  sechs deterministische Regeln
+│  ├─ rules.ts             C-1  sechs Regeln, davon fünf ausgeliefert
+│  ├─ label.ts             C-1  Benennung: Textinhalt vor Layername, Lageangabe
+│  ├─ derive.ts            C-1  der eine Pfad von der Analyse zu den Befunden
 │  ├─ types.ts             C-1  Finding, Severity
 │  └─ __tests__/           je Regel ein Test + die Sprachregeln aus C-2
 ├─ render/
@@ -173,7 +175,7 @@ src/
 │  ├─ clickmap.ts          FR-5 Rendering
 │  ├─ focusmap.ts          FR-6
 │  ├─ folds.ts             B-2  gestrichelte Fold-Marker
-│  └─ legend.ts            Legende + Disclaimer-Fußzeile
+│  └─ legend.ts            Legende + zweizeilige Fußzeile (Prior, Dauer, CC BY)
 └─ ui/
    ├─ pipeline.ts          iframe-Pipeline: PNG rein, Map-PNGs raus
    ├─ logo.tsx             FigMaps-Wortmarke als Inline-SVG
@@ -874,14 +876,42 @@ Nach der Berechnung läuft ein Satz deterministischer Regeln über Heatmap,
 Clickmap und Node-Signale. Jede Regel liefert höchstens ein Finding; sortiert
 wird nach Severity, angezeigt werden maximal sechs.
 
-| ID | Auslöser |
-|---|---|
-| `cta-rank` | Primärer Kandidat der Clickmap nicht auf Rang 1 |
-| `cta-below-fold` | Höchstbewerteter Kandidat unterhalb Fold 1 |
-| `competition` | Zwei Regionen über 80 % Intensität, weit auseinander, mit Tal dazwischen |
-| `cold-fold` | Above-the-fold-Abschnitt hat niedrigere Spitzenintensität als ein späterer |
-| `flat` | Differenz zwischen 90. und 50. Perzentil unter Schwellwert |
-| `dead-cta` | Interaktives Element im untersten Aufmerksamkeitsquartil |
+| ID | Auslöser | ausgeliefert |
+|---|---|---|
+| `cta-rank` | Primärer Kandidat der Clickmap nicht auf Rang 1 | ja |
+| `cta-below-fold` | Höchstbewerteter Kandidat unterhalb Fold 1 | ja |
+| `competition` | Zwei Regionen über 65 % Intensität, weit auseinander, mit Tal dazwischen | ja |
+| `cold-fold` | Above-the-fold-Abschnitt bündelt Aufmerksamkeit schwächer als ein späterer | ja |
+| `dead-cta` | Interaktives Element unter 45 % des stärksten Kandidaten seines Viewports | **nein** (siehe unten) |
+| `flat` | Konzentration des Bildanalyse-Anteils unter Schwellwert | ja |
+
+`dead-cta` ist abgeschaltet: die Größe, die sie misst, ist ein Minimum über
+alle Kandidaten und sinkt mit deren Anzahl, sodass keine Konstante über die
+Frame-Formen hinweg trennscharf ist. `flat` war es aus verwandtem Grund und ist
+es nicht mehr — siehe die beiden Abschnitte unten.
+
+Die Reihenfolge der Regeln in `rules.ts` ist die Reihenfolge, in der Befunde
+gelistet werden — als **Tie-Break innerhalb einer Severity**, denn sortiert
+wird weiterhin zuerst nach Severity (C-1): `flat`, `cta-below-fold`,
+`cta-rank`, `dead-cta`, `competition`, `cold-fold`. `flat` steht vorn, obwohl
+es nicht ausgeliefert wird — dort gehört es hin, sobald seine Schwelle neu
+geschätzt ist.
+
+### Wie ein Element benannt wird
+
+Ein Befund nennt ein Element nach seinem **Textinhalt**, nicht nach seinem
+Layernamen: „JobsResultCard" ist eine Tatsache über die Datei, der Prüfende
+sieht eine Karte, auf der „Fahrzeugeinkäufer im Außendienst" steht. Ein
+Container erbt dabei den prominentesten Text seines Teilbaums (größte
+Schriftgröße, dann größte Fläche, dann weiter oben); erst wenn der Teilbaum
+keinen Text enthält, bleibt der Layername.
+
+Sind mehrere Elemente danach **gleich benannt** — drei „Details ansehen" —
+kommt eine Lageangabe dazu: `‚Details ansehen‘ (3. von 3, unten)`. Ohne sie ist
+der Befund bei drei identischen Karten nicht auflösbar. Sind die Karten durch
+ihren Text unterscheidbar, entfällt die Angabe wieder. Dasselbe gilt für das
+Klick-Ranking im Panel, wo drei identische Zeilen mit drei Prozentwerten am
+meisten stören (`src/findings/label.ts`).
 
 ### Feuert jede Regel überhaupt?
 
@@ -940,12 +970,283 @@ wurden beim Wechsel auf `hybrid-v1` nicht nachgemessen.
 Bei `flat` war ein Zwischenstand besonders lehrreich: mit einer skalenfreien,
 aber absoluten Schwelle feuerte sie auf 11 % der Webseiten und auf **90 %** der
 Mobile-Screens. Die Verteilungen der beiden UI-Typen überlappen sich kaum
-(Median 0,163 gegen 0,258), deshalb ist die Schwelle jetzt pro Kategorie
-hinterlegt: „flach" heißt flach *für diese Art Screen*.
+(Median 0,163 gegen 0,258), deshalb ist die Schwelle pro Kategorie hinterlegt:
+„flach" heißt flach *für diese Art Screen*. Das war die richtige Diagnose und
+die falsche Kalibrierung — siehe direkt darunter.
 
-`competition` bleibt mit 2–5 % die selektivste Regel. Das ist kein Fehler —
+### `flat` ist ausgeschaltet
+
+Im Vergleichstest meldete `flat` „keine ausgeprägte visuelle Hierarchie" auf
+einem Screen mit rotem Kopf und blauem Fuß — direkt neben einer Heatmap, die
+genau diese Hierarchie zeigte. Nachgemessen auf 150 UEyes-Mobile-Bildern:
+
+| Konfiguration | Verteilung der Konzentration | Schwelle | Feuerrate |
+|---|---|---:|---:|
+| Geometrie → `web`-Prior, segmentiert (so misst `findings-audit`) | Median 0,194, Spanne 0,124–0,228 | 0,148 | 18 % |
+| `mobile`-Prior, ein Viewport (so läuft ein Telefon-Frame) | Median 0,143, Spanne **0,120–0,181** | 0,200 | **100 %** |
+
+Die Schwelle 0,2 stammt aus der ersten Zeile und wird in der zweiten angewandt.
+`findings-audit.ts` lässt `priorAssetIdFor` über ein 1080 px breites
+UEyes-Bild entscheiden — das ist nach der Regel eine *Webseite*, läuft mit dem
+Web-Prior und wird in Desktop-Abschnitte geschnitten. Ein in Figma gezeichneter
+Telefon-Frame ist 390 px breit und hochkant, läuft mit dem Mobile-Prior und als
+ein einziger Viewport. Beide Unterschiede verschieben die Verteilung, und in der
+ausgelieferten Konfiguration liegt die Schwelle **oberhalb des gesamten
+beobachteten Wertebereichs**. Auf 12 konstruierten Telefon-Frames mit bewusst
+starker Hierarchie feuerte sie 12 von 12 Mal.
+
+Ein Befund, der der Karte daneben widerspricht, kostet mehr Vertrauen, als die
+Regel zurückgeben kann. Sie bleibt deshalb im Code (`shipped: false`), samt
+Erreichbarkeitstest, und wird nicht angeboten, bis die Schwelle **in der
+Konfiguration neu geschätzt ist, in der sie greift** — je UI-Typ *und* je
+Segmentierungszustand.
+
+Die Zahlen in der Tabelle darüber (`flat` 15,2 % auf Mobile) stammen aus der
+ersten Zeile dieser Tabelle und sind für die ausgelieferte Konfiguration nicht
+aussagekräftig. Das ist die eigentliche Lehre: eine Trefferquote ist nur so
+gültig wie die Konfiguration, in der sie gemessen wurde.
+
+Der Audit sagt die Konfiguration deshalb jetzt an, statt sie zu raten, und
+umfasst auch die nicht ausgelieferten Regeln — eine abgeschaltete Regel neu zu
+kalibrieren ist genau der Zweck:
+
+```bash
+npm run findings-audit -- --fixtures ueyes-mobile --prior-asset mobile --single-viewport
+```
+
+```
+Konfiguration: Ortsprior mobile, ein Viewport — die Quoten gelten nur für diese.
+Regel              feuert   stumm  blockiert   Anteil (von bewertbaren)
+  flat               120       0          0   100.0 %  ← feuert IMMER  [nicht ausgeliefert]
+  competition         16     104          0    13.3 %
+  …
+  flat             0.123  0.133  0.144  0.153  0.164   [Konzentration der Top-5-%-Masse]
+```
+
+Nach dem Umbau derselben Regel (siehe unten) meldet derselbe Aufruf 14,0 % statt
+100 %, mit der Entscheidungsgröße bei p5 0,085 gegen eine Schwelle von 0,091.
+
+(`competition` liegt in dieser Konfiguration bei 13,3 % statt der 5,3 % aus der
+Tabelle oben — dieselbe Ursache, hier ohne Folgen, weil die Regel damit im
+brauchbaren Bereich bleibt.)
+
+### `dead-cta` ist ausgeschaltet
+
+Aus verwandtem Grund, gefunden mit derselben Prüfung. Die Entscheidungsgröße war
+„mittlere Aufmerksamkeit des ruhigsten Kandidaten ÷ die des stärksten",
+gemessen auf der **komponierten** Karte — und die dämpft jeden tieferen
+Abschnitt um `sectionAttenuation^i`. Ein Bedienelement in der Fußzeile eines
+gescrollten Frames lag dadurch rechnerisch immer im ruhigen Bereich,
+unabhängig vom Entwurf:
+
+| Population | Verteilung | Schwelle 0,45 liegt | Rate |
+|---|---|---|---:|
+| `synthetic`, ein Viewport, Kandidaten nebeneinander | 0,310–0,994 | bei p3 | 3,3 % |
+| Telefon, ein Viewport (konstruiert, n=24) | 0,128–0,286 | **über max** | 100 % |
+| Desktop, scrollend (konstruiert, n=24) | 0,026–0,212 | **über max** | 100 % |
+| Telefon, scrollend (konstruiert, n=24) | 0,020–0,038 | **über max** | 100 % |
+
+Die 0,45 stammen aus der ersten Zeile — einem Set, dessen Kandidaten alle im
+selben Band eines top-lastigen Priors liegen. Sobald sie über den Frame
+verteilt sind, was der Normalfall ist, fällt der Quotient mechanisch darunter.
+Die Regel meldet dann nicht mehr „visuell ruhig", sondern „weit unten", und
+wiederholt damit `cta-below-fold`.
+
+**Umgebaut, und trotzdem aus.** Der Vergleich läuft jetzt über die
+ungedämpften Abschnittskarten: jeder Kandidat auf der Karte seines eigenen
+Viewports, gemessen gegen den stärksten Kandidaten des Screens. Der
+Befundtext sagt das auch — er nennt beide Elemente und den Anteil, statt eine
+absolute Aussage zu machen:
+
+> ‚Details ansehen' (3. von 3, unten) erreicht 18,4 % der vorhergesagten
+> Aufmerksamkeit der stärksten Schaltfläche ‚Jetzt bewerben', jeweils im
+> eigenen Bildschirmausschnitt gemessen.
+
+Der Anteil der Scroll-Dämpfung ist damit weg — Desktop scrollend ging von
+0,026–0,212 auf 0,161–0,362, Telefon scrollend von 0,020–0,038 auf
+0,115–0,234. Es reicht trotzdem nicht:
+
+| Population | Kandidaten | Verteilung |
+|---|---:|---|
+| `synthetic`, ein Viewport | 2 | 0,451–0,997 |
+| Telefon, ein Viewport | 6–12 | 0,128–0,286 |
+| Telefon, scrollend | 12 | 0,115–0,234 |
+| Desktop, scrollend | 12 | 0,161–0,362 |
+
+Die Größe ist ein **Minimum über N Kandidaten** und sinkt mit deren Anzahl: bei
+zwei Schaltflächen ist „die leiseste" fast nie weit unten, bei zwölf fast immer
+eine. Keine Konstante ist über die Populationen hinweg trennscharf — 0,45
+feuert auf 100/100/100/0 %, 0,18 auf 29/50/54/0 %, 0,12 auf 0/0/13/0 %. Und was
+überwiegend gemeldet würde, ist die neunte von zwölf gleichartigen Listenkarten.
+
+Offen ist damit nicht die Schwelle, sondern wieder eine Bedeutungsfrage: ob
+wiederholte Listeneinträge als eigenständige Bedienelemente zählen, oder ob der
+Vergleich auf Kandidaten vergleichbarer Rolle zu beschränken ist. Dazu fehlt
+außerdem das Set mit echten Layer-Bäumen (PRD Set 2) — ohne Layer-Baum gibt es
+keine Kandidaten, also an UEyes grundsätzlich keine Messung.
+
+### Dieselbe Frage für alle sechs Regeln
+
+`flat` war der dritte Fall dieser Fehlerklasse in einer Iteration (nach
+`cold-fold` und dem ersten `flat`-Anlauf). Deshalb wurde sie einmal
+systematisch für jede Regel gestellt: **ist die Entscheidungsgröße invariant
+gegenüber Engine-Version, Ortsprior und Viewport-Segmentierung — und wenn
+nicht, wo liegt die Schwelle in der jeweiligen Verteilung?**
+
+Die letzte Zahl ist die entscheidende. Bei `flat` lag sie *über dem Maximum*;
+eine Regel, deren Schwelle außerhalb des beobachteten Wertebereichs liegt, kann
+gar nichts anderes tun als immer oder nie zu feuern.
+
+Zwei Populationen, weil drei Regeln Klick-Kandidaten brauchen und UEyes keinen
+Layer-Baum hat:
+
+**A) Echte Screenshots (UEyes)** — nur die Regeln, die allein die Karte lesen:
+
+| Regel | Desktop-Abschnitte (web, Viewport 500, n=60) | Mobile-Single-Viewport (mobile, n=60) |
+|---|---|---|
+| `flat` | 6,7 %, Schwelle 0,148 bei **p7** | **100 %**, Schwelle 0,2 **über max** (0,122–0,181) |
+| `competition` | 3,3 %, Schwelle bei p3 | 10,0 %, Schwelle bei p10 |
+| `cold-fold` | 29,8 %, Schwelle 0,08 bei p70 | blockiert (nicht segmentiert) |
+
+**B) Konstruierte Frames mit Layer-Baum** (je 24, mit variierender Hierarchie,
+Hero, CTA-Position und Kartenzahl — konstruiert, nicht beobachtet):
+
+| Regel | Desktop scrollend | Telefon, ein Viewport | Telefon scrollend |
+|---|---|---|---|
+| `flat` | 0 % (0,250–0,282, Schwelle **unter min**) | 100 % (0,126–0,149, **über max**) | 0 % (0,248–0,292, **unter min**) |
+| `dead-cta` | **100 %** (0,026–0,212, **über max**) | **100 %** (0,128–0,286, **über max**) | **100 %** (0,020–0,038, **über max**) |
+| `cold-fold` | 83,3 % (Schwelle bei p17) | blockiert | 100 % (**unter min**) |
+| `competition` | 0 % | 0 % | 0 % |
+| `cta-rank` | 91,7 % | 54,2 % | 66,7 % |
+| `cta-below-fold` | 0 % | blockiert | 0 % |
+
+**Befund je Regel:**
+
+| Regel | Schwelle kalibriert an | verschiebt sich durch | Urteil |
+|---|---|---|---|
+| `flat` | web-Prior + Desktop-Abschnitte | Prior **und** Segmentierung | behoben: misst jetzt den Bildanteil des ersten Abschnitts, neu kalibriert, wieder an (s. u.) |
+| `dead-cta` | `synthetic`, ein Viewport, Kandidaten nebeneinander | Segmentierung (Scroll-Dämpfung) | umgebaut, aber weiter aus: die Größe hängt an der Kandidatenzahl (s. u.) |
+| `cold-fold` | Abschnittskarten (ungedämpft) | nur den Prior | auf echten Bildern gesund (p70); auf konstruierten Layouts sehr durchlässig |
+| `competition` | UEyes, web-Prior | Prior (3,3 % → 10,0 %) | nicht entartet; **aber** `competitionMinDistance` ist geometrieabhängig (s. u.) |
+| `cta-rank` | — (Definition „nicht Rang 1") | nicht fehlkalibrierbar | feuert auf 43–92 % der Screens; wenig trennscharf |
+| `cta-below-fold` | — (Definition „unterhalb Fold 1") | nicht fehlkalibrierbar | durch die Scroll-Dämpfung strukturell unterdrückt: 0 von 48 konstruierten Scrollframes |
+
+**`flat` braucht mehr als eine Schwelle je UI-Typ** — und, wie sich beim
+Nachmessen herausstellte, mehr als eine neue Schwelle überhaupt. Siehe den
+eigenen Abschnitt unten.
+
+**`dead-cta` ist derselbe Fall.** Die 0,45 stammen aus `synthetic`, wo alle
+Kandidaten im selben Band eines top-lastigen Priors liegen (Verteilung dort
+0,310–0,994, Schwelle bei p3, Rate 3,3 %). Sobald Kandidaten über den Frame
+verteilt sind — der Normalfall, ein CTA in der Fußzeile —, fällt der Quotient
+mechanisch darunter, weil die Komposition jeden Abschnitt um
+`sectionAttenuation^i` dämpft. Die Regel meldet dann nicht mehr „visuell ruhig",
+sondern „weit unten", und wiederholt damit `cta-below-fold`. Sie ist **nicht
+abgeschaltet**, weil die Belege bisher aus konstruierten Frames stammen; bei
+`flat` lagen 150 echte Screenshots vor. Der naheliegende Umbau ist derselbe wie
+dort: gegen die ungedämpften Abschnittskarten vergleichen.
+
+**`competitionMinDistance` misst in der falschen Achse.** Der Mindestabstand
+zwischen den beiden Maxima ist ein Anteil der Karten*breite*, angewandt auf
+Karten, deren Seitenverhältnis um eine Größenordnung schwankt:
+
+| Frame | Karte | Mindestabstand | davon Höhe |
+|---|---|---:|---:|
+| Desktop, ein Viewport | 512 × 320 | 154 px | 48,0 % |
+| Telefon, ein Viewport | 237 × 512 | 71 px | 13,9 % |
+| Desktop, scrollend | 512 × 1138 | 154 px | 13,5 % |
+| Telefon, scrollend | 256 × 1969 | 77 px | 3,9 % |
+
+„Weit auseinander" heißt damit je nach Frame-Form etwas völlig anderes.
+Nicht geändert — eine Änderung ohne neue Kalibrierung wäre genau der Fehler,
+um den es hier geht.
+
+**Die gemeinsame Ursache** aller drei Fälle: die Entscheidungsgröße wird auf der
+komponierten Karte gemessen, deren Kontrast von zwei Größen abhängt, die nichts
+mit dem Entwurf zu tun haben — der Wahl des Ortspriors und der
+Scroll-Dämpfung (`sectionAttenuation`, laut `config.ts` ausdrücklich eine
+Annahme ohne Messung). Wer eine Regel gegen eine solche Karte kalibriert,
+kalibriert gegen die Konfiguration, nicht gegen den Screen.
+
+`competition` bleibt mit 3–10 % die selektivste Regel. Das ist kein Fehler —
 zwei wirklich getrennte, gleich starke Blickfänge sind selten —, aber sie ist
 die erste, die man streichen sollte, falls sie sich im Gebrauch nicht bewährt.
+
+### `flat` ist wieder an — nach zwei Umbauten
+
+Die Regel brauchte zwei Schritte, und der erste allein hätte nur gut ausgesehen.
+
+**Schritt 1 — die Scroll-Dämpfung raus.** Gemessen wurde auf der komponierten
+Karte, die jeden tieferen Abschnitt dämpft und damit Masse im ersten anhäuft.
+Auf dem ersten Abschnitt für sich fallen die Verteilungen zusammen:
+
+| Frame | vorher (komponierte Karte) | danach (Abschnittskarte) |
+|---|---|---|
+| Telefon, ein Viewport | 0,126–0,149 | 0,126–0,149 |
+| Telefon, scrollend | 0,248–0,292 | 0,120–0,152 |
+| Desktop, scrollend | 0,250–0,282 | 0,122–0,147 |
+
+Die Größe war damit invariant gegen die Segmentierung — und maß immer noch das
+Falsche. An Fällen mit bekannter Antwort lag ein **leerer** Frame (0,164) so
+hoch wie einer mit klarem Blickfang (0,167), und was sie tatsächlich bewegte,
+war die Menge an Inhalt, nicht die Hierarchie.
+
+**Schritt 2 — den Ortsprior raus.** Unter `hybrid-v1` ist die fertige Karte
+`norm(Prior) + 0,3 · Bild`, also weitgehend der Prior — und der ist auf jedem
+Screen derselbe. Gemessen auf dem **Bildanalyse-Anteil** vor dem Blend
+(`FindingsInput.aboveFoldImageTerm`) stimmt die Ordnung:
+
+| Fall | fertige Karte | Bildanteil |
+|---|---:|---:|
+| leer (nur Hintergrund) | 0,1635 | **0,0000** |
+| ein kleiner Blickfang | 0,1665 | **0,8706** |
+| ein mittlerer Blickfang | 0,1663 | 0,4756 |
+| ein großer Blickfang | 0,1594 | 0,2825 |
+| Blickfang + ruhiger Inhalt | 0,1333 | 0,1018 |
+| 3 gleich starke Blöcke | 0,1242 | 0,0955 |
+| 6 gleich starke Blöcke | 0,1190 | 0,0771 |
+| 12 gleich starke Blöcke | 0,1135 | 0,0631 |
+
+Der unterscheidende Bereich wächst von 0,054 auf 0,87, und ein leerer Frame
+liegt jetzt am flachen Ende statt am hierarchischen.
+
+**Kalibrierung.** p10 je UI-Typ aus je 150 UEyes-Bildern mit passendem Prior und
+einem Viewport — die Konfiguration, in der ein Figma-Frame läuft:
+
+| Kategorie | Verteilung (min / p10 / Median / max) | alt | neu |
+|---|---|---:|---:|
+| `web` | 0,079 / 0,086 / 0,108 / 0,389 | 0,148 | **0,086** |
+| `mobile` | 0,079 / 0,091 / 0,125 / 0,294 | 0,200 | **0,091** |
+| `desktop` | 0,073 / 0,092 / 0,119 / 0,392 | 0,128 | **0,092** |
+| `poster` | 0,071 / 0,080 / 0,105 / 0,345 | 0,135 | **0,080** |
+
+**Abnahme.** Feuerraten auf konstruierten Frames: Telefon ein Viewport 0/24,
+Telefon scrollend 6/24, Desktop scrollend 5/24. Der Frame aus dem
+Vergleichstest — farbiger Kopf, farbiger Fuß — feuert nicht mehr, und zwar in
+keiner der 20 Varianten.
+
+**Was bleibt.** Die Größe reagiert weiterhin auch auf die *Menge* an Inhalt: auf
+gescrollten Desktop-Frames feuerte sie bei den Varianten mit den meisten Karten,
+darunter eine mit starkem Akzent und Hero. „Zwölf fast gleiche Karten sind
+flach" ist vertretbar, aber es ist nicht dasselbe wie „kein Blickfang". Wenn das
+im Gebrauch stört, ist es die nächste Frage — und wieder eine Bedeutungs-, keine
+Kalibrierungsfrage.
+
+### Bekannte Einschränkungen — bewusst nicht in diesem Schritt behoben
+
+Zwei Befunde aus dem Audit bleiben stehen. Beide sind belegt, beide sind
+**keine offenen Bugs ohne Notiz**, und beide werden hier absichtlich nicht
+angefasst: eine Korrektur ohne neue Kalibrierung wäre derselbe Fehler, um den
+es in diesem Abschnitt geht.
+
+| Was | Beleg | warum jetzt nicht |
+|---|---|---|
+| `competitionMinDistance` misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Kartenhöhe | Tabelle oben | Die Regel ist mit 3–10 % nicht entartet. Eine Umstellung auf die Diagonale oder auf getrennte x/y-Schwellen ändert die Verteilung und verlangt eine eigene Neukalibrierung — ein eigener Schritt. |
+| `cta-below-fold` ist durch `sectionAttenuation` strukturell unterdrückt (0 von 48 konstruierten Scrollframes) | Tabelle oben | Die Ursache ist die Scroll-Dämpfung, laut `config.ts` ausdrücklich eine **Annahme ohne Messung**. Sie zu ändern, um eine Regel häufiger feuern zu lassen, hieße die Vorhersage an die Regel anzupassen statt umgekehrt. Erst die Dämpfung belegen, dann die Regel. |
+
+Beide stehen zusätzlich als Kommentar an der jeweiligen Regel in
+`src/findings/rules.ts`, damit sie beim Lesen des Codes nicht erst gesucht
+werden müssen.
 
 Sprachregeln (C-2), von den Tests erzwungen:
 
@@ -1003,6 +1304,103 @@ falsch und in ihrer Orts-Lesart richtig.
 Die fertigen Vorhersagen der drei Profile korrelieren untereinander mit
 0,909 bis 0,966 — verwandt, aber unterscheidbar. Drei Schalter, die dasselbe
 tun, wären es nicht geworden.
+
+### Was der Umschalter am fertigen Bild ändert
+
+Aus dem Vergleichstest kam die Rückmeldung, die drei Dauern lieferten optisch
+dieselbe Map. Nachgemessen wurde deshalb nicht die Vorhersage, sondern das
+**Bild**: dieselbe Analyse, dreimal, und anschließend ein Pixel-Diff der
+gerenderten Overlay-RGBA (`heatmapToRgba`, Deckkraft 0,7).
+
+**Kein Bug.** Auf keinem einzigen Frame waren zwei Dauern byte-identisch — auf
+12 UEyes-Mobile-Screenshots und auf 12 prozeduralen Telefon-Frames nicht:
+
+| Paar | r | max &#124;Δ&#124; | Pixel ≥ 8/255 | IoU der heißesten 25 % | Versatz der Spitze |
+|---|---:|---:|---:|---:|---:|
+| Blick ↔ Scan | 0,983–0,990 | 0,20 | 71 % | 0,80 | 2,3 % |
+| Scan ↔ Lesen | 0,962–0,978 | 0,22 | 86 % | 0,74 | 6,2 % |
+| Blick ↔ Lesen | 0,935–0,959 | 0,31 | 88 % | 0,66 | 7,6 % |
+
+Die Korrelationen liegen im erwarteten Band (0,909–0,966 aus der Messung
+oben). Der Grund für den Eindruck „identisch" steht in der letzten Spalte: auf
+einem Screen mit ausgeprägter Hierarchie **wandert die Spitze nicht** (0,2–0,4 %
+der Diagonale). Was sich ändert, ist die *Ausdehnung* des heißen Bereichs — ein
+Drittel der heißesten 25 % ist zwischen 1 s und 7 s nicht mehr dieselbe Fläche.
+Nebeneinandergelegt ist das sichtbar, nacheinander betrachtet nicht.
+
+In der Clickmap kommt davon wenig an, aber nicht nichts. Gemessen über 12
+Telefon-Frames und 20 synthetische Screens mit Layer-Baum:
+
+| Paar | Kendall τ | max Δ Anteil | Reihenfolge Top-5 | Rang 1 |
+|---|---:|---:|---:|---:|
+| Blick ↔ Scan | 1,000 | 1,0 pp | unverändert | unverändert |
+| Scan ↔ Lesen | 0,903 | 2,2 pp | 12/12 geändert | unverändert |
+| Blick ↔ Lesen | 0,903 | 3,2 pp | 12/12 geändert | unverändert |
+
+Rang 1 bleibt in **jedem** gemessenen Fall derselbe; getauscht werden Plätze 4
+und 5. Die Prozentwerte verschieben sich um 1 bis 3 Prozentpunkte.
+
+**Konsequenz: der Umschalter bleibt.** Die Bedingung, ihn zu entfernen, war
+„weder Heatmap noch Clickmap unterscheiden sich sichtbar" — beide tun es
+messbar, die Heatmap in der Fläche, die Clickmap in den hinteren Rängen. Was
+fehlte, war nicht der Unterschied, sondern der Hinweis darauf, dass man zwei
+verschiedene Dinge ansieht: die gewählte Dauer steht jetzt in der Fußzeile
+jeder erzeugten Map.
+
+### Die Fußzeile jeder Map
+
+Zwei Angaben entscheiden maßgeblich über das Ergebnis und sind an der Map
+selbst nicht abzulesen — **Ortsprior-Kategorie** und **Betrachtungsdauer**. Zwei
+Bilder desselben Screens können sich in nichts sonst unterscheiden. Beide
+stehen deshalb auf dem Bild, zusammen mit der CC-BY-Nennung für den
+Ortsprior: ein exportiertes PNG verlässt Figma ohne das Panel, und die Lizenz
+hängt am abgeleiteten Asset, nicht an der Oberfläche, die es erzeugt hat.
+
+Die Fußzeile ist dafür **zweizeilig**. Bis 1.1 stand der Disclaimer
+linksbündig und „FigMaps · 1.1.0 · Ortsprior: …" rechtsbündig auf derselben
+Zeile; auf einem Telefon-Frame (390 × 844 bei 2×, also 780 px breit) braucht
+allein der Disclaimer rund 620 px, und der rechte String wurde darüber gemalt.
+Deshalb las sich die Ortsprior-Angabe als „fehlt". Jetzt trägt Zeile 1
+Disclaimer und Version, Zeile 2 die Parameter; Zeile 2 verkleinert sich bis zur
+Mindestgröße und bricht danach um, statt beschnitten zu werden. Dass sich auf
+einer Zeile nichts überlappt und nichts über den Bildrand hinausragt, prüft
+`src/render/__tests__/legend.test.ts` mit einem aufzeichnenden Canvas-Stub.
+
+### Die heißeste Stelle auf der Statusleiste
+
+Zweite Rückmeldung aus dem Vergleichstest: die Spitze der Heatmap liegt auf
+Uhrzeit / WLAN / Akku. Verdacht war ein Artefakt der UEyes-Screenshots im
+Ortsprior. **Der Verdacht trägt nicht.**
+
+Das Zeilenprofil der Mobile-Prioren ist oben nicht überhöht — im Gegenteil,
+Zeile 0 ist dunkler als die Zeilen darunter:
+
+| Prior | Spitzenzeile | Masse in den obersten 3 % |
+|---|---|---:|
+| `mobile@1s` | 14,1 % der Höhe | 5,3 % |
+| `mobile@3s` | 10,9 % der Höhe | 5,4 % |
+| `mobile@7s` | 20,3 % der Höhe | 4,2 % |
+
+Auf 27 UEyes-Mobile-Bildern lag die Spitze der *fertigen* Karte in 9 Fällen im
+obersten 5-%-Band — die Spitze des **reinen Priors** in null Fällen. Der Prior
+ist dort zwar hoch (0,97 seines Maximums an der Stelle der Spitze), aber flach;
+den Ausschlag gibt die Bildanalyse, und die sieht in einer Statusleiste genau
+das, wonach sie sucht: kleine, sehr kontrastreiche Glyphen auf ruhigem Grund.
+
+Eine Dämpfung der obersten Zeilen wurde trotzdem durchgemessen, bevor sie
+gebaut worden wäre — und **nicht gebaut**, weil sie in jeder Variante schadet:
+
+| Variante | Δ CC | Δ KL | Δ AUC | Δ NSS |
+|---|---:|---:|---:|---:|
+| oberste 3 % auf 0,7 | −0,0018 | +0,0040 | −0,0002 | −0,0028 |
+| oberste 3 % auf 0,4 | −0,0116 | +0,0149 | −0,0032 | −0,0207 |
+| oberste 5 % auf 0,4 | −0,0199 | +0,0243 | −0,0050 | −0,0350 |
+| oberste 8 % auf 0,4 | −0,0309 | +0,0374 | −0,0071 | −0,0539 |
+
+(Tuning-Split, 60 Bilder; KL kleiner ist besser. Auf dem 27er-Test-Split zeigt
+die mildeste Variante +0,0011 CC — ein Vorzeichenwechsel, der auf dem größeren
+Split verschwindet und damit Rauschen ist.) Die Ground Truth enthält die
+Statusleiste; sie zu dämpfen entfernt Aufmerksamkeit, die dort gemessen wurde.
 
 ---
 

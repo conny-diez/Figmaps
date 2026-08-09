@@ -7,7 +7,7 @@ import { applyGamma, luminanceChannel, normalize01, percentileClipNormalize, wei
 import { priorAssetIdFor, priorMap, type PriorAssetId, type PriorDuration } from './priors'
 import { blurField } from './ops-pure'
 import { ACTIVE_CONFIG_ID, DEFAULT_PROFILE, PROFILE_DURATIONS, resolveParams, type EngineParams, type ProfileId } from './params'
-import type { AttentionEngine, AttentionInput, FeatureMaps } from './types'
+import type { AttentionEngine, AttentionInput, AttentionParts, FeatureMaps } from './types'
 
 export type EngineOptions = {
   /** Named configuration (A-6). Defaults to the one the plugin ships. */
@@ -64,8 +64,12 @@ export class HeuristicAttentionEngine implements AttentionEngine {
   }
 
   async predict(input: AttentionInput): Promise<Float32Array> {
+    return (await this.predictParts(input)).attention
+  }
+
+  async predictParts(input: AttentionInput): Promise<AttentionParts> {
     const features = await this.computeFeatures(input)
-    return combineFeatures(features, input.pixels.width, input.pixels.height, this.params, this.blur)
+    return combineFeatureParts(features, input.pixels.width, input.pixels.height, this.params, this.blur)
   }
 
   /** Exposed separately so tests and debugging can inspect single features. */
@@ -126,6 +130,23 @@ export function combineFeatures(
   params: EngineParams = resolveParams(),
   blur: NonNullable<EngineOptions['blur']> = blurField,
 ): Float32Array {
+  return combineFeatureParts(features, width, height, params, blur).attention
+}
+
+/**
+ * The same computation, but handing back the image term as well.
+ *
+ * One function, not two: if the term the rules read were computed anywhere but
+ * here, it would drift away from the term that actually enters the prediction —
+ * which is the failure this whole module is arranged to prevent (A-1).
+ */
+export function combineFeatureParts(
+  features: FeatureMaps,
+  width: number,
+  height: number,
+  params: EngineParams = resolveParams(),
+  blur: NonNullable<EngineOptions['blur']> = blurField,
+): AttentionParts {
   const weights = params.weights
   const length = width * height
   const post = params.post
@@ -150,9 +171,10 @@ export function combineFeatures(
 
   // hybrid-v1: the prior is the base, the image analysis is added on top —
   // the two answer different questions and do not belong in one weighted sum.
+  const image = postProcess(imagePart)
+
   if (params.blendAlpha !== undefined) {
     const prior = normalize01(features.positionPrior)
-    const image = postProcess(imagePart)
     const blended = new Float32Array(length)
     for (let i = 0; i < length; i++) blended[i] = prior[i] + params.blendAlpha * image[i]
 
@@ -160,13 +182,13 @@ export function combineFeatures(
     // non-linear, so applying it again after the blend changes the *shape* of
     // the distribution and measurably worsens KL (web: 1.115 instead of 1.078).
     // The tone curve the renderer needs already sits inside the image term.
-    return normalize01(blended)
+    return { attention: normalize01(blended), imageTerm: image }
   }
 
   // heuristic-v1: one weighted sum over all seven maps.
   const raw = new Float32Array(length)
   for (let i = 0; i < length; i++) raw[i] = imagePart[i] + features.positionPrior[i] * weights.positionPrior
-  return postProcess(raw)
+  return { attention: postProcess(raw), imageTerm: image }
 }
 
 /** Default engine instance used by the UI pipeline. */

@@ -37,6 +37,23 @@ export interface AttentionEngine {
    *          values in `[0,1]`, row-major.
    */
   predict(input: AttentionInput): Promise<Float32Array>
+  /**
+   * Optional: the same prediction, plus the **image-analysis term on its own** —
+   * what this screen makes salient, before the location prior is added.
+   *
+   * Exists because the two answer different questions and one of the findings
+   * rules needs the second: „does this screen have a pronounced hierarchy" is a
+   * property of the design, while the finished map is prior-dominated
+   * (`blendAlpha` 0,3) and therefore says as much about where attention usually
+   * goes. An engine that cannot separate the two simply omits this.
+   */
+  predictParts?(input: AttentionInput): Promise<AttentionParts>
+}
+
+export type AttentionParts = {
+  attention: Float32Array
+  /** The weighted image features after post-processing, without the prior. */
+  imageTerm: Float32Array
 }
 
 /** Named intermediate results, kept for debugging and unit tests. */

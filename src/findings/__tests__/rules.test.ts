@@ -184,7 +184,7 @@ describe('flat', () => {
 
   it('stays silent when there is a clear peak', () => {
     // `flat` measures concentration: the share of mass in the strongest 5 %.
-    // A ramp^4 puts 0.226 there, comfortably above the web threshold of 0.148.
+    // A ramp^4 puts 0.226 there, comfortably above the web threshold of 0.086.
     const values = new Float32Array(MAP_W * MAP_H)
     for (let i = 0; i < values.length; i++) values[i] = (i / values.length) ** 4
     const spread = { width: MAP_W, height: MAP_H, values }
@@ -208,7 +208,11 @@ describe('dead-cta', () => {
       }),
     )
     expect(finding?.text).toContain('Jetzt anfragen')
-    expect(finding?.nodeIds).toEqual(['cold'])
+    // Both ends of the comparison are named in the sentence, so both are
+    // revealable in the canvas — the finding is a statement about a *pair*.
+    expect(finding?.nodeIds).toEqual(['cold', 'hot'])
+    expect(finding?.text).toContain('stärksten Schaltfläche')
+    expect(finding?.text).toContain('Bildschirmausschnitt')
   })
 
   it('stays silent when the candidates are comparably lively', () => {

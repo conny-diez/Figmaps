@@ -288,6 +288,15 @@ export const ENGINE_CONFIG = {
     minOpacity: 0.05,
     /** Frames with a shorter edge below this are rejected (FR-1). */
     minFrameEdge: 200,
+    /**
+     * Wie viele Zeichen eines Textknotens in die Benennung wandern.
+     *
+     * Ein Befund ist ein Satz; eine ganze Fließtext-Spalte darin macht ihn
+     * unlesbar. 48 Zeichen tragen eine Stellenanzeige („Fahrzeugeinkäufer im
+     * Außendienst", 31) oder eine Überschrift vollständig und schneiden
+     * Absätze ab.
+     */
+    maxTextLength: 48,
   },
 
   /** Epic C — thresholds of the findings rules. Every rule reads from here. */
@@ -326,28 +335,43 @@ export const ENGINE_CONFIG = {
      */
     competitionValleyRatio: 0.9,
     /**
-     * `flat`: Konzentration der Aufmerksamkeit (Anteil der Masse in den
+     * `flat`: Konzentration des **Bildanalyse-Anteils** (Anteil der Masse in den
      * stärksten 5 % der Pixel) unterhalb dieses Werts heißt „keine Hierarchie".
      *
-     * **Pro UI-Typ**, weil sich die Verteilung zwischen ihnen kaum überlappt:
-     * gemessener Median 0,163 (web), 0,258 (mobile), 0,139 (desktop),
-     * 0,187 (poster). Jeder Wert ist ungefähr das 10. Perzentil seiner
-     * Kategorie, die Regel meldet also die flachsten rund 10 % — „flach" heißt
-     * flach *für diese Art Screen*.
+     * Gemessen auf dem ersten Abschnitt, ohne Ortsprior und ohne
+     * Scroll-Dämpfung — siehe `findings/types.ts` → `aboveFoldImageTerm`. Die
+     * fertige Karte taugt dafür nicht: sie ist prior-dominiert, und darauf ist
+     * ein leerer Frame so „konzentriert" wie einer mit klarem Blickfang.
      *
-     * Zwei Vorgänger sind an genau dieser Stelle gescheitert. `p90 − p50` mit
-     * 0,25 (aus `heuristic-v1`) feuerte nie; mit 0,41 feuerte es auf 11 % der
-     * Webseiten und auf **90 %** der Mobile-Screens. Die Konzentration ist
-     * skalenfrei, aber nicht kategorieübergreifend vergleichbar.
+     * **Pro UI-Typ**: gemessener Median 0,108 (web), 0,125 (mobile), 0,119
+     * (desktop), 0,105 (poster) über je 150 UEyes-Bilder mit passendem Prior
+     * und einem Viewport. Jeder Wert ist das 10. Perzentil seiner Kategorie,
+     * die Regel meldet also die flachsten rund 10 % — „flach" heißt flach *für
+     * diese Art Screen*. Die Kategorien liegen dabei deutlich enger beieinander
+     * als in der Fassung davor; der große Abstand (0,163 gegen 0,258) war zum
+     * großen Teil ein Artefakt der komponierten Karte.
+     *
+     * Drei Vorgänger sind an genau dieser Stelle gescheitert, und zwar in
+     * aufsteigender Subtilität:
+     *
+     *   1. `p90 − p50 < 0,25` (aus `heuristic-v1`) — feuerte nie.
+     *   2. skalenfrei, aber eine Schwelle für alle — 11 % der Webseiten,
+     *      **90 %** der Mobile-Screens.
+     *   3. je UI-Typ, aber auf der komponierten Karte gemessen — die Schwelle
+     *      war in einer Konfiguration geschätzt (web-Prior, segmentiert) und in
+     *      einer anderen angewandt (mobile-Prior, ein Viewport), und lag dort
+     *      **über dem gesamten Wertebereich**: 150 von 150.
      *
      * Wer die Engine oder die Prioren ändert, muss diese Werte nachmessen —
-     * `npm run findings-audit`.
+     * `npm run findings-audit -- --prior-asset <typ> --single-viewport`. Und
+     * zwar in der Konfiguration, in der die Regel läuft; das ist die Lehre aus
+     * (3).
      */
     flatConcentrationThreshold: {
-      web: 0.148,
-      mobile: 0.2,
-      desktop: 0.128,
-      poster: 0.135,
+      web: 0.086,
+      mobile: 0.091,
+      desktop: 0.092,
+      poster: 0.08,
     } as Record<string, number>,
     /**
      * `dead-cta`: ein Kandidat gilt als „ruhig", wenn seine mittlere

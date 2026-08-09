@@ -281,16 +281,24 @@ async function runFindingsAudit(args: Args): Promise<number> {
   const setName = str(args, 'fixtures', 'ueyes-web')
   const viewportOverride = args.viewport ? num(args, 'viewport', 0) : undefined
   const limit = args.limit ? num(args, 'limit', 0) : undefined
+  // Same flag as `npm run eval`, for the same reason: state the category
+  // instead of letting the image size guess it.
+  const priorAsset = args['prior-asset'] ? (str(args, 'prior-asset', 'web') as PriorAssetId) : undefined
+  const segment = args['single-viewport'] !== true
 
   console.log(
     `Findings-Audit auf "${setName}"` +
-      (viewportOverride ? `, Viewport erzwungen auf ${viewportOverride} px (sonst wäre nichts segmentiert)` : ''),
+      (viewportOverride ? `, Viewport erzwungen auf ${viewportOverride} px (sonst wäre nichts segmentiert)` : '') +
+      (priorAsset ? `, Ortsprior "${priorAsset}"` : ', Ortsprior aus der Geometrie abgeleitet') +
+      (segment ? '' : ', ein Viewport je Bild'),
   )
   let last = 0
   const result = await auditFindings({
     setName,
     ...(viewportOverride ? { viewportOverride } : {}),
     ...(limit ? { limit } : {}),
+    ...(priorAsset ? { priorAsset } : {}),
+    ...(segment ? {} : { segment: false }),
     onProgress: (done, total) => {
       if (done - last >= 25 || done === total) {
         last = done
@@ -300,11 +308,17 @@ async function runFindingsAudit(args: Args): Promise<number> {
   })
   process.stdout.write(`\r  ${result.imageCount} Bilder, davon ${result.withSignals} mit Layer-Signalen     \n\n`)
 
+  console.log(
+    `Konfiguration: Ortsprior ${result.priorAsset}, ${result.segmented ? 'segmentiert' : 'ein Viewport'} —` +
+      ' die Quoten gelten nur für diese.',
+  )
   console.log('Regel              feuert   stumm  blockiert   Anteil (von bewertbaren)')
   for (const rule of result.rules) {
     const evaluated = rule.fired + rule.silent
     const share = evaluated > 0 ? `${((rule.fired / evaluated) * 100).toFixed(1)} %` : '—'
-    const flag = evaluated === 0 ? '  (nicht bewertbar)' : rule.fired === 0 ? '  ← feuert NIE' : rule.fired === evaluated ? '  ← feuert IMMER' : ''
+    const flag =
+      (evaluated === 0 ? '  (nicht bewertbar)' : rule.fired === 0 ? '  ← feuert NIE' : rule.fired === evaluated ? '  ← feuert IMMER' : '') +
+      (rule.shipped ? '' : '  [nicht ausgeliefert]')
     console.log(
       `  ${rule.id.padEnd(16)} ${String(rule.fired).padStart(5)} ${String(rule.silent).padStart(7)} ${String(rule.blocked).padStart(10)}   ${share.padStart(7)}${flag}`,
     )

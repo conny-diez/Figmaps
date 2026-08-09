@@ -48,6 +48,15 @@ export type AnalyzeResult = {
    * Comparable across sections, unlike the peak, which is 1 everywhere.
    */
   sectionSalience: number[]
+  /**
+   * Per section, the image-analysis term alone — what *this screen* makes
+   * salient, before the location prior is added (`AttentionParts.imageTerm`).
+   *
+   * Empty when the engine does not expose its parts. `findings/rules.ts` →
+   * `flat` needs it: on the finished map, which is prior-dominated, an empty
+   * frame scores as more "hierarchical" than one with a clear eye-catcher.
+   */
+  imageTerms: ScalarMap[]
 }
 
 export type AnalyzeHooks = {
@@ -107,7 +116,7 @@ export async function analyzeFrame(
       : planSections(input.frameWidth, input.frameHeight, input.viewportOverride)
 
   const sourceScale = source.height / input.frameHeight
-  const parts: Array<{ section: Section; map: ScalarMap }> = []
+  const parts: Array<{ section: Section; map: ScalarMap; imageTerm: ScalarMap | null }> = []
 
   // B-3 — strictly sequential. Sections are cheap individually; running them in
   // parallel would blow the iframe's memory on a 6.000 px frame.
@@ -144,14 +153,25 @@ export async function analyzeFrame(
     // `__tests__/analyze.test.ts` → "prior repeats per section". hybrid-v1
     // amplifies this because there the prior is the base of the prediction,
     // whereas in heuristic-v1 it was one weighted term among seven.
-    const values = await engine.predict({
+    const request = {
       pixels,
       signals: signalsForSection(input.signals, section),
       frameWidth: input.frameWidth,
       frameHeight: section.height,
-    })
+    }
+    // One call, not two: `predictParts` recomputes nothing the prediction does
+    // not already compute, and calling both would double the cost per section.
+    const result = engine.predictParts
+      ? await engine.predictParts(request)
+      : { attention: await engine.predict(request), imageTerm: null }
 
-    parts.push({ section, map: { width: pixels.width, height: pixels.height, values } })
+    parts.push({
+      section,
+      map: { width: pixels.width, height: pixels.height, values: result.attention },
+      imageTerm: result.imageTerm
+        ? { width: pixels.width, height: pixels.height, values: result.imageTerm }
+        : null,
+    })
   }
 
   return {
@@ -161,5 +181,8 @@ export async function analyzeFrame(
     aboveFold: plan.segmented ? parts[0].map : null,
     plan,
     sectionSalience: parts.map((part) => sectionSalience(part.map)),
+    imageTerms: parts.every((part) => part.imageTerm !== null)
+      ? parts.map((part) => part.imageTerm as ScalarMap)
+      : [],
   }
 }

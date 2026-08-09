@@ -21,7 +21,7 @@ import { ImageOpsNode } from '../../platform/imageops-node'
 import type { Bitmap } from '../../engine/ops'
 import type { NodeSignal } from '../../messages'
 import { deriveFindings } from '../derive'
-import { RULES } from '../rules'
+import { ALL_RULES, RULES } from '../rules'
 
 const ops = new ImageOpsNode()
 const engine = new HeuristicAttentionEngine()
@@ -74,13 +74,21 @@ function signal(overrides: Partial<NodeSignal>): NodeSignal {
   }
 }
 
-/** Runs the shipped path and returns the ids of the findings it produced. */
+/**
+ * Runs the shipped path and returns the ids of the findings it produced.
+ *
+ * `includeUnshipped` widens the rule set to everything implemented. A rule that
+ * is switched off (see `flat`) still has to be provably reachable — otherwise
+ * switching it back on later is a guess, which is exactly how `cold-fold` got
+ * to be inert.
+ */
 async function run(options: {
   source: Bitmap
   signals: NodeSignal[]
   frameWidth: number
   frameHeight: number
   viewportOverride?: number
+  includeUnshipped?: boolean
 }): Promise<string[]> {
   const analysis = await analyzeFrame(engine, ops, {
     source: options.source,
@@ -91,12 +99,15 @@ async function run(options: {
   })
   expect(analysis).not.toBeNull()
 
-  const findings = deriveFindings({
-    analysis: analysis!,
-    signals: options.signals,
-    frameWidth: options.frameWidth,
-    frameHeight: options.frameHeight,
-  })
+  const findings = deriveFindings(
+    {
+      analysis: analysis!,
+      signals: options.signals,
+      frameWidth: options.frameWidth,
+      frameHeight: options.frameHeight,
+    },
+    options.includeUnshipped ? ALL_RULES : undefined,
+  )
   return findings.map((finding) => finding.id)
 }
 
@@ -126,11 +137,18 @@ function landingPage(): { source: Bitmap; signals: NodeSignal[]; frameWidth: num
 }
 
 describe('end-to-end reachability of every rule', () => {
-  it('every rule in RULES is covered by a firing test below', () => {
+  it('every implemented rule is covered by a firing test below', () => {
     // Guards against a rule being added without a reachability test.
-    expect(RULES.map((rule) => rule.id).sort()).toEqual(
+    expect(ALL_RULES.map((rule) => rule.id).sort()).toEqual(
       ['cold-fold', 'competition', 'cta-below-fold', 'cta-rank', 'dead-cta', 'flat'].sort(),
     )
+  })
+
+  it('does not ship `dead-cta` — its threshold is not backed by a measurement', () => {
+    // 24 of 24 in each of three constructed frame shapes, in the redefined
+    // form too: the quantity is a minimum over N candidates and falls with N,
+    // so no single constant is selective across frame shapes. See `rules.ts`.
+    expect(RULES.map((rule) => rule.id)).not.toContain('dead-cta')
   })
 
   // --- cta-rank ------------------------------------------------------------
@@ -165,7 +183,9 @@ describe('end-to-end reachability of every rule', () => {
       // Same size, but in the darkest corner of the map.
       signal({ name: 'Jetzt anfragen', nameHints: ['button'], x: 900, y: 800, width: 480, height: 90 }),
     ]
-    expect(await run({ source, signals, frameWidth: 1440, frameHeight: 900 })).toContain('dead-cta')
+    expect(
+      await run({ source, signals, frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
+    ).toContain('dead-cta')
   })
 
   it('dead-cta stays silent when the buttons sit close together', async () => {
@@ -176,7 +196,9 @@ describe('end-to-end reachability of every rule', () => {
       signal({ name: 'Jetzt starten', nameHints: ['button'], hasReactions: true, x: 80, y: 240, width: 480, height: 120 }),
       signal({ name: 'Mehr erfahren', nameHints: ['button'], x: 640, y: 240, width: 480, height: 120 }),
     ]
-    expect(await run({ source, signals, frameWidth: 1440, frameHeight: 900 })).not.toContain('dead-cta')
+    expect(
+      await run({ source, signals, frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
+    ).not.toContain('dead-cta')
   })
 
   // --- competition ---------------------------------------------------------
@@ -202,12 +224,13 @@ describe('end-to-end reachability of every rule', () => {
   // --- flat ----------------------------------------------------------------
 
   it('flat fires on a screen without visual hierarchy', async () => {
-    // Dense, uniform content filling the *lower* two thirds: it lifts exactly
-    // the region the location prior leaves dark, so the combined map has no
-    // pronounced high end left.
+    // Evenly distributed, equally strong content over the *whole* canvas: no
+    // element is more salient than any other. Filling only the lower two thirds
+    // would not do it any more — the rule reads the image-analysis term, and an
+    // empty upper third is itself a contrast (measured: 0,099 against 0,057).
     const source = canvas(720, 450)
-    for (let y = 230; y < 448; y += 10) {
-      for (let x = 4; x < 718; x += 12) box(source, x, y, 8, 7, [0, 0, 0])
+    for (let y = 10; y < 444; y += 10) {
+      for (let x = 4; x < 714; x += 12) box(source, x, y, 8, 7, [0, 0, 0])
     }
     expect(await run({ source, signals: [], frameWidth: 1440, frameHeight: 900 })).toContain('flat')
   })

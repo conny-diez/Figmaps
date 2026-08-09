@@ -14,7 +14,7 @@ import type { AnalyzeResult } from '../engine/analyze'
 import type { NodeSignal } from '../messages'
 import { priorAssetIdFor } from '../engine/priors'
 import { collectFindings } from './index'
-import type { Finding, FindingsInput } from './types'
+import type { Finding, FindingsInput, Rule } from './types'
 
 export type DeriveInput = {
   analysis: AnalyzeResult
@@ -39,12 +39,20 @@ export function findingsInputFor(input: DeriveInput): FindingsInput {
     candidates,
     signals: input.signals,
     plan: input.analysis.plan,
+    aboveFoldSection: input.analysis.sections[0],
+    sections: input.analysis.sections,
+    ...(input.analysis.imageTerms.length > 0 ? { aboveFoldImageTerm: input.analysis.imageTerms[0] } : {}),
     frameWidth: input.frameWidth,
     frameHeight: input.frameHeight,
     priorCategory: input.priorCategory ?? priorAssetIdFor(input.frameWidth, input.frameHeight),
   }
 }
 
-export function deriveFindings(input: DeriveInput): Finding[] {
-  return collectFindings(findingsInputFor(input))
+/**
+ * `rules` exists for the reachability tests: a rule that is implemented but not
+ * shipped still has to be provably able to fire, otherwise re-enabling it later
+ * is a guess. Production always uses the default.
+ */
+export function deriveFindings(input: DeriveInput, rules?: readonly Rule[]): Finding[] {
+  return collectFindings(findingsInputFor(input), rules)
 }

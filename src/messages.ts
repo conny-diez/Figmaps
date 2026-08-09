@@ -56,6 +56,15 @@ export type NodeSignal = {
   /** Derived from `fontName.style` (e.g. "Semi Bold" -> 600). */
   fontWeight?: number
   charCount?: number
+  /**
+   * Visible characters of a TEXT node, whitespace-collapsed and length-capped.
+   *
+   * Findings name elements by what they *say* before what their layer is
+   * called: „JobsResultCard" is a fact about the file, not about the screen the
+   * reviewer is looking at. Only the leading `maxTextLength` characters travel,
+   * because a finding is one sentence.
+   */
+  text?: string
   /** `fills` contains a visible IMAGE paint. */
   isImage: boolean
   /** `fills` contains any visible paint — used by the button heuristic (FR-5). */

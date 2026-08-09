@@ -67,6 +67,20 @@ export function extractNameHints(name: string): string[] {
   return [...hits].sort()
 }
 
+/**
+ * Collapses a text node's characters into a one-line label.
+ *
+ * Line breaks, tabs and runs of spaces all become a single space — a Figma text
+ * node carries the layout of the design, and a finding that quotes it must read
+ * as one sentence. Truncation is marked with an ellipsis so a cut is visible as
+ * a cut.
+ */
+export function normaliseText(characters: string, maxLength = ENGINE_CONFIG.traversal.maxTextLength): string {
+  const collapsed = characters.replace(/\s+/g, ' ').trim()
+  if (collapsed.length <= maxLength) return collapsed
+  return `${collapsed.slice(0, maxLength).trimEnd()}…`
+}
+
 /** Relative luminance (Rec. 709) of an sRGB colour, `[0,1]`. */
 export function relativeLuminance(color: RGB): number {
   const channel = (c: number): number => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4))
@@ -145,6 +159,8 @@ export function collectSignals(root: AnalysableNode): TraverseResult {
       if (node.fontSize !== figma.mixed) signal.fontSize = node.fontSize
       if (node.fontName !== figma.mixed) signal.fontWeight = fontWeightFromStyle(node.fontName.style)
       signal.charCount = node.characters.length
+      const text = normaliseText(node.characters)
+      if (text.length > 0) signal.text = text
     }
 
     const solid = paints.find((paint) => paint.type === 'SOLID')

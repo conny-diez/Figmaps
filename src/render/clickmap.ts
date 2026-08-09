@@ -12,6 +12,10 @@ import { drawFooter, FONT_STACK, uiScale } from './legend'
 export type ClickmapOptions = {
   /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
   priorLabel?: string
+  /** Viewing duration shown in the footer (e.g. „Betrachtungsdauer: Scan (3 s)"). */
+  durationLabel?: string
+  /** CC BY 4.0 notice for the bundled prior — see NOTICE.md. */
+  attribution?: string
   /** Blob opacity, `0..1`. */
   opacity: number
   /** Frame size in frame pixels — candidates carry frame-pixel geometry. */
@@ -87,7 +91,11 @@ export function renderClickmap(
   }
 
   drawTitle(ctx, canvas.width, canvas.height, 'Clickmap — vorhergesagte Klickwahrscheinlichkeit')
-  drawFooter(ctx, canvas.width, canvas.height, { priorLabel: options.priorLabel })
+  drawFooter(ctx, canvas.width, canvas.height, {
+    priorLabel: options.priorLabel,
+    durationLabel: options.durationLabel,
+    attribution: options.attribution,
+  })
   return canvas
 }
 

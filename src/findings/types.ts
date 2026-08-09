@@ -51,10 +51,50 @@ export type FindingsInput = {
    * scale-free but not comparable across UI types.
    */
   priorCategory: string
+  /**
+   * The first section's own map — normalised in itself and **not** attenuated
+   * (`AnalyzeResult.sections[0]`).
+   *
+   * `attention` is the composed map, whose contrast is partly manufactured:
+   * `composeSections` damps every deeper section by `sectionAttenuation^i`, so
+   * mass piles up in the first section and any concentration measured on it
+   * says as much about the segmentation as about the design. A rule that asks
+   * "does this screen have a hierarchy" must read a viewport, not a composite.
+   *
+   * Defaults to `attention` when absent — for an unsegmented frame the two are
+   * the same object.
+   */
+  aboveFoldSection?: ScalarMap
+  /**
+   * All section maps, each normalised in itself and **not** attenuated
+   * (`AnalyzeResult.sections`). Same reason as `aboveFoldSection`: a rule that
+   * compares two elements must not compare them across the scroll-depth
+   * damping, or it only re-states which of them sits further down.
+   *
+   * Absent means "one section" — then `attention` is that section.
+   */
+  sections?: readonly ScalarMap[]
+  /**
+   * The first section's **image-analysis term** — what this screen makes
+   * salient, before the location prior is added (`AnalyzeResult.imageTerms[0]`).
+   *
+   * `flat` reads this and not the finished map. Measured on the finished map,
+   * an empty frame comes out as concentrated as one with a clear eye-catcher
+   * (0,164 against 0,167), because a prior-dominated map is mostly the prior.
+   * On the image term the same two cases are 0,000 against 0,871.
+   */
+  aboveFoldImageTerm?: ScalarMap
 }
 
 /** A single rule. Returns at most one finding (C-1). */
 export type Rule = {
   id: string
+  /**
+   * `false` keeps the rule in the code but out of the product — for a rule
+   * whose threshold is not (or no longer) backed by a measurement. Deleting it
+   * would throw away the implementation *and* the reason; a flag keeps both
+   * next to each other. Defaults to shipped.
+   */
+  shipped?: boolean
   evaluate(input: FindingsInput): Finding | null
 }

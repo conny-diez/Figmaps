@@ -20,13 +20,18 @@ import { meanInRect } from '../engine/imageops'
 import { sectionSalience } from '../engine/segments'
 import { signalRect } from '../engine/features/structure'
 import type { NodeSignal } from '../messages'
+import { describeElement, type Describable } from './label'
 import type { Finding, FindingsInput, Rule } from './types'
 
 const cfg = ENGINE_CONFIG.findings
 
-/** German typographic quotes, as used throughout the panel. */
-function quote(text: string): string {
-  return `‚${text}‘`
+/**
+ * Names an element the way the reviewer sees it: text content first, layer name
+ * only as a fallback, plus a position when several elements read alike.
+ * See `label.ts`.
+ */
+function describe(target: Describable, input: FindingsInput): string {
+  return describeElement(target, input.signals, input.frameHeight)
 }
 
 /** Rounds to one decimal and drops a trailing ",0" — C-2 forbids false precision. */
@@ -48,6 +53,59 @@ function candidateRect(candidate: ClickCandidate, input: FindingsInput) {
     width: Math.max(1, candidate.width * scale),
     height: Math.max(1, candidate.height * scale),
   }
+}
+
+/**
+ * Which viewport a candidate belongs to: the section whose centre is nearest.
+ *
+ * Not "the first section that contains it". Sections overlap by 20 %, so an
+ * element near a boundary sits at the *bottom* of one section and at the *top*
+ * of the next — and the location prior is top-heavy. Picking the first
+ * container would systematically score boundary elements against the dark end
+ * of a section. The nearest centre is the viewport in which the element is
+ * most fully visible.
+ */
+function sectionIndexFor(candidate: ClickCandidate, input: FindingsInput): number {
+  const centre = candidate.y + candidate.height / 2
+  let best = 0
+  let bestDistance = Infinity
+  for (const section of input.plan.sections) {
+    const distance = Math.abs(centre - (section.y + section.height / 2))
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = section.index
+    }
+  }
+  return best
+}
+
+/**
+ * Mean predicted attention of a candidate **within its own viewport**, read
+ * from that section's un-attenuated map.
+ *
+ * On the composed map this quantity carries `sectionAttenuation^i`, so a button
+ * in the footer of a scrolling frame is quiet by arithmetic rather than by
+ * design — which is what made `dead-cta` fire on everything.
+ *
+ * Falls back to the composed map when no section maps were supplied (hand-built
+ * test input); for an unsegmented frame the two are the same map anyway.
+ */
+function localMean(candidate: ClickCandidate, input: FindingsInput): number {
+  const sections = input.sections
+  if (!sections || sections.length <= 1) {
+    return meanInRect(input.attention.values, input.attention.width, input.attention.height, candidateRect(candidate, input))
+  }
+
+  const index = Math.min(sectionIndexFor(candidate, input), sections.length - 1)
+  const map = sections[index]
+  const section = input.plan.sections[index]
+  const scale = map.width / input.frameWidth
+  return meanInRect(map.values, map.width, map.height, {
+    x: candidate.x * scale,
+    y: (candidate.y - section.y) * scale,
+    width: Math.max(1, candidate.width * scale),
+    height: Math.max(1, candidate.height * scale),
+  })
 }
 
 /** True when a candidate reads as the primary call to action of the screen. */
@@ -112,7 +170,15 @@ function hasValleyBetween(
 // Rules
 // ---------------------------------------------------------------------------
 
-/** The primary call to action is not the strongest predicted click target. */
+/**
+ * The primary call to action is not the strongest predicted click target.
+ *
+ * Kein kalibrierter Schwellwert — „nicht auf Rang 1" ist eine Definition. Die
+ * Regel kann daher nicht fehlkalibriert sein, wohl aber wenig aussagen: sie
+ * feuert auf 43 % (synthetic) bis 92 % (Desktop, scrollend, konstruiert) der
+ * Screens. Auf gescrollten Frames wird das von der Scroll-Dämpfung getrieben,
+ * die den Fuß-CTA im Ranking nach unten schiebt.
+ */
 const ctaRank: Rule = {
   id: 'cta-rank',
   evaluate(input) {
@@ -127,13 +193,24 @@ const ctaRank: Rule = {
     return {
       id: 'cta-rank',
       severity: 'problem',
-      text: `${quote(primary.name)} liegt auf Rang ${rank} der vorhergesagten Klicks — Rang 1 hat ${quote(leader.name)}.`,
+      text: `${describe(primary, input)} liegt auf Rang ${rank} der vorhergesagten Klicks — Rang 1 hat ${describe(leader, input)}.`,
       nodeIds: [primary.id, leader.id],
     }
   },
 }
 
-/** The strongest predicted click target sits below the first fold. */
+/**
+ * The strongest predicted click target sits below the first fold.
+ *
+ * Ebenfalls ohne kalibrierten Schwellwert. Die Erreichbarkeit hängt aber an
+ * `sectionAttenuation` — einer ausdrücklich nicht gemessenen Annahme (siehe
+ * `config.ts`): weil jeder tiefere Abschnitt gedämpft wird, liegt der stärkste
+ * Kandidat fast immer im ersten. Auf 24 konstruierten Desktop- und 24
+ * Telefon-Scrollframes feuerte die Regel 0 Mal (y ÷ Fold 1 zwischen 0,15 und
+ * 0,80); der End-to-End-Test löst sie nur mit einem sehr großen
+ * Reaktions-Kandidaten weit unten aus. Sie ist nicht tot, aber sie meldet
+ * seltener, als der Name vermuten lässt.
+ */
 const ctaBelowFold: Rule = {
   id: 'cta-below-fold',
   evaluate(input) {
@@ -147,13 +224,31 @@ const ctaBelowFold: Rule = {
     return {
       id: 'cta-below-fold',
       severity: 'problem',
-      text: `Das interaktive Element mit der höchsten vorhergesagten Klickwahrscheinlichkeit, ${quote(leader.name)}, liegt unterhalb des ersten Folds.`,
+      text: `Das interaktive Element mit der höchsten vorhergesagten Klickwahrscheinlichkeit, ${describe(leader, input)}, liegt unterhalb des ersten Folds.`,
       nodeIds: [leader.id],
     }
   },
 }
 
-/** Two far-apart regions both reach near-maximum predicted attention. */
+/**
+ * Two far-apart regions both reach near-maximum predicted attention.
+ *
+ * Auf echten Bildern nicht entartet: 3,3 % (Webseite, segmentiert) und 10,0 %
+ * (Telefon, ein Viewport), Schwelle bei p3 bzw. p10. Die selektivste Regel,
+ * wie beabsichtigt.
+ *
+ * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
+ * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um
+ * eine Größenordnung schwankt. Derselbe Wert 0,3 bedeutet
+ *
+ *   Desktop, ein Viewport   154 px = 48,0 % der Kartenhöhe
+ *   Telefon, ein Viewport    71 px = 13,9 %
+ *   Telefon, scrollend       77 px =  3,9 %
+ *
+ * „weit auseinander" heißt also je nach Frame-Form etwas völlig anderes. Nicht
+ * geändert, weil jede Änderung ohne neue Kalibrierung genau der Fehler wäre,
+ * um den es hier geht.
+ */
 const competition: Rule = {
   id: 'competition',
   evaluate(input) {
@@ -187,14 +282,27 @@ const competition: Rule = {
       id: 'competition',
       severity: 'attention',
       text: named
-        ? `${quote(a.name)} und ${quote(b.name)} erreichen beide die vorhergesagte Spitzenaufmerksamkeit und liegen weit auseinander.`
+        ? `${describe(a, input)} und ${describe(b, input)} erreichen beide die vorhergesagte Spitzenaufmerksamkeit und liegen weit auseinander.`
         : 'Zwei weit auseinanderliegende Bereiche erreichen beide die vorhergesagte Spitzenaufmerksamkeit.',
       nodeIds: named ? [a.id, b.id] : undefined,
     }
   },
 }
 
-/** A later section peaks higher than the section every user sees. */
+/**
+ * A later section peaks higher than the section every user sees.
+ *
+ * Anders als `flat` und `dead-cta` liest diese Regel die **ungedämpften**
+ * Abschnittskarten, ist also von der Komposition unabhängig. Auf echten Bildern
+ * ist sie gutmütig: UEyes-Webseiten, Viewport 500 erzwungen — Verteilung
+ * −0,179 bis 0,276, Schwelle 0,08 bei p70, Rate 29,8 %.
+ *
+ * Auf konstruierten Frames mit einem farbigen Fuß oder Hero weiter unten
+ * feuert sie dagegen in 83–100 % der Fälle (Schwelle bei p17 bzw. unter dem
+ * Minimum). 0,08 ist keine falsche, aber eine sehr durchlässige Grenze; ob sie
+ * trägt, entscheidet sich an echten Designs, nicht an Screenshots einzelner
+ * Viewports.
+ */
 const coldFold: Rule = {
   id: 'cold-fold',
   evaluate(input) {
@@ -219,7 +327,53 @@ const coldFold: Rule = {
   },
 }
 
-/** Attention is spread evenly — the screen predicts no hierarchy. */
+/**
+ * Attention is spread evenly — the screen predicts no hierarchy.
+ *
+ * Diese Regel war zweimal abgeschaltet und ist es nicht mehr. Die Geschichte
+ * steht hier, weil sie der Grund für den heutigen Aufbau ist.
+ *
+ * **Was schiefging.** Die Schwelle war auf der *komponierten* Karte geschätzt,
+ * mit web-Prior und erzwungener Segmentierung (so misst `findings-audit`), und
+ * wurde auf einem Telefon-Frame angewandt, der mit mobile-Prior als ein
+ * einziger Viewport läuft. Dort lag sie über dem gesamten beobachteten
+ * Wertebereich: 150 von 150 UEyes-Mobile-Bildern, 12 von 12 konstruierten
+ * Frames mit bewusst starker Hierarchie — direkt neben einer Heatmap, die
+ * genau diese Hierarchie zeigte.
+ *
+ * **Erster Anlauf: die Dämpfung raus.** Auf dem ersten Abschnitt für sich
+ * (ungedämpft) fallen die Verteilungen zusammen — Telefon kurz 0,126–0,149,
+ * Telefon scrollend 0,120–0,152, Desktop scrollend 0,122–0,147, vorher
+ * 0,126–0,149 gegen 0,248–0,292. Die Größe wurde damit invariant gegen die
+ * Segmentierung, aber sie maß immer noch das Falsche: an Fällen mit bekannter
+ * Antwort lag ein **leerer** Frame (0,164) so hoch wie einer mit klarem
+ * Blickfang (0,167), und was die Größe wirklich bewegte, war die Menge an
+ * Inhalt.
+ *
+ * **Zweiter Anlauf: den Prior raus.** Unter `hybrid-v1` ist die fertige Karte
+ * `norm(Prior) + 0,3 · Bild`, also weitgehend der Prior — und der ist auf jedem
+ * Screen derselbe. Gemessen auf dem **Bildanalyse-Anteil** (`aboveFoldImageTerm`)
+ * stimmt die Ordnung:
+ *
+ *   leer                       0,000     3 gleich starke Blöcke   0,096
+ *   ein kleiner Blickfang      0,871     6 gleich starke Blöcke   0,077
+ *   ein großer Blickfang       0,283    12 gleich starke Blöcke   0,063
+ *   Blickfang + ruhiger Inhalt 0,102
+ *
+ * Der unterscheidende Bereich ist damit 0,00–0,87 statt 0,113–0,167.
+ *
+ * **Stand.** Schwellen sind das p10 je UI-Typ aus je 150 UEyes-Bildern
+ * (`config.ts`). Feuerraten auf konstruierten Frames: Telefon ein Viewport
+ * 0/24, Telefon scrollend 6/24, Desktop scrollend 5/24. Der Frame aus dem
+ * Vergleichstest — farbiger Kopf, farbiger Fuß — feuert nicht mehr.
+ *
+ * **Was bleibt.** Die Größe reagiert weiterhin auch auf die *Menge* an Inhalt:
+ * auf gescrollten Desktop-Frames feuerte sie bei den Varianten mit den meisten
+ * Karten, darunter eine mit starkem Akzent und Hero. „Zwölf fast gleiche
+ * Karten sind flach" ist vertretbar, aber es ist nicht dasselbe wie „kein
+ * Blickfang". Wenn das im Gebrauch stört, ist es die nächste Frage — und
+ * wieder eine Bedeutungs-, keine Kalibrierungsfrage.
+ */
 const flat: Rule = {
   id: 'flat',
   evaluate(input) {
@@ -228,7 +382,11 @@ const flat: Rule = {
     // same threshold it fired on 11 % of webpages and 90 % of mobile screens.
     // The share of mass in the strongest pixels is scale-free and transfers.
     const threshold = cfg.flatConcentrationThreshold[input.priorCategory] ?? cfg.flatConcentrationThreshold.web
-    if (sectionSalience(input.attention) >= threshold) return null
+    // The image term of the first section: what *this screen* makes salient,
+    // un-attenuated and without the location prior. See
+    // `FindingsInput.aboveFoldImageTerm` for why not the finished map.
+    const map = input.aboveFoldImageTerm ?? input.aboveFoldSection ?? input.attention
+    if (sectionSalience(map) >= threshold) return null
 
     return {
       id: 'flat',
@@ -238,23 +396,68 @@ const flat: Rule = {
   },
 }
 
-/** An interactive element sits in the quietest quarter of the screen. */
+/**
+ * An interactive element sits in the quietest quarter of the screen.
+ *
+ * WARNUNG — dieselbe Fehlerklasse wie `flat`, noch nicht entschieden.
+ *
+ * Die Entscheidungsgröße ist „ruhigster ÷ stärkster Kandidat", gemessen auf der
+ * **komponierten** Karte. Damit vergleicht sie Kandidaten über
+ * Abschnittsgrenzen hinweg — und die Komposition dämpft jeden Abschnitt um
+ * `sectionAttenuation^i`. Ein Button in der Fußzeile eines gescrollten Frames
+ * liegt dadurch rechnerisch immer im ruhigen Bereich, unabhängig vom Entwurf.
+ *
+ * | Population | Verteilung | Schwelle 0,45 | Rate |
+ * |---|---|---|---|
+ * | synthetic (ein Viewport, 2 Kandidaten nebeneinander) | 0,310–0,994 | p3 | 3,3 % |
+ * | Telefon, ein Viewport (konstruiert) | 0,128–0,286 | über max | 100 % |
+ * | Desktop, scrollend (konstruiert) | 0,026–0,212 | über max | 100 % |
+ * | Telefon, scrollend (konstruiert) | 0,020–0,038 | über max | 100 % |
+ *
+ * Die 0,45 stammen aus der ersten Zeile: einem Set, dessen Kandidaten alle im
+ * selben Band eines top-lastigen Priors liegen. Sobald Kandidaten über den
+ * Frame verteilt sind — der Normalfall —, fällt der Quotient mechanisch unter
+ * die Schwelle.
+ *
+ * NICHT AUSGELIEFERT — und zwar nach dem Umbau, nicht mehr wegen ihm.
+ *
+ * Der Vergleich läuft inzwischen über die **ungedämpften** Abschnittskarten
+ * (`localMean`, Variante B des Reviews): jeder Kandidat auf der Karte seines
+ * eigenen Viewports, gemessen gegen den stärksten Kandidaten des Screens. Das
+ * hat den Anteil der Scroll-Dämpfung an der Größe beseitigt — Desktop
+ * scrollend ging von 0,026–0,212 auf 0,161–0,362, Telefon scrollend von
+ * 0,020–0,038 auf 0,115–0,234 —, aber es reicht nicht:
+ *
+ * | Population | Kandidaten | Verteilung |
+ * |---|---|---|
+ * | `synthetic`, ein Viewport | 2 | 0,451–0,997 |
+ * | Telefon, ein Viewport | 6–12 | 0,128–0,286 |
+ * | Telefon, scrollend | 12 | 0,115–0,234 |
+ * | Desktop, scrollend | 12 | 0,161–0,362 |
+ *
+ * Die Größe ist ein **Minimum über N Kandidaten** und sinkt deshalb mit deren
+ * Anzahl: bei zwei Schaltflächen ist „die leiseste" fast nie weit unten, bei
+ * zwölf fast immer eine. Keine Konstante ist über die Populationen hinweg
+ * trennscharf — 0,45 feuert auf 100/100/100/0 %, 0,18 auf 29/50/54/0 %, 0,12
+ * auf 0/0/13/0 %. Was dabei überwiegend gemeldet würde, ist die neunte von
+ * zwölf gleichartigen Listenkarten, und das ist keine Aussage über den Entwurf.
+ *
+ * Offen ist damit nicht mehr die Schwelle, sondern wieder eine Bedeutungsfrage:
+ * ob wiederholte Listeneinträge überhaupt als eigenständige Bedienelemente
+ * zählen sollen, oder ob der Vergleich auf Kandidaten vergleichbarer Rolle zu
+ * beschränken ist. Dazu fehlt außerdem das Set mit echten Layer-Bäumen
+ * (PRD Set 2) — ohne Layer-Baum gibt es keine Kandidaten, also an UEyes
+ * grundsätzlich keine Messung.
+ */
 const deadCta: Rule = {
   id: 'dead-cta',
+  shipped: false,
   evaluate(input) {
     // At least two candidates: "quiet compared to the others" is meaningless
     // when there is only one.
     if (input.candidates.length < 2) return null
 
-    const means = input.candidates.map((candidate) => ({
-      candidate,
-      mean: meanInRect(
-        input.attention.values,
-        input.attention.width,
-        input.attention.height,
-        candidateRect(candidate, input),
-      ),
-    }))
+    const means = input.candidates.map((candidate) => ({ candidate, mean: localMean(candidate, input) }))
     const best = Math.max(...means.map((entry) => entry.mean))
     if (!(best > 0)) return null
 
@@ -266,20 +469,46 @@ const deadCta: Rule = {
     }
     if (!worst) return null
 
+    const leader = means.find((entry) => entry.mean === best)
+    if (!leader || leader.candidate.id === worst.candidate.id) return null
+
+    // The comparison is *relative to the strongest button of the same screen*
+    // and it is read per viewport — both have to be in the sentence, or the
+    // number reads as an absolute share of attention, which it is not.
     return {
       id: 'dead-cta',
       severity: 'attention',
-      text: `${quote(worst.candidate.name)} liegt in einem visuell ruhigen Bereich — im untersten Viertel der vorhergesagten Aufmerksamkeit.`,
-      nodeIds: [worst.candidate.id],
+      text:
+        `${describe(worst.candidate, input)} erreicht ${formatPercent(worst.mean / best)} der vorhergesagten ` +
+        `Aufmerksamkeit der stärksten Schaltfläche ${describe(leader.candidate, input)}, jeweils im eigenen ` +
+        `Bildschirmausschnitt gemessen.`,
+      nodeIds: [worst.candidate.id, leader.candidate.id],
     }
   },
 }
 
-/** Evaluation order; ties in severity keep this order. */
-export const RULES: readonly Rule[] = [ctaBelowFold, coldFold, ctaRank, deadCta, competition, flat]
+/**
+ * Every implemented rule, in the order findings are listed in. Includes the
+ * ones that are not currently offered.
+ *
+ * This is the *tie-breaker*, not the final order — `collectFindings` sorts by
+ * severity first (C-1), so a `problem` precedes an `attention` whatever stands
+ * here.
+ *
+ * The order is the one the review asked for. `flat` leads it although it is
+ * not shipped: that is where it belongs the day its threshold is re-estimated,
+ * and the position should not have to be rediscovered then.
+ */
+export const ALL_RULES: readonly Rule[] = [flat, ctaBelowFold, ctaRank, deadCta, competition, coldFold]
+
+/**
+ * The rules the plugin actually runs. A rule is dropped here, not deleted,
+ * when its threshold is not backed by a measurement — see `flat`.
+ */
+export const RULES: readonly Rule[] = ALL_RULES.filter((rule) => rule.shipped !== false)
 
 export function evaluateRule(id: string, input: FindingsInput): Finding | null {
-  const rule = RULES.find((entry) => entry.id === id)
+  const rule = ALL_RULES.find((entry) => entry.id === id)
   if (!rule) throw new Error(`Unbekannte Regel: ${id}`)
   return rule.evaluate(input)
 }

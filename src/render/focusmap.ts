@@ -14,6 +14,10 @@ import { drawFooter } from './legend'
 export type FocusmapOptions = {
   /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
   priorLabel?: string
+  /** Viewing duration shown in the footer (e.g. „Betrachtungsdauer: Scan (3 s)"). */
+  durationLabel?: string
+  /** CC BY 4.0 notice for the bundled prior — see NOTICE.md. */
+  attribution?: string
   /** Percentile threshold, 60–95 (FR-10). */
   threshold: number
   /** B-2 — fold positions in frame pixels. */
@@ -82,6 +86,10 @@ export function renderFocusmap(
     drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
   }
 
-  drawFooter(ctx, canvas.width, canvas.height, { priorLabel: options.priorLabel })
+  drawFooter(ctx, canvas.width, canvas.height, {
+    priorLabel: options.priorLabel,
+    durationLabel: options.durationLabel,
+    attribution: options.attribution,
+  })
   return canvas
 }

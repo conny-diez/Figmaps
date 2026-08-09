@@ -12,6 +12,10 @@ import { drawFooter, drawLegend } from './legend'
 export type HeatmapOptions = {
   /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
   priorLabel?: string
+  /** Viewing duration shown in the footer (e.g. „Betrachtungsdauer: Scan (3 s)"). */
+  durationLabel?: string
+  /** CC BY 4.0 notice for the bundled prior — see NOTICE.md. */
+  attribution?: string
   /** Overlay opacity, `0..1`. */
   opacity: number
   /** Title of the legend box — differs for the above-the-fold map (B-2). */
@@ -68,7 +72,12 @@ export function renderHeatmap(
     drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
   }
 
-  drawLegend(ctx, canvas.width, canvas.height, options.title ?? 'Heatmap — vorhergesagte Aufmerksamkeit')
-  drawFooter(ctx, canvas.width, canvas.height, { priorLabel: options.priorLabel })
+  const footer = {
+    priorLabel: options.priorLabel,
+    durationLabel: options.durationLabel,
+    attribution: options.attribution,
+  }
+  drawLegend(ctx, canvas.width, canvas.height, options.title ?? 'Heatmap — vorhergesagte Aufmerksamkeit', footer)
+  drawFooter(ctx, canvas.width, canvas.height, footer)
   return canvas
 }

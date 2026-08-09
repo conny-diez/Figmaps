@@ -14,8 +14,10 @@ import { yieldToUi } from '../engine/imageops'
 import { analysisSourceSize } from '../engine/ops-pure'
 import type { ScalarMap } from '../engine/types'
 import { deriveFindings } from '../findings/derive'
-import type { ClickRanking, FindingPayload, MainToUi, RenderedMap, SegmentInfo, Settings } from '../messages'
-import { priorAssetIdFor, PRIOR_ASSET_LABELS } from '../engine/priors'
+import type { ClickRanking, FindingPayload, MainToUi, NodeSignal, RenderedMap, SegmentInfo, Settings } from '../messages'
+import { elementCaption } from '../findings/label'
+import { priorAssetIdFor, PRIOR_ASSET_LABELS, PRIOR_ATTRIBUTION_SHORT, shipsPriorAsset } from '../engine/priors'
+import { PROFILE_LABELS } from '../engine/params'
 import { canvasImageOps } from '../platform/imageops-canvas'
 import { canvasToPngBytes, decodePng, fitWithin } from '../render/canvas'
 import { renderClickmap } from '../render/clickmap'
@@ -41,10 +43,22 @@ export type PipelineHooks = {
   isCancelled?: () => boolean
 }
 
-function toRanking(candidates: readonly ClickCandidate[]): ClickRanking[] {
-  return candidates
-    .slice(0, ENGINE_CONFIG.clickmap.rankingSize)
-    .map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score }))
+/**
+ * The panel's ranking list, named the same way findings are: text content
+ * first, layer name as fallback, position when three rows would otherwise read
+ * identically. Three „Details ansehen" entries with three percentages are the
+ * one place this matters most.
+ */
+function toRanking(
+  candidates: readonly ClickCandidate[],
+  signals: readonly NodeSignal[],
+  frameHeight: number,
+): ClickRanking[] {
+  return candidates.slice(0, ENGINE_CONFIG.clickmap.rankingSize).map((candidate) => ({
+    id: candidate.id,
+    name: elementCaption(candidate, signals, frameHeight),
+    score: candidate.score,
+  }))
 }
 
 const EMPTY_SEGMENTS: SegmentInfo = { segmented: false, sectionCount: 1, viewportHeight: 0, folds: [] }
@@ -119,6 +133,14 @@ export async function generateMaps(
     // the choice belongs on the image, not just in the panel.
     const resolvedPrior = settings.uiType === 'auto' ? priorAssetIdFor(data.width, data.height) : settings.uiType
     const priorLabel = `Ortsprior: ${PRIOR_ASSET_LABELS[resolvedPrior]}${settings.uiType === 'auto' ? ' (automatisch)' : ''}`
+    // The other half of what decides the result: the profile selects the
+    // viewing duration the prior was estimated from (Epic D).
+    const durationLabel = `Betrachtungsdauer: ${PROFILE_LABELS[settings.profile]}`
+    const footerLabels = {
+      priorLabel,
+      durationLabel,
+      ...(shipsPriorAsset() ? { attribution: PRIOR_ATTRIBUTION_SHORT } : {}),
+    }
 
     let ranking: ClickRanking[] = []
     let candidates: ClickCandidate[] = []
@@ -127,7 +149,7 @@ export async function generateMaps(
       if (cancelled()) return { ...empty(), ranking, segments }
       hooks.onStep?.('Heatmap wird gezeichnet', 0.5)
       await yieldToUi()
-      const canvas = renderHeatmap(bitmap, attention, output.width, output.height, { opacity, priorLabel, ...foldOptions })
+      const canvas = renderHeatmap(bitmap, attention, output.width, output.height, { opacity, ...footerLabels, ...foldOptions })
       maps.push({ kind: 'heat', png: await canvasToPngBytes(canvas) })
 
       // B-2 — the first section on its own: the part practically every user sees.
@@ -139,7 +161,7 @@ export async function generateMaps(
         const foldHeight = Math.max(1, Math.round(foldShare * output.height))
         const foldCanvas = renderHeatmap(bitmap, analysis.aboveFold, output.width, foldHeight, {
           opacity,
-          priorLabel,
+          ...footerLabels,
           title: 'Above the Fold — vorhergesagte Aufmerksamkeit',
           // Crop the screenshot to the first section instead of squashing the
           // whole page into a shorter canvas.
@@ -164,10 +186,10 @@ export async function generateMaps(
           'Keine interaktiven Elemente erkannt — benenne Buttons oder setze Prototype-Interaktionen. Clickmap übersprungen.',
         )
       } else {
-        ranking = toRanking(candidates)
+        ranking = toRanking(candidates, data.signals, data.height)
         const canvas = renderClickmap(bitmap, candidates, output.width, output.height, {
           opacity,
-          priorLabel,
+          ...footerLabels,
           frameWidth: data.width,
           frameHeight: data.height,
           ...foldOptions,
@@ -185,7 +207,7 @@ export async function generateMaps(
       await yieldToUi()
       const canvas = renderFocusmap(bitmap, attention, output.width, output.height, {
         threshold: settings.focusThreshold,
-        priorLabel,
+        ...footerLabels,
         ...foldOptions,
       })
       maps.push({ kind: 'focus', png: await canvasToPngBytes(canvas) })
