@@ -14,7 +14,11 @@ import { yieldToUi } from '../engine/imageops'
 import { analysisSourceSize } from '../engine/ops-pure'
 import type { ScalarMap } from '../engine/types'
 import { deriveFindings } from '../findings/derive'
-import { CLICKMAP_IN_PANEL } from '../messages'
+import { contrastFindingText, measureContrast } from '../contrast/measure'
+import { renderContrastmap } from '../render/contrastmap'
+import { CLICKMAP_IN_PANEL,
+  type ContrastFinding,
+} from '../messages'
 import type {
   ClickRanking,
   FindingPayload,
@@ -43,6 +47,8 @@ export type PipelineResult = {
   ranking: ClickRanking[]
   /** Epic C. */
   findings: FindingPayload[]
+  /** C4 — getrennt von `findings`, siehe `ContrastFinding` in `messages.ts`. */
+  contrastFindings: ContrastFinding[]
   segments: SegmentInfo
   /** Absent when the frame was cancelled before anything was rendered. */
   mapMeta?: MapMeta
@@ -83,7 +89,7 @@ export async function generateMaps(
   const warnings: string[] = [...data.notices]
   const maps: RenderedMap[] = []
   const cancelled = (): boolean => hooks.isCancelled?.() === true
-  const empty = (): PipelineResult => ({ maps, warnings, ranking: [], findings: [], segments: EMPTY_SEGMENTS })
+  const empty = (): PipelineResult => ({ maps, warnings, ranking: [], findings: [], contrastFindings: [], segments: EMPTY_SEGMENTS })
 
   hooks.onStep?.('Bild wird gelesen', 0.05)
   const bitmap = await decodePng(data.png)
@@ -184,13 +190,60 @@ export async function generateMaps(
     }
 
     // Order of the pushes is the order the frames end up in on the canvas
-    // (FR-8) — Heatmap, Focusmap, Clickmap, mirroring the panel.
+    // (FR-8) — Heatmap, Focusmap, Contrastmap, Clickmap, mirroring the panel.
     if (settings.maps.focus) {
       if (cancelled()) return { ...empty(), ranking, segments }
       hooks.onStep?.('Focusmap wird gezeichnet', 0.7)
       await yieldToUi()
       const canvas = renderFocusmap(bitmap, attention, output.width, output.height, foldOptions)
       maps.push({ kind: 'focus', png: await canvasToPngBytes(canvas) })
+    }
+
+    // Contrastmap. Sie hängt an nichts, was die Vorhersage produziert: weder an
+    // der Aufmerksamkeitskarte noch an Folds, Abschnitten oder Kandidaten. Sie
+    // braucht die gerenderten Pixel und den Layer-Baum, und beide liegen hier
+    // ohnehin schon vor.
+    // Auf der **vollen** Auflösung, nicht auf `source`: das Analysebild ist auf
+    // 1024 px Breite gedeckelt, und zwischen den Glyphen wäre danach kein
+    // reiner Hintergrund mehr übrig. Siehe `ENGINE_CONFIG.contrastSource`.
+    const contrastSize = fitWithin(
+      bitmap.width,
+      bitmap.height,
+      Math.min(
+        ENGINE_CONFIG.contrastSource.maxEdge,
+        Math.floor(Math.sqrt((ENGINE_CONFIG.contrastSource.maxPixels * Math.max(bitmap.width, bitmap.height)) / Math.min(bitmap.width, bitmap.height))),
+      ),
+    )
+    const contrastPixels = canvasImageOps.fromImageBitmap(bitmap, contrastSize.width, contrastSize.height)
+    const contrast = measureContrast({
+      image: { width: contrastPixels.width, height: contrastPixels.height, data: contrastPixels.data },
+      signals: data.signals,
+      frameWidth: data.width,
+      frameHeight: data.height,
+    })
+    const contrastFindings: ContrastFinding[] = contrast.results.map((result) => ({
+      nodeId: result.nodeId,
+      status: result.status,
+      text: contrastFindingText(result),
+      ratio: result.ratio,
+      required: result.required,
+      approximate: result.approximate,
+    }))
+    if (contrast.skipped.length > 0) {
+      // Nicht verschweigen: eine Messung, die Elemente auslässt, sagt „in
+      // Ordnung", wo sie „ich weiß es nicht" meint.
+      warnings.push(
+        `Contrastmap: ${contrast.skipped.length} Textelement(e) nicht messbar ` +
+          `(${[...new Set(contrast.skipped.map((entry) => entry.reason))].join('; ')}).`,
+      )
+    }
+
+    if (settings.maps.contrast) {
+      if (cancelled()) return { ...empty(), ranking, segments }
+      hooks.onStep?.('Contrastmap wird gezeichnet', 0.8)
+      await yieldToUi()
+      const canvas = renderContrastmap(bitmap, contrast.results, output.width, output.height, data.width, data.height)
+      maps.push({ kind: 'contrast', png: await canvasToPngBytes(canvas) })
     }
 
     // Candidate detection runs unconditionally: `cta-rank` and `cta-below-fold`
@@ -245,7 +298,7 @@ export async function generateMaps(
     })
 
     hooks.onStep?.('Fertig', 1)
-    return { maps, warnings, ranking, findings, segments, mapMeta }
+    return { maps, warnings, ranking, findings, contrastFindings, segments, mapMeta }
   } finally {
     bitmap.close()
   }

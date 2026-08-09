@@ -104,6 +104,28 @@ export const ENGINE_CONFIG = {
     maxPixels: 12_000_000,
   },
 
+  /**
+   * Auflösung, auf der die **Contrastmap** misst (1.2 C1).
+   *
+   * Bewusst großzügiger als `analysisSource`, und das ist kein Widerspruch:
+   * die Aufmerksamkeitsvorhersage arbeitet mit weichgezeichneten Merkmalen und
+   * verliert durch Verkleinern nichts, die Kontrastmessung schon. Sie tastet
+   * den Hintergrund **zwischen den Glyphen** ab; wird das Bild verkleinert,
+   * mischen sich Text- und Hintergrundpixel, und der gemessene Wert wäre eine
+   * Interpolation statt einer Messung.
+   *
+   * Bei einer Ausgabe, die als überprüfbare Tatsache auftritt, ist das der
+   * Unterschied zwischen richtig und falsch — anders als bei einer Heatmap, die
+   * ohnehin eine Schätzung ist.
+   *
+   * Die Grenzen sind Speicher, nicht Genauigkeit: 4096 ist die Kante, die
+   * `figma.createImage` verträgt, 12 Mio. Pixel dieselbe Schranke wie oben.
+   */
+  contrastSource: {
+    maxEdge: 4096,
+    maxPixels: 12_000_000,
+  },
+
   /** Epic B — viewport derivation and segmentation. */
   viewport: {
     /** Frames at least this wide are treated as desktop. */

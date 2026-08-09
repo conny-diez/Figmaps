@@ -1812,6 +1812,127 @@ Code, der Rest ist das Set.
 
 ---
 
+## Contrastmap (1.2 C)
+
+```bash
+npm run contrast-check      # die Karte auf zwei Frames, Bild und Befunde
+```
+
+**Die dritte Karte, und die einzige, die keine Vorhersage ist.** Sie hat keinen
+Datensatz, keine Kalibrierung und keine Schwelle, die veralten kann — sie
+rechnet eine Norm aus. Sie kann nicht in dem Sinne falsch sein, in dem eine
+Heatmap falsch sein kann; sie kann nur ungenau sein, und wo sie das ist, sagt
+sie es.
+
+**Nach den Befundzahlen ist sie der tragende Teil von 1.2, nicht die Ergänzung.**
+Von den drei Vorhersage-Regeln bedient jede genau eine Frame-Form
+([siehe oben](#die-aufteilung-ist-keine-einschränkung-sondern-die-struktur)); auf
+einem Ein-Viewport-Telefon bekommt ein Drittel der Screens gar nichts. Die
+Contrastmap braucht weder Folds noch Abschnitte noch Kandidaten und sagt auf
+**jeder** Frame-Form etwas.
+
+### Wie gemessen wird (C1)
+
+Hybrid, und beide Hälften aus dem Grund, aus dem sie dort herkommen müssen:
+
+| aus dem Layer-Baum | aus den gerenderten Pixeln |
+|---|---|
+| Position, Größe, Schriftgröße, Schriftschnitt, Textfarbe | die tatsächliche Hintergrundfarbe |
+
+Den Hintergrund aus dem Baum zu rekonstruieren hieße, den Renderer nachzubauen —
+gestapelte Fills, Verläufe, Fotos, Deckkraft, Masken —, und jede Abweichung wäre
+ein falscher Befund über etwas, das man ansehen kann. Umgekehrt wäre „alles aus
+den Pixeln" ebenso falsch: aus einem Screenshot ist nicht zu erkennen, was ein
+Textknoten ist und wie groß seine Schrift wirklich ist — und genau davon hängt
+die Schwelle ab.
+
+Abgetastet wird **innerhalb** des Textrahmens, ohne die Glyphen: Pixel nahe der
+Textfarbe fallen weg, samt Antialiasing-Saum. Füllt der Text seinen Rahmen, wird
+auf einen Ring außerhalb ausgewichen. Gemessen wird auf der **vollen**
+Auflösung (`ENGINE_CONFIG.contrastSource`), nicht auf dem 1024 px breiten
+Analysebild — zwischen den Glyphen wäre dort kein reiner Hintergrund mehr übrig,
+und der Wert wäre eine Interpolation statt einer Messung.
+
+### Die Schwellen sind zitiert, nicht kalibriert (C2)
+
+WCAG 2.1, Erfolgskriterium 1.4.3, Level AA: **4,5:1** für normalen Text, **3:1**
+für großen — groß heißt ab 24 px, oder ab 18,66 px bei fett. Diese Zahlen stehen
+in einem Standard und veralten nicht mit unserer Engine.
+
+Was **nicht** übernommen ist, weil es ohne Auslegung nicht geht: die Ausnahmen
+des Kriteriums für rein dekorativen Text, für Logotypen und für inaktive
+Bedienelemente. Ein Layer-Baum sagt nicht, ob ein Text dekorativ ist. Gemessen
+werden deshalb alle Textknoten, und die Ausnahme bleibt beim Menschen — ein
+falsch gemeldeter Logotyp ist ein Ärgernis, ein verschwiegener Fließtext ein
+Fehler.
+
+Eine Stufe kommt von uns und ist als unsere gekennzeichnet: **grenzwertig** für
+Werte knapp über der Norm. 4,52:1 trägt dieselbe Aussage wie 4,48:1, und die
+Abtastung hat in der zweiten Nachkommastelle ohnehin keinen Halt.
+
+### Darstellung (C3)
+
+![Contrastmap auf dem Onboarding-Screen](assets/messungen/c-contrastmap-onboarding.png)
+![Contrastmap auf einem Desktop-Frame](assets/messungen/c-contrastmap-desktop.png)
+
+**Kein Overlay über dem Inhalt** — dieselbe Regel, aus der 1.1 die Legende und
+der Disclaimer aus den Bildern verschwunden sind. Bei einer Karte, die von
+Lesbarkeit handelt, wäre es besonders absurd, den Text zu verdecken. Stattdessen:
+ein Rahmen **um** jedes Textelement, der Wert in einer Fahne daneben, und der
+Rest des Bildes leicht abgedunkelt, damit die Markierungen hervortreten.
+
+Die drei Farben sind Status, keine Skala. Und sie sind nicht die einzige
+Kodierung: die Zahl steht an jedem Element, und die Rahmen unterscheiden sich in
+der Strichstärke — eine Barrierefreiheits-Ansicht, die selbst auf
+Rot-Grün-Unterscheidung angewiesen ist, wäre schwer zu verteidigen.
+
+Gemessen auf den beiden Prüffällen:
+
+| Frame | gemessen | durchgefallen | grenzwertig |
+|---|---:|---:|---:|
+| Onboarding-Screen 393 × 852 | 8 | 0 | 2 |
+| Desktop, scrollend 1440 × 3200 | 21 | 10 | 0 |
+
+Auf dem Desktop-Frame fallen die Firmennamen (4,19:1) und die Kartenknöpfe
+(4,50:1 — genau auf der Grenze, also durchgefallen) durch, die Stellentitel
+bestehen mit 18,08:1. Auf dem Onboarding-Screen besteht alles; die Unterzeile
+liegt mit 4,51:1 knapp darüber und wird als grenzwertig markiert.
+
+### Die Befunde stehen getrennt (C4)
+
+> „Digital Works AG" hat 4,2:1 gegen seinen Hintergrund — WCAG AA verlangt
+> 4,5:1 (normaler Text).
+
+Eigene Sektion im Panel, eigene Bezeichnung („Kontrast (gemessen)"), und **der
+Vorhersage-Disclaimer gilt für sie nicht**. Die Trennung steht im Typ, nicht nur
+im Layout: `ContrastFinding` ist ein anderer Typ als `FindingPayload`, damit die
+beiden nicht versehentlich in einer Liste landen. In einer Liste vermischt würde
+das eine das andere abwerten — und zwar in die falsche Richtung, denn die
+belastbarere Aussage verlöre.
+
+### Grenzen, ehrlich benannt (C5)
+
+Über einem Foto oder einem Verlauf gibt es kein „das" Kontrastverhältnis,
+sondern eine Verteilung. Gemeldet wird der **schlechteste** Wert im Textbereich
+— die Aussage, die nicht zu gut aussieht — und der Befund sagt dazu, dass der
+Hintergrund wechselt und der Wert eine Näherung nach unten ist. In der Karte
+trägt die Fahne dann ein `~`.
+
+Elemente, die gar nicht messbar sind, werden **gezählt und benannt** statt still
+ausgelassen: mehrfarbiger Text ohne einfarbigen Fill, fehlende Schriftgröße,
+Text, der seinen Rahmen vollständig füllt. Eine Messung, die Elemente
+verschweigt, sagt „in Ordnung", wo sie „ich weiß es nicht" meint.
+
+### Panel (C6)
+
+Dritter Schalter, Reihenfolge Heatmap, Focusmap, Contrastmap — dieselbe
+Reihenfolge, in der die Ergebnisframes auf dem Canvas landen. Beschreibung:
+„Prüft, ob Texte genug Kontrast zu ihrem Hintergrund haben". Eine gespeicherte
+Einstellung von vor 1.2 bekommt die Karte **eingeschaltet**: eine neue Ausgabe,
+die still ausgeschaltet ankommt, sieht aus wie eine, die es nicht gibt.
+
+---
+
 ## Befunde (Epic C)
 
 Nach der Berechnung läuft ein Satz deterministischer Regeln über Heatmap,

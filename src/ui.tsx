@@ -19,6 +19,7 @@ import {
   PANEL_MAP_KINDS,
   PANEL_SIZE,
   type ClickRanking,
+  type ContrastFinding,
   type FindingPayload,
   type FrameSummary,
   type MapKind,
@@ -420,6 +421,7 @@ function App(): preact.JSX.Element {
   const [ranking, setRanking] = useState<ClickRanking[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [findings, setFindings] = useState<FindingPayload[]>([])
+  const [contrastFindings, setContrastFindings] = useState<ContrastFinding[]>([])
   const [segments, setSegments] = useState<SegmentInfo | null>(null)
 
   // Refs, because the message handler is installed once and must not close over
@@ -446,6 +448,7 @@ function App(): preact.JSX.Element {
       })
       if (result.ranking.length > 0) setRanking(result.ranking)
       setFindings(result.findings)
+      setContrastFindings(result.contrastFindings)
       setSegments(result.segments)
       send({
         type: 'PLACE_RESULT',
@@ -453,6 +456,7 @@ function App(): preact.JSX.Element {
         maps: result.maps,
         warnings: result.warnings,
         findings: result.findings,
+        contrastFindings: result.contrastFindings,
         segments: result.segments,
         mapMeta: result.mapMeta,
       })
@@ -852,6 +856,49 @@ function App(): preact.JSX.Element {
                     </li>
                   ))}
                 </ul>
+              </section>
+            )}
+
+            {/* C4 — eigene Sektion, eigene Bezeichnung, und der
+                Vorhersage-Disclaimer gilt hier NICHT.
+
+                Die Trennung ist kein Layout-Detail: darüber stehen
+                Vorhersagen, die falsch sein können, hier stehen Messwerte, die
+                jeder nachrechnen kann. In einer Liste vermischt würde das eine
+                das andere abwerten — und zwar in die falsche Richtung, denn die
+                belastbarere Aussage verlöre. */}
+            {contrastFindings.length > 0 && (
+              <section class="section">
+                <p class="section__label">Kontrast (gemessen)</p>
+                <p class="section__hint">
+                  Nach WCAG 2.1 AA geprüft. Keine Vorhersage — diese Werte sind nachmessbar.
+                </p>
+                <ul class="findings">
+                  {contrastFindings
+                    .filter((entry) => entry.status !== 'bestanden')
+                    .map((entry) => (
+                      <li key={entry.nodeId} class={`findings__item findings__item--${entry.status === 'durchgefallen' ? 'problem' : 'attention'}`}>
+                        <span class="findings__bar" aria-hidden="true" />
+                        <div class="findings__body">
+                          <span class="findings__severity">
+                            {entry.status === 'durchgefallen' ? 'Durchgefallen' : 'Grenzwertig'}
+                          </span>
+                          <span class="findings__text">{entry.text}</span>
+                          <button
+                            type="button"
+                            class="linkbutton findings__link"
+                            onClick={() => reveal([entry.nodeId])}
+                          >
+                            Im Canvas zeigen
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+                <p class="section__hint">
+                  {contrastFindings.filter((entry) => entry.status === 'bestanden').length} weitere Textelemente
+                  erfüllen die Anforderung.
+                </p>
               </section>
             )}
 

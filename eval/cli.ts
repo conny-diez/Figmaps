@@ -56,6 +56,7 @@ import {
   onboardingFindings,
 } from './finding-load'
 import { sweepCompetition } from './competition'
+import { runContrastCheck } from './contrast-check'
 import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
@@ -1303,6 +1304,42 @@ async function runCompetition(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// contrast-check — 1.2 C: die Contrastmap auf zwei Frames
+//
+//   npm run contrast-check
+// ---------------------------------------------------------------------------
+
+function runContrastCheckCommand(args: Args): number {
+  console.log('Contrastmap auf zwei Frames. Diese Werte sind nachmessbar — keine Vorhersage.')
+  for (const result of runContrastCheck()) {
+    console.log('')
+    console.log(`${result.label} — ${result.results.length} Textelemente gemessen, ${result.skipped.length} übersprungen`)
+    console.log(`  ${'Status'.padEnd(15)}${'Wert'.padStart(9)}${'gefordert'.padStart(11)}${'Näherung'.padStart(10)}   Text`)
+    for (const entry of result.results) {
+      console.log(
+        `  ${entry.status.padEnd(15)}${entry.ratio.toFixed(2).padStart(9)}${entry.required.toFixed(1).padStart(11)}` +
+          `${(entry.approximate ? 'ja' : '—').padStart(10)}   ${entry.text.slice(0, 40)}`,
+      )
+    }
+    for (const entry of result.skipped) console.log(`  übersprungen: ${entry.nodeId} — ${entry.reason}`)
+    const target = `${str(args, 'out', 'out/contrast')}-${result.id}.png`
+    writeFile(target, result.png)
+    console.log(`  Bild: ${target}`)
+    const failed = result.results.filter((entry) => entry.status === 'durchgefallen')
+    if (failed.length > 0) {
+      console.log('  Befunde, wie sie im Panel stehen:')
+      for (const entry of failed) console.log(`    ${contrastText(result, entry.nodeId)}`)
+    }
+  }
+  return 0
+}
+
+function contrastText(result: ReturnType<typeof runContrastCheck>[number], nodeId: string): string {
+  const index = result.results.findIndex((entry) => entry.nodeId === nodeId)
+  return index >= 0 ? result.findings[index] : ''
+}
+
+// ---------------------------------------------------------------------------
 // gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
 //
 //   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
@@ -1665,6 +1702,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args['cold-fold']) return await runColdFold()
     if (args['finding-load']) return await runFindingLoad(args)
     if (args.competition) return await runCompetition(args)
+    if (args['contrast-check']) return runContrastCheckCommand(args)
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)
