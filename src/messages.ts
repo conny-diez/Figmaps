@@ -106,8 +106,6 @@ export type Settings = {
   maps: Record<Exclude<MapKind, 'fold'>, boolean>
   /** Heatmap overlay opacity in percent, 0–100. */
   overlayOpacity: number
-  /** Focusmap percentile threshold, 60–95. */
-  focusThreshold: number
   /** Epic D — viewing-duration profile. Only shipped profiles are offered. */
   profile: ProfileId
   /** Which location prior to use; `auto` derives it from the frame geometry. */
@@ -122,7 +120,6 @@ export type Settings = {
 export const DEFAULT_SETTINGS: Settings = {
   maps: { heat: true, click: true, focus: true },
   overlayOpacity: 65,
-  focusThreshold: 80,
   profile: DEFAULT_PROFILE,
   uiType: 'auto',
   viewportHeight: null,

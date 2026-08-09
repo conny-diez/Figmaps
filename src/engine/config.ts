@@ -276,9 +276,20 @@ export const ENGINE_CONFIG = {
     blurSigmaRatio: 0.012,
     /** Feather of the mask edge as a fraction of the longer output edge. */
     maskFeatherRatio: 0.02,
-    defaultPercentile: 80,
-    minPercentile: 60,
-    maxPercentile: 95,
+    /**
+     * Where the sharp area is cut: the top 100−P percent of the map's pixels
+     * stay in focus. Fixed, not a setting.
+     *
+     * 80 is the value the panel slider defaulted to. The alternative — deriving
+     * it per screen from the concentration of the image term (the quantity
+     * `findings/rules.ts` → `flat` cuts on) — was measured and dropped: that
+     * quantity answers „how small is the strongest spot", not „how clear is the
+     * hierarchy", and it moves just as much with the sheer amount of content.
+     * On two constructed frames with a large hero it therefore *widened* the
+     * sharp area to 30–45 % of the page, the opposite of the intent. See the
+     * commit that removed the slider.
+     */
+    percentile: 80,
   },
 
   /** Main-thread traversal limits (FR-1, FR-3). */

@@ -18,8 +18,12 @@ export type FocusmapOptions = {
   durationLabel?: string
   /** CC BY 4.0 notice for the bundled prior — see NOTICE.md. */
   attribution?: string
-  /** Percentile threshold, 60–95 (FR-10). */
-  threshold: number
+  /**
+   * Percentile the sharp area is cut at. Defaults to `ENGINE_CONFIG.focus.percentile`,
+   * which is what the plugin uses — the parameter stays so the eval harness can
+   * sweep it without touching the config.
+   */
+  threshold?: number
   /** B-2 — fold positions in frame pixels. */
   folds?: readonly number[]
   /** Frame height in frame pixels, required when `folds` is given. */
@@ -48,9 +52,10 @@ export function renderFocusmap(
   map: ScalarMap,
   width: number,
   height: number,
-  options: FocusmapOptions,
+  options: FocusmapOptions = {},
 ): HTMLCanvasElement {
   const cfg = ENGINE_CONFIG.focus
+  const threshold = options.threshold ?? cfg.percentile
   const longer = Math.max(width, height)
   const backgroundBlur = Math.max(1, Math.round(longer * cfg.blurSigmaRatio))
   const featherBlur = Math.max(1, Math.round(longer * cfg.maskFeatherRatio))
@@ -72,7 +77,7 @@ export function renderFocusmap(
   const maskCtx = context2d(mask)
   maskCtx.save()
   maskCtx.filter = `blur(${featherBlur}px)`
-  drawScalarLayer(maskCtx, map.width, map.height, focusMaskAlpha(map, options.threshold), mask.width, mask.height)
+  drawScalarLayer(maskCtx, map.width, map.height, focusMaskAlpha(map, threshold), mask.width, mask.height)
   maskCtx.restore()
 
   sharpCtx.globalCompositeOperation = 'destination-in'

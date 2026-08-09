@@ -547,34 +547,6 @@ function App(): preact.JSX.Element {
 
           <div class="slider">
             <div class="slider__head">
-              <span class="slider__name">Fokusbereich</span>
-              {/* The percentile stays the computed quantity; only the reading
-                  changes — the 80th percentile *is* the top 20 % of the map. */}
-              <span class="slider__value">oberste {100 - settings.focusThreshold} %</span>
-            </div>
-            <input
-              type="range"
-              min={ENGINE_CONFIG.focus.minPercentile}
-              max={ENGINE_CONFIG.focus.maxPercentile}
-              step={1}
-              value={settings.focusThreshold}
-              disabled={phase === 'working'}
-              style={{
-                '--fill': fillPercent(
-                  settings.focusThreshold,
-                  ENGINE_CONFIG.focus.minPercentile,
-                  ENGINE_CONFIG.focus.maxPercentile,
-                ),
-              }}
-              onInput={(event) =>
-                patchSettings({ focusThreshold: Number(event.currentTarget.value) })
-              }
-            />
-            <p class="hint">Wie groß der scharfe Bereich ist</p>
-          </div>
-
-          <div class="slider">
-            <div class="slider__head">
               <span class="slider__name">Viewport-Höhe</span>
               <span class="slider__value">
                 {settings.viewportHeight === null ? 'automatisch' : `${settings.viewportHeight} px`}

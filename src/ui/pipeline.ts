@@ -183,7 +183,6 @@ export async function generateMaps(
       hooks.onStep?.('Focusmap wird gezeichnet', 0.7)
       await yieldToUi()
       const canvas = renderFocusmap(bitmap, attention, output.width, output.height, {
-        threshold: settings.focusThreshold,
         ...footerLabels,
         ...foldOptions,
       })

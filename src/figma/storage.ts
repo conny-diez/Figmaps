@@ -25,7 +25,6 @@ function clamp(value: number, min: number, max: number, fallback: number): numbe
 export function normaliseSettings(raw: unknown): Settings {
   const input = (typeof raw === 'object' && raw !== null ? raw : {}) as Partial<Settings>
   const maps = (typeof input.maps === 'object' && input.maps !== null ? input.maps : {}) as Partial<Record<MapKind, boolean>>
-  const focus = ENGINE_CONFIG.focus
 
   // Epic D — a stored profile that is no longer shipped falls back to the
   // default. Otherwise disabling an unproven profile would leave users stuck
@@ -41,9 +40,6 @@ export function normaliseSettings(raw: unknown): Settings {
       focus: maps.focus ?? DEFAULT_SETTINGS.maps.focus,
     },
     overlayOpacity: Math.round(clamp(input.overlayOpacity as number, 0, 100, DEFAULT_SETTINGS.overlayOpacity)),
-    focusThreshold: Math.round(
-      clamp(input.focusThreshold as number, focus.minPercentile, focus.maxPercentile, DEFAULT_SETTINGS.focusThreshold),
-    ),
     profile,
     // A stored UI type whose prior is not in this build falls back to `auto`.
     uiType:
