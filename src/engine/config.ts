@@ -628,8 +628,42 @@ export const ENGINE_CONFIG = {
      * a featureless page sits at 0,163 and a page with a strong eye-catcher
      * deep down at 0,182. An absolute margin on the old 0..1 peak scale could
      * never be reached — which is why this rule was silently inert.
+     *
+     * **Je UI-Typ seit 1.2 B, vorher eine Zahl für alle.** Die 0,08 stammen aus
+     * der Webseiten-Verteilung, und auf Telefon-Screens lagen sie unter deren
+     * Median: die Regel sagte dort häufiger ja als nein. Gemessen mit
+     * `npm run cold-fold`, je 495 Bilder mit erzwungener Segmentierung:
+     *
+     *   Dezile web     −0,132 −0,081 −0,043  0,005  0,037  0,080  0,128  0,181  0,259
+     *   Dezile mobile  −0,071 −0,007  0,045  0,088  0,131  0,189  0,250  0,315  0,411
+     *
+     * 0,08 sitzt in web bei **p60** (Rate 40,0 %) und in mobile bei **p38**
+     * (61,6 %). Dieselbe Fehlerklasse wie bei `flat` — eine Schwelle, in einer
+     * Population geschätzt und in einer anderen angewandt —, nur wandert sie
+     * hier zwischen UI-Typen statt zwischen Konfigurationen.
+     *
+     * **Kalibriert wird auf Vergleichbarkeit, nicht gegen eine Wahrheit.** Es
+     * gibt keine Ground Truth dafür, ob ein Screen diesen Befund verdient;
+     * niemand hat gelabelt, wo Aufmerksamkeit „zu weit unten" bündelt. Die
+     * Schwelle liegt deshalb in jedem Typ am **selben Perzentil** seiner
+     * eigenen Verteilung, damit die Aussage in beiden dasselbe heißt — genau
+     * die Begründung, mit der `flat` seine vier Schwellen bekommen hat. Mit
+     * p60 in beiden: web 40,0 %, mobile 39,8 %.
+     *
+     * **Das Perzentil selbst ist nicht kalibriert.** p60 ist aus dem
+     * ausgelieferten Zustand übernommen. Ob ein Befund auf 40 % der Screens
+     * erscheinen soll, ist eine Produktfrage und hier ausdrücklich **nicht**
+     * entschieden — entschieden ist nur, dass die Regel in beiden Typen
+     * dieselbe Frage stellt.
+     *
+     * `desktop` und `poster` sind **nicht gemessen**: die Kategorien sind
+     * importierbar, aber für Figmaps nicht die relevanten UI-Typen. Sie fallen
+     * auf den web-Wert zurück, und das ist eine Annahme, keine Messung.
      */
-    coldFoldMargin: 0.08,
+    coldFoldMargin: {
+      web: 0.08,
+      mobile: 0.189,
+    } as Record<string, number>,
     /** `cta-rank`: a primary candidate below this rank is worth reporting. */
     ctaRankThreshold: 1,
     /** Name tokens that mark a candidate as the *primary* call to action. */

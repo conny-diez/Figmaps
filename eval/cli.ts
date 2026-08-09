@@ -21,6 +21,7 @@ import {
   type ProfileId,
 } from '../src/engine/params'
 import { analyzeFrame } from '../src/engine/analyze'
+import { ENGINE_CONFIG } from '../src/engine/config'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { renderContactSheet, type Triptych } from './contact-sheet'
@@ -46,6 +47,7 @@ import { groupSweep, GROUP_LABELS, type GroupSweepResult } from './groups'
 import { measureCutoff } from './cutoff'
 import { buildGateFixtures } from './gate-fixtures'
 import { measureBandGate, type ThresholdCandidate } from './band-gate'
+import { measureColdFold } from './cold-fold'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -1117,6 +1119,44 @@ async function runBandGate(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// cold-fold — 1.2 B: die Schwelle je UI-Typ
+//
+//   npm run cold-fold
+// ---------------------------------------------------------------------------
+
+async function runColdFold(): Promise<number> {
+  // Die Referenz, gegen die die Verteilungen gelesen werden: der web-Wert. Er
+  // ist der einzige, der je an Daten geschätzt wurde.
+  const shippedMargin = ENGINE_CONFIG.findings.coldFoldMargin.web
+  console.log('cold-fold: Verteilung der Entscheidungsgröße je UI-Typ.')
+  console.log('Kalibriert wird auf Vergleichbarkeit, nicht gegen eine Wahrheit — es gibt keine.')
+  const result = await measureColdFold({ onProgress: (message) => console.log(`  ${message} …`) })
+
+  console.log('')
+  for (const measurement of result.measurements) {
+    console.log(
+      `${measurement.population.id}: ${measurement.evaluated} bewertet, ${measurement.blocked} blockiert, ` +
+        `Rate heute ${(measurement.currentRate * 100).toFixed(1)} %`,
+    )
+    console.log(`  Dezile: ${measurement.deciles.map((v) => v.toFixed(3)).join(' ')}`)
+    console.log(
+      `  die ausgelieferte Schwelle ${shippedMargin} sitzt bei p${(measurement.currentThresholdQuantile * 100).toFixed(0)}`,
+    )
+  }
+
+  console.log('')
+  console.log(`Anker: p${(result.anchorQuantile * 100).toFixed(0)} — die Stelle, an der die heutige Schwelle in web sitzt.`)
+  console.log(`${'UI-Typ'.padEnd(10)}${'Schwelle'.padStart(10)}${'Rate'.padStart(9)}`)
+  for (const id of Object.keys(result.proposed)) {
+    console.log(`${id.padEnd(10)}${result.proposed[id].toFixed(3).padStart(10)}${`${(result.proposedRate[id] * 100).toFixed(1)} %`.padStart(9)}`)
+  }
+  console.log('')
+  console.log('Das Perzentil selbst ist NICHT kalibriert — es ist aus dem ausgelieferten Zustand übernommen.')
+  console.log('Ob ein Befund auf so vielen Screens erscheinen soll, ist eine Produktfrage.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
 //
 //   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
@@ -1476,6 +1516,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args.cutoff) return await runCutoff(args)
     if (args['gate-fixtures']) return runGateFixtures(args)
     if (args['band-gate']) return await runBandGate(args)
+    if (args['cold-fold']) return await runColdFold()
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)

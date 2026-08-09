@@ -234,7 +234,7 @@ export function thresholdOf(id: string, category: string): { value: number; fire
     case 'competition':
       return { value: cfg.competitionValleyRatio, firesBelow: true }
     case 'cold-fold':
-      return { value: cfg.coldFoldMargin, firesBelow: false }
+      return { value: cfg.coldFoldMargin[category] ?? cfg.coldFoldMargin.web, firesBelow: false }
     case 'dead-cta':
       return { value: cfg.deadCtaRelativeToBest, firesBelow: true }
     default:

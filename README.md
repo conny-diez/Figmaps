@@ -1555,11 +1555,10 @@ bei null anfängt.
 3. **Die Streifen aus 1.1 sind zurück** — siehe unten, eigener Abschnitt.
 4. **`competition` neu kalibrieren**, nach dem Umbau in B1, auf der
    ausgelieferten Karte, getrennt je Frame-Form.
-5. **`cold-fold` braucht eine Schwelle je UI-Typ.** 0,08 liegt auf Webseiten
-   über dem Median der Entscheidungsgröße (Rate 40,0 %) und auf Telefon-Screens
-   darunter (61,6 %). Das ist keine Feinjustierung, sondern eine fehlende
-   Kalibrierung auf der halben Population — und `cold-fold` ist eine von nur
-   zwei belastbaren Regeln.
+5. **Bei `cold-fold` ist die Höhe der Schwelle offen, nicht mehr ihre Form.**
+   Sie liegt jetzt je UI-Typ am selben Perzentil (p60, Raten 40,0 % und
+   39,8 %). Ob p60 die richtige Stelle ist — ob ein Befund auf 40 % der Screens
+   erscheinen soll —, ist eine Produktfrage und nicht beantwortet.
 6. **`flat` ist doppelt veraltet.** Seine Schwellen sind auf dem Bildanteil mit
    Blur 0,025 geschätzt; der ist jetzt 0,035. Die Regel ist nicht ausgeliefert,
    aber die Zahlen in `config.ts` sind es dem Namen nach — beim
@@ -2405,24 +2404,44 @@ Drei Regeln, die ohne Folds und ohne Abschnitte auskommen:
 | **CTA in der ruhigsten Zone** — der primäre Kandidat liegt dort, wo die Karte kalt ist | `meanInRect` über die Kandidatengeometrie, `percentile` über die ganze Karte, `isPrimaryCandidate` | Die Entscheidungsgröße muss der Rang des CTA **innerhalb der Kartenverteilung** sein (z. B. „unter dem 30. Perzentil aller Pixel"), nicht relativ zu den anderen Kandidaten — genau der Fehler, an dem `dead-cta` hängt. Schwelle aus Daten |
 | **Kopfbereich stärker als Inhalt** — die Aufmerksamkeit bleibt im oberen Band hängen | Die Karte selbst, `sectionSalience` als Konzentrationsmaß, Geometrie aller Knoten | Bandaufteilung (z. B. obere 25 % gegen Rest) und ein Verhältnismaß. Dieselbe Vorsicht wie bei `flat`: die Größe darf nicht auf die *Menge* an Inhalt reagieren |
 
-**Vierter Punkt, in 1.2 A dazugekommen: `cold-fold` braucht eine Schwelle je
-UI-Typ.** Die Regel ist eine von nur zwei belastbaren, und ihre einzige
-Konstante — `coldFoldMargin` = 0,08 — stammt aus der Webseiten-Verteilung. Auf
-Telefon-Screens (Viewport erzwungen, 495 Bilder) liegt sie **unter** dem Median
-der Entscheidungsgröße:
+**Vierter Punkt, in 1.2 A dazugekommen und als Erstes von B erledigt:
+`cold-fold` hat jetzt eine Schwelle je UI-Typ.**
 
-| Population | p5 | Median | p95 | Rate | Schwelle 0,08 |
-|---|---:|---:|---:|---:|---|
-| UEyes Webseiten, segmentiert | −0,172 | 0,037 | 0,318 | 40,0 % | über dem Median |
-| UEyes Telefon, segmentiert | −0,129 | 0,131 | 0,502 | 61,6 % | **unter** dem Median |
+```bash
+npm run cold-fold
+```
 
-Auf Telefon-Screens sagt die Regel damit häufiger ja als nein. Das ist dieselbe
-Fehlerklasse wie bei `flat` — eine Schwelle, in einer Population geschätzt und
-in einer anderen angewandt —, nur dass sie diesmal zwischen **UI-Typen**
-wandert statt zwischen Konfigurationen. `flat` hat die Schwelle je UI-Typ schon
-(`flatConcentrationThreshold`); `cold-fold` braucht dieselbe Form, und danach
-eine gemessene Feuerrate je Typ. Gehört zu B, weil B ohnehin auf der
-komponierten Karte kalibriert.
+Die Regel ist eine von nur zwei belastbaren, und ihre einzige Konstante —
+`coldFoldMargin` — war eine Zahl für alle UI-Typen, geschätzt an Webseiten.
+Gemessen mit erzwungener Segmentierung, je rund 500 Bilder:
+
+| Dezile der Entscheidungsgröße | p10 | p20 | p30 | p40 | p50 | p60 | p70 | p80 | p90 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| UEyes Webseiten | −0,132 | −0,081 | −0,043 | 0,005 | 0,037 | **0,080** | 0,128 | 0,181 | 0,259 |
+| UEyes Telefon | −0,071 | −0,007 | 0,045 | 0,088 | 0,131 | **0,189** | 0,250 | 0,315 | 0,411 |
+
+Die alte 0,08 sitzt in der Webseiten-Verteilung bei **p60** (Rate 40,0 %) und in
+der Telefon-Verteilung bei **p38** (61,6 %) — dort also unter dem Median, die
+Regel sagte häufiger ja als nein. Dieselbe Fehlerklasse wie bei `flat`, nur
+wandert die Schwelle hier zwischen **UI-Typen** statt zwischen Konfigurationen.
+
+**Kalibriert wird auf Vergleichbarkeit, nicht gegen eine Wahrheit.** Es gibt
+keine Ground Truth dafür, ob ein Screen diesen Befund verdient — niemand hat
+gelabelt, wo Aufmerksamkeit „zu weit unten" bündelt. Die Schwelle liegt deshalb
+in jedem Typ am **selben Perzentil** seiner eigenen Verteilung, damit die
+Aussage in beiden dasselbe heißt. Genau die Begründung, mit der `flat` seine
+vier Schwellen bekommen hat.
+
+| | Schwelle | Rate |
+|---|---:|---:|
+| web | 0,080 | 40,0 % |
+| mobile | **0,189** | 39,8 % |
+
+**Das Perzentil selbst ist nicht kalibriert.** p60 ist aus dem ausgelieferten
+Zustand übernommen. Ob ein Befund auf 40 % der Screens erscheinen soll, ist eine
+Produktfrage und hier ausdrücklich **nicht** entschieden — entschieden ist nur,
+dass die Regel in beiden Typen dieselbe Frage stellt. `desktop` und `poster`
+fallen auf den web-Wert zurück; das ist eine Annahme, keine Messung.
 
 **Der entscheidende Vorteil der drei Regel-Ideen oben:** sie lesen nur die Karte
 und die Geometrie, nicht die Abschnittsstruktur — und damit sind sie **an UEyes

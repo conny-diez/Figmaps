@@ -402,27 +402,26 @@ const competition: Rule = {
  * Bildanteils, und tiefere Abschnitte haben mehr Inhalt als der Kopfbereich.
  * Gemessen beim Umstieg auf 0,5 (`npm run side-effects`):
  *
- *                                      α 0,3     α 0,5    + Schärfe (Stand)
- *   Webseite, Viewport 500 erzwungen   27,7 %   34,9 %     40,0 %
- *   Telefon, Viewport 400 erzwungen       —     58,6 %     61,6 %
+ *                                      α 0,3     α 0,5    + Schärfe   + Schwelle je Typ
+ *   Webseite, Viewport 500 erzwungen   27,7 %   34,9 %     40,0 %      40,0 %
+ *   Telefon, Viewport 400 erzwungen       —     58,6 %     61,6 %      39,8 %
  *   Desktop scrollend (konstruiert)    83,3 %   95,8 %    100,0 %
  *   Telefon scrollend (konstruiert)   100,0 %  100,0 %    100,0 %
  *
  * Auf beiden konstruierten Formen feuert sie damit **immer** und sagt dort
  * nichts mehr.
  *
- * **DER EIGENTLICHE BEFUND STEHT NICHT IN DER RATE, SONDERN IN DER
- * VERTEILUNG.** Der relative Vorsprung des stärksten Abschnitts liegt
+ * **DER BEFUND STAND NICHT IN DER RATE, SONDERN IN DER VERTEILUNG — und ist
+ * behoben.** Der relative Vorsprung des stärksten Abschnitts lag
  *
- *   auf Webseiten       im Median bei 0,037  — die Schwelle 0,08 liegt darüber
- *   auf Telefon-Screens im Median bei 0,131  — die Schwelle liegt **darunter**
+ *   auf Webseiten       im Median bei 0,037  — die Schwelle 0,08 darüber, p60
+ *   auf Telefon-Screens im Median bei 0,131  — die Schwelle **darunter**, p38
  *
- * Auf Telefon-Screens sagt die Regel also häufiger ja als nein, und zwar nicht
- * knapp. 0,08 stammt aus der Webseiten-Verteilung und ist auf der Telefon-
- * Verteilung nie geprüft worden — dieselbe Fehlerklasse wie bei `flat`, nur
- * dass die Schwelle diesmal zwischen **Populationen** wandert statt zwischen
- * Konfigurationen. Eine Schwelle je UI-Typ, wie sie `flat` schon hat, ist der
- * naheliegende Umbau; er gehört zu 1.2 B und braucht eine eigene Messung.
+ * Auf Telefon-Screens sagte die Regel damit häufiger ja als nein. Seit 1.2 B
+ * hat `coldFoldMargin` eine Schwelle je UI-Typ, beide am selben Perzentil
+ * ihrer eigenen Verteilung (p60): web 0,080, mobile 0,189. Die Begründung und
+ * die Grenzen der Kalibrierung stehen in `config.ts` — insbesondere, dass das
+ * Perzentil selbst nicht kalibriert ist.
  *
  * Auf Webseiten bleibt die Regel mit 40,0 % im brauchbaren Bereich; die
  * konstruierten Frames stellen den Hero absichtlich weiter unten auf, ihre
@@ -444,7 +443,11 @@ const coldFold: Rule = {
     // Relative: the concentration measure lives in a narrow band, so an
     // absolute margin would either never fire or fire always.
     if (!(aboveFold > 0)) return null
-    if (input.sectionSalience[bestIndex] / aboveFold - 1 < cfg.coldFoldMargin) return null
+    // Schwelle je UI-Typ, wie bei `flat`: „der stärkste Abschnitt liegt nicht
+    // oben" soll auf einer Webseite und auf einem Telefon-Screen dasselbe
+    // heißen. Mit einer Zahl für beide hieß es das nicht — siehe `config.ts`.
+    const margin = cfg.coldFoldMargin[input.priorCategory] ?? cfg.coldFoldMargin.web
+    if (input.sectionSalience[bestIndex] / aboveFold - 1 < margin) return null
 
     return {
       id: 'cold-fold',
