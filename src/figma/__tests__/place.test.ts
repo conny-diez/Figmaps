@@ -325,6 +325,34 @@ describe('placeMaps', () => {
     }
   })
 
+  it('writes the findings frame even when nothing was found', async () => {
+    // A missing block reads as a missing feature — and on a single-viewport
+    // phone screen an empty result is the common case.
+    const wrapper = (await placeMaps(sourceNode, maps, { mapMeta })) as unknown as StubNode
+    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Befunde'))
+    expect(findingsFrame).not.toBeNull()
+    const texts = findingsFrame!.children.map((child) => child.characters as string)
+    expect(texts.some((text) => text.includes('Keine der geprüften Auffälligkeiten trifft zu'))).toBe(true)
+    assertNothingClipped(wrapper)
+  })
+
+  it('never writes the word „Ortsprior" into any text node', async () => {
+    // The term is out of the product; it came back through the attribution
+    // string as „Datengrundlage: Ortsprior: UEyes …", which no test saw because
+    // only the map captions were checked.
+    const wrapper = (await placeMaps(sourceNode, maps, { findings, segments, mapMeta })) as unknown as StubNode
+    const texts: string[] = []
+    walk(wrapper, (node) => {
+      if (node.type === 'TEXT') texts.push(node.characters as string)
+    })
+    expect(texts.length).toBeGreaterThan(0)
+    for (const text of texts) expect(text).not.toContain('Ortsprior')
+    // The layer names travel with the file too.
+    walk(wrapper, (node) => expect(node.name).not.toContain('Ortsprior'))
+    // …and no „Label: Label: Wert" from prefixing an already-labelled string.
+    for (const text of texts) expect(text).not.toMatch(/:\s*[^\s:]+:\s/)
+  })
+
   it('names the source once per run, not once per map', async () => {
     const wrapper = (await placeMaps(sourceNode, maps, { mapMeta })) as unknown as StubNode
     const lines: string[] = []

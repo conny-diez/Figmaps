@@ -1037,6 +1037,17 @@ Beschriftungen einer Karte fallen zu einem Kandidaten — der Karte — zusammen
 statt als drei konkurrierende Einträge in der Rangfolge zu stehen. Das entlastet
 nebenbei `dead-cta`, dessen Entscheidungsgröße mit der Kandidatenzahl sinkt.
 
+**Was jetzt gefunden wird.** Ein nachgebauter Onboarding-Screen (393 × 852,
+zwei Knöpfe, vier Kategorie-Kacheln je 165 × 150 px mit Bild und Beschriftung in
+einer Auto-Layout-Zwischenebene) liefert **6 von 6** erwarteten Kandidaten. Die
+Größengrenzen waren nie das Problem: die Kacheln belegen 7,4 % der Fläche, die
+Grenze liegt bei 50 %. Was fehlte, war die Vorfahrenkette — und für die Kacheln
+zusätzlich, dass „Freizeit", „Immobilien", „Jobs", „Nachrichten" kein englisches
+Stichwort treffen.
+
+Dieselben Kacheln **ohne Textbeschriftung** — nur ein Bild darin — liefern
+weiterhin **0 Kandidaten**. Das ist Ursache (2) und nichts anderes.
+
 **Aufwand für Ursache (2), noch nicht umgesetzt.** Ein Rahmen ohne Text und ohne
 Stichwort ist nur über Form-Heuristik erkennbar, und jede davon ist eine neue
 Entscheidungsgröße mit eigener Fehlerrate: „gefüllt, abgerundet, zwischen 24 und
@@ -1521,6 +1532,95 @@ Beide stehen zusätzlich als Kommentar an der jeweiligen Regel in
 `src/findings/rules.ts`, damit sie beim Lesen des Codes nicht erst gesucht
 werden müssen.
 
+### Der Umlaut-Fehler war ein Engine-Fehler, nicht nur ein Findings-Fehler
+
+`extractNameHints` zerlegte Ebenennamen an `[^a-z0-9]` und zerriss damit jeden
+Namen mit Umlaut. Betroffen war nicht nur die Kandidatenerkennung:
+`nameHints` speist über `isInteractive` auch die Feature-Map
+**`interactiveSalience`** — Gewicht 0,10 in der Basiskonfiguration, unter
+`hybrid-v1` nach Renormierung ohne Prior **0,111 des Bildanalyse-Anteils**, der
+wiederum mit 0,3 auf den Prior addiert wird.
+
+Auf einer deutschsprachigen Datei fiel damit für die Bildanalyse praktisch
+jedes Bedienelement weg. Übrig blieben nur Knoten mit echter
+Prototype-Interaktion. Gemessen auf den konstruierten Frames mit eingedeutschten
+Ebenennamen, je 4 Varianten:
+
+| Frame | interaktive Knoten vorher | nachher | CC(Karte alt, neu) | CC(Bildanteil) |
+|---|---:|---:|---:|---:|
+| Desktop scrollend | 4 | 44 | 0,998 | 0,962 |
+| Telefon 1 Viewport | 4 | 24 | 0,996 | 0,939 |
+| Telefon scrollend | 4 | 48 | 0,999 | 0,984 |
+
+Die Größenordnung ehrlich eingeordnet: die **fertige** Karte ändert sich wenig
+(CC 0,996–0,999), weil `hybrid-v1` prior-dominiert ist und diese eine Feature-
+Map rund 3 % des Endergebnisses trägt. Auf dem **Bildanalyse-Anteil**, also auf
+dem, was der Screen selbst beiträgt, sind es 0,939–0,984 — dort war der Fehler
+messbar. Er hat die Vorhersage auf allen deutschen Dateien systematisch
+geschwächt, ohne je aufzufallen, weil die englischen Testnamen
+(„Primary Button", „SearchInputField") immer trafen.
+
+### Rangfolge nicht kalibriert — `cta-rank` und `cta-below-fold`
+
+Die Änderung der Kandidatenerkennung hat die Kandidatenmenge verschoben (auf
+den konstruierten Frames mit deutschen Namen 96 → 87 Desktop, 65 → 47 Telefon),
+und beide ausgelieferten Regeln, die an der **Rangfolge** hängen, sind dadurch
+entartet. Gemessen, je 8 Varianten:
+
+| Frame | `cta-rank` | `cta-below-fold` | `competition` | `cold-fold` |
+|---|---|---|---|---|
+| Desktop scrollend | 1/8 → **8/8** | 5/8 → **0/8** | 0/8 → 0/8 | 7/8 → 7/8 |
+| Telefon scrollend | 0/8 → **6/8** | 6/8 → **0/8** | 0/8 → 0/8 | 7/8 → 8/8 |
+| Telefon 1 Viewport | 0/8 → **6/8** | 0/8 → 0/8 | 0/8 → 0/8 | 0/8 → 0/8 |
+
+**Die Ursache ist der Größenanteil im Score.** `scoreCandidates` rechnet
+`sizeRank = Fläche ÷ größte Fläche` mit Gewicht 0,2. Solange Kandidaten
+*Beschriftungen* waren, lagen die Flächen nah beieinander. Jetzt sind es
+*Kästen*:
+
+| Element | Fläche | `sizeRank` | Aufmerksamkeit | Score |
+|---|---:|---:|---:|---:|
+| Stellenkarte (oberste) | 230.400 px² | 1,00 | 0,55 | 0,147 |
+| Suchfeld | 56.320 px² | 0,24 | 0,61 | 0,118 |
+| Jetzt bewerben (CTA) | 17.784 px² | 0,38 | 0,16 | — |
+
+Der Term addiert 0,20 auf jede Karte und hebt sie auf Rang 1. `cta-below-fold`
+liest `candidates[0]`, und die größte Karte steht weit oben — die Regel kann
+nicht mehr feuern. `cta-rank` findet den primären CTA dadurch immer auf einem
+hinteren Rang — die Regel feuert fast immer. Ohne den Größenanteil lautet die
+Ordnung `Suchfeld > Stellenkarte > CTA`.
+
+**Keine der beiden Zahlenreihen ist eine Bestätigung.** Die alte maß eine
+kaputte Erkennung (deutsche Namen trafen kein Stichwort), die neue eine
+Rangfolge, deren Gewichte gegen eine Kandidatenpopulation kalibriert wurden, die
+es nicht mehr gibt. **Offene Entscheidung**, nicht eigenmächtig getroffen:
+entweder beide Regeln auf `shipped: false`, bis der Score gegen die neue
+Population gemessen ist, oder den Größenanteil robust machen (Fläche relativ zum
+*Median* der Kandidaten statt zum Maximum, oder gedeckelt) und danach neu
+messen.
+
+### Auf einem Handy-Screen feuert fast nichts
+
+Ein typischer Onboarding-Screen (393 × 852) ist **nicht segmentiert**: 852 ÷
+786 = 1,08 Viewport-Höhen, die Schwelle liegt bei 1,5. Damit fallen zwei der
+vier ausgelieferten Regeln strukturell aus, bevor irgendetwas gerechnet wird:
+
+| Regel | auf einem Ein-Viewport-Handy | Grund |
+|---|---|---|
+| `cold-fold` | **kann nicht feuern** | verlangt `plan.segmented` und ≥ 2 Abschnitte |
+| `cta-below-fold` | **kann nicht feuern** | verlangt `plan.folds.length > 0` |
+| `competition` | kann | liest nur die Karte — feuerte in der Messung aber 0/8 |
+| `cta-rank` | kann | feuerte 6/8, und zwar aus dem entarteten Grund oben |
+
+**Zwei von vier strukturell, in der Messung effektiv eine.** Das ist der
+wichtigste offene Produktpunkt: der häufigste Fall unserer Nutzung — ein
+Handy-Screen, der in einen Viewport passt — bekommt aus dem Befundsystem
+praktisch nichts. Die Regeln sind für scrollende Seiten entworfen. Was ein
+Ein-Viewport-Screen bräuchte, sind Regeln über die *Anordnung innerhalb* eines
+Bildschirms (konkurrierende Blickfänge, CTA in der ruhigsten Zone, Kopfbereich
+stärker als der Inhalt) statt über Abschnittsgrenzen. Das ist Entwurfsarbeit,
+keine Schwellenfrage.
+
 ### Offen für 1.2 — die zwei abgeschalteten Regeln
 
 Beide brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle. In
@@ -1528,6 +1628,7 @@ beiden Fällen ist der Umbau benannt und die Messung fehlt noch:
 
 | Regel | neue Größe | warum sie das Problem löst |
 |---|---|---|
+| `cta-rank` / `cta-below-fold` | Größenanteil des Scores gegen den **Median** der Kandidaten statt gegen das Maximum, danach neu messen | Der Term ist der Grund, warum beide Regeln nach der Änderung der Kandidatenerkennung entartet sind (immer / nie). Siehe „Rangfolge nicht kalibriert". |
 | `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
 | `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
 

@@ -214,8 +214,10 @@ body {
   gap: 5px;
 }
 
+/* The bar sliders read as one strip of bars when they sit close together —
+   the gap has to be larger than the 26 px they are tall is wide. */
 .section--sliders {
-  gap: 10px;
+  gap: 18px;
   padding-top: 2px;
 }
 

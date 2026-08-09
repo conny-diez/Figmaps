@@ -43,6 +43,16 @@ const SEVERITY_MARKERS: Record<FindingPayload['severity'], string> = {
 /** The one sentence that must never be separable from a map. */
 const DISCLAIMER = 'Algorithmische Vorhersage, keine Messdaten'
 
+/**
+ * What the findings frame says when no rule fired.
+ *
+ * „Nothing found" and „the feature does not exist" look identical if the block
+ * is simply absent — and on a single-viewport phone screen two of the four
+ * shipped rules cannot fire at all, so an empty result is the common case, not
+ * the exception.
+ */
+const EMPTY_FINDINGS = 'Keine der geprüften Auffälligkeiten trifft zu.'
+
 const INK = { title: { r: 0.1, g: 0.1, b: 0.12 }, body: { r: 0.16, g: 0.16, b: 0.2 }, quiet: { r: 0.45, g: 0.45, b: 0.5 } }
 
 let cachedFont: FontName | null = null
@@ -255,12 +265,13 @@ export async function placeMaps(
   // extra. Losing the whole placement because a text node misbehaved is the
   // wrong trade — that is exactly what happened when this shipped with the
   // `layoutSizingHorizontal` calls in the wrong order.
-  if (extras.findings && extras.findings.length > 0) {
-    try {
-      await appendFindingsFrame(row, extras.findings, extras.segments)
-    } catch (error) {
-      figma.notify(`Befunde konnten nicht als Textframe abgelegt werden (${describe(error)}). Maps sind erstellt.`)
-    }
+  //
+  // Also written when *nothing* was found: a missing block reads as a missing
+  // feature. „Keine der geprüften Auffälligkeiten trifft zu" is a result.
+  try {
+    await appendFindingsFrame(row, extras.findings ?? [], extras.segments)
+  } catch (error) {
+    figma.notify(`Befunde konnten nicht als Textframe abgelegt werden (${describe(error)}). Maps sind erstellt.`)
   }
 
   // CC BY 4.0 requires naming the source wherever the derived asset travels —
@@ -319,6 +330,16 @@ async function appendFindingsFrame(
         size: cfg.findingsFontSize * 0.85,
         text: `Abschnittsweise analysiert: ${segments.sectionCount} Abschnitte à ${segments.viewportHeight} px`,
         colour: INK.quiet,
+        lineHeightFactor: 1.45,
+      })
+    }
+
+    if (findings.length === 0) {
+      paragraph(frame, {
+        font: bodyFont,
+        size: cfg.findingsFontSize,
+        text: EMPTY_FINDINGS,
+        colour: INK.body,
         lineHeightFactor: 1.45,
       })
     }

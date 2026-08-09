@@ -179,6 +179,31 @@ function hasValleyBetween(
  * Screens. Auf gescrollten Frames wird das von der Scroll-Dämpfung getrieben,
  * die den Fuß-CTA im Ranking nach unten schiebt.
  */
+/**
+ * WARNUNG — die Rangfolge, auf die diese Regel und `cta-below-fold` sich
+ * stützen, ist seit der Änderung der Kandidatenerkennung nicht mehr
+ * kalibriert.
+ *
+ * `scoreCandidates` gewichtet `sizeRank = Fläche ÷ größte Fläche` mit 0,2. Als
+ * Kandidaten Beschriftungen waren, lagen alle Flächen nah beieinander und der
+ * Term entschied wenig. Jetzt sind Kandidaten *Kästen*: eine Stellenkarte hat
+ * 230.400 px², das Suchfeld 56.320, der CTA 17.784 — `sizeRank` 1,00 gegen
+ * 0,24 gegen 0,38. Der Term addiert damit 0,20 auf jede Karte und schiebt sie
+ * auf Rang 1, unabhängig vom Entwurf.
+ *
+ * Gemessen auf den konstruierten Frames mit deutschen Ebenennamen, je 8
+ * Varianten, vorher -> nachher:
+ *
+ *   Desktop scrollend   cta-rank 1/8 -> 8/8   cta-below-fold 5/8 -> 0/8
+ *   Telefon scrollend   cta-rank 0/8 -> 6/8   cta-below-fold 6/8 -> 0/8
+ *   Telefon 1 Viewport  cta-rank 0/8 -> 6/8   cta-below-fold  strukturell 0/8
+ *
+ * Beide Enden sind entartet: `cta-rank` feuert fast immer, `cta-below-fold`
+ * nie, weil `candidates[0]` jetzt die größte Karte ist und die steht weit oben.
+ * Keine der beiden Zahlenreihen ist eine Bestätigung — die alte maß eine
+ * kaputte Erkennung (deutsche Namen trafen kein Stichwort), die neue eine
+ * unkalibrierte Rangfolge. Siehe README, „Rangfolge nicht kalibriert".
+ */
 const ctaRank: Rule = {
   id: 'cta-rank',
   evaluate(input) {
@@ -494,6 +519,16 @@ const flat: Rule = {
  * Erst danach neu kalibrieren, und dafür fehlt weiterhin das Set mit echten
  * Layer-Bäumen (PRD Set 2) — ohne Layer-Baum gibt es keine Kandidaten, also an
  * UEyes grundsätzlich keine Messung.
+ *
+ * **ACHTUNG, alle Zahlen oben sind an einer anderen Population gemessen.** Sie
+ * stammen von vor der Änderung der Kandidatenerkennung (deutsche Stichwörter +
+ * Suche über die Vorfahrenkette, Kandidat ist jetzt der *Kasten* statt der
+ * Beschriftung). Auf den konstruierten Frames mit deutschen Ebenennamen fiel
+ * die Kandidatenzahl dadurch von 96 auf 87 (Desktop) bzw. 65 auf 47 (Telefon),
+ * und die Größenverteilung ist eine völlig andere: statt vieler gleich großer
+ * Beschriftungen wenige, sehr unterschiedlich große Kästen. Die Entscheidungs-
+ * größe dieser Regel — ein Minimum über alle Kandidaten — hängt an genau
+ * diesen beiden Dingen. Die 1.2-Aufgabe misst neu, sie übernimmt nichts.
  */
 const deadCta: Rule = {
   id: 'dead-cta',
