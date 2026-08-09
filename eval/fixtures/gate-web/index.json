@@ -1,0 +1,157 @@
+{
+  "name": "UEyes — Webpage-Teilmenge — Gate-Teilmenge",
+  "source": "ueyes-web, quick-Split (Präfix des Test-Splits), 20 Bilder",
+  "license": "CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)",
+  "citation": "Jiang, Yue, Luis A. Leiva, Hamed Rezazadegan Tavakoli, Paul R. B. Houssel, Julia Kylmälä und Antti Oulasvirta. \"UEyes: Understanding Visual Saliency across User Interface Types.\" Proceedings of the 2023 CHI Conference on Human Factors in Computing Systems, S. 1–21, 2023. https://doi.org/10.1145/3544548.3581096",
+  "durations": [
+    3
+  ],
+  "notes": [
+    "Eingecheckte Teilmenge für das Regressions-Gate (A-7). Erzeugt mit `npm run gate-fixtures`.",
+    "Bilder und Ground Truth liegen auf dem Analyseraster (längste Kante 512) — genau dem Raster, auf dem die Engine rechnet und auf das der Loader die Ground Truth ohnehin bringt. Die Fixationskarten sind mit Maximum-Pooling abgebildet, nicht flächengemittelt: eine Fixationskarte ist eine Menge von Orten. Die Heatmaps werden dadurch einmal mehr resampled als beim vollen Set; die absoluten Zahlen aus diesem Set sind deshalb NICHT mit denen aus dem vollen Set vergleichbar. Für ein Gate ist das gleichgültig: es vergleicht zwei Läufe auf demselben Set.",
+    "Ausschließlich Bilder aus dem Test-Split des Datensatzes. Eine Auffüllung aus dem Tuning-Split wäre ein Fehler — das Gate prüfte sonst gegen Daten, auf denen kalibriert wurde.",
+    "Kein Tuning-Split enthalten, also auch keine Mean-Map-Baseline. Reports über dieses Set weisen das aus."
+  ],
+  "items": [
+    {
+      "id": "8f9844",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "abe796",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "92b95d",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "6047d3",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "c05976",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "5887a5",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "a8f275",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "fe14d6",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "c228a1",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "393327",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "0af35a",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "c6a6d9",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "bfa4f2",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "b4a27a",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "fe6876",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "9f5081",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "6d8af6",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "b02217",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "a91f25",
+      "split": [
+        "test",
+        "quick"
+      ]
+    },
+    {
+      "id": "2304c8",
+      "split": [
+        "test",
+        "quick"
+      ]
+    }
+  ]
+}

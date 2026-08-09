@@ -13,6 +13,7 @@
     "lint": "eslint src eval scripts",
     "eval": "node scripts/eval.mjs",
     "eval:fixtures": "node scripts/fixtures.mjs",
+    "gate-fixtures": "node scripts/eval.mjs --gate-fixtures",
     "tune": "node scripts/eval.mjs --tune",
     "diagnose": "node scripts/eval.mjs --diagnose",
     "build-prior": "node scripts/eval.mjs --build-prior",

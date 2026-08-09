@@ -50,13 +50,23 @@ jobs:
       - run: npm run verify
 
   eval-gate:
-    # A-7 — regression gate: evaluate the 40-image quick set and fail the check
-    # if CC drops by more than 0.02 against main.
+    # A-7 — Regressions-Gate: bewertet das eingecheckte 40-Bild-Set und macht
+    # den Check rot, wenn CC gegenüber `main` um mehr als 0,02 fällt.
     #
-    # Skipped automatically when the reference data is not available. The
-    # fixtures are not in the repo (size + licence, see eval/fixtures/README.md);
-    # wire up a cache or an artifact store once the licence question of A-2 is
-    # settled, then remove the `if:` guard below.
+    # GESCHICHTE, WEIL SIE DEN AUFBAU ERKLÄRT. Dieses Gate hat bis 1.2 nie
+    # gemessen, aus drei aufeinanderfolgenden Gründen:
+    #
+    #   1. Der Job davor war rot (npm ci, siehe oben), also lief es gar nicht.
+    #   2. Danach lief es und meldete „übersprungen": das Referenz-Set lag in
+    #      einem Actions-Cache, der leer war. Ein grüner Haken ohne Messung.
+    #   3. Und als es endlich lief, bewachte es die **eingefrorene**
+    #      1.0-Referenz statt der ausgelieferten Engine — eine Zahl, die sich
+    #      per Definition nicht ändern kann.
+    #
+    # Dreimal dieselbe Fehlerklasse wie bei `cold-fold` und `flat`: eine
+    # Prüfung, die grün ist, weil sie das Falsche ansieht oder gar nichts.
+    # Deshalb liegt das Set jetzt im Repo statt in einem Cache, und deshalb
+    # steht am Ende ein Schritt, der beweist, dass das Gate rot werden **kann**.
     name: Eval regression gate
     runs-on: ubuntu-latest
     needs: verify
@@ -71,41 +81,51 @@ jobs:
       - run: node scripts/ci-lockfile.mjs
       - run: npm ci
 
-      - name: Restore reference data
-        id: fixtures
-        uses: actions/cache/restore@v6
-        with:
-          path: eval/fixtures
-          key: figmaps-fixtures-v1
-
-      - name: Report missing fixtures
-        if: steps.fixtures.outputs.cache-hit != 'true'
-        run: |
-          echo "::notice title=Eval-Gate übersprungen::Kein Referenz-Set im Cache." >> "$GITHUB_STEP_SUMMARY"
-          echo "Das Gate ist erst scharf, wenn eval/fixtures unter dem Key figmaps-fixtures-v1 liegt." >> "$GITHUB_STEP_SUMMARY"
-
       - name: Baseline on main
-        if: steps.fixtures.outputs.cache-hit == 'true'
         run: |
           git worktree add ../main-ref origin/main
+          # Die Fixtures kommen aus *diesem* Checkout: auf main liegen sie
+          # (noch) nicht, und die Baseline muss auf demselben Set laufen.
+          rm -rf ../main-ref/eval/fixtures
           cp -R eval/fixtures ../main-ref/eval/fixtures
           cd ../main-ref
-          # Das Skript kommt aus *diesem* Checkout: `origin/main` kennt es noch
-          # nicht, und der Baseline-Lauf braucht es genauso.
           node "$GITHUB_WORKSPACE/scripts/ci-lockfile.mjs" package-lock.json
           npm ci
-          npm run eval -- --set quick --report /tmp/gate-main.md --gate --baseline "$GITHUB_WORKSPACE/gate-main.json" --write
+          # `--engine` ausdrücklich: main hat noch die alte Voreinstellung, die
+          # auf die eingefrorene 1.0-Referenz zeigt (Grund 3 oben).
+          for set in gate-web gate-mobile; do
+            npm run eval -- --engine hybrid-v1 --fixtures "$set" --set quick \
+              --report "/tmp/gate-main-$set.md" --gate --baseline "$GITHUB_WORKSPACE/gate-main-$set.json" --write
+          done
 
       - name: Gate on this PR
-        if: steps.fixtures.outputs.cache-hit == 'true'
-        run: npm run eval -- --set quick --report gate-pr.md --gate --baseline gate-main.json --max-cc-drop 0.02
+        run: |
+          for set in gate-web gate-mobile; do
+            npm run eval -- --fixtures "$set" --set quick \
+              --report "gate-pr-$set.md" --gate --baseline "gate-main-$set.json" --max-cc-drop 0.02
+          done
+
+      - name: Das Gate muss rot werden können
+        # Der Erreichbarkeitstest für das Gate selbst. Eine absichtlich
+        # verschlechterte Engine (`blendGamma` 0,3 kostet rund 0,05 CC in jeder
+        # gemessenen Gruppe) MUSS den Schritt zum Scheitern bringen. Tut sie es
+        # nicht, sieht das Gate wieder etwas Falsches an — und das würde sonst
+        # erst auffallen, wenn eine echte Regression durchrutscht.
+        run: |
+          if npm run eval -- --fixtures gate-web --set quick --report /tmp/gate-selftest.md \
+               --gate --baseline gate-main-gate-web.json --max-cc-drop 0.02 --blend-gamma 0.3; then
+            echo "::error title=Gate-Selbsttest::Eine absichtlich verschlechterte Engine hat das Gate PASSIERT."
+            echo "Das Gate misst nicht, was es messen soll. Siehe .github/workflows/eval-gate.yml."
+            exit 1
+          fi
+          echo "Gate-Selbsttest bestanden: die verschlechterte Engine wurde abgelehnt." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish report
-        if: always() && steps.fixtures.outputs.cache-hit == 'true'
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: eval-gate
           path: |
-            gate-pr.md
-            gate-pr-kontaktbogen.png
+            gate-pr-*.md
+            gate-pr-*-kontaktbogen.png
           if-no-files-found: ignore

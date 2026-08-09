@@ -109,6 +109,18 @@ Der Datensatz selbst (`eval/fixtures/`) ist **nicht** Teil des Repos und wird
 nicht verteilt — siehe `eval/fixtures/README.md`. Er wird lokal zum Messen
 verwendet.
 
+### Seit 1.2 liegen 40 UEyes-Bilder im Repository
+
+`eval/fixtures/gate-web/` und `gate-mobile/` enthalten je 20 Bilder aus dem
+Test-Split von UEyes, samt Heatmaps und Fixationskarten für 3 s, verkleinert auf
+das Analyseraster. Sie sind die Datengrundlage des Regressions-Gates.
+
+CC BY 4.0 erlaubt die Weitergabe ausdrücklich, auch verändert und auch
+kommerziell, solange die Nennung erfolgt und Änderungen kenntlich sind. Beides
+ist erfüllt: die Nennung steht hier, im `index.json` beider Sets und in jedem
+Report; die Verkleinerung und das Maximum-Pooling der Fixationskarten sind im
+`index.json` als Änderung vermerkt.
+
 ### Für die Rechtsabteilung
 
 Zwei Punkte, die eine technische Entscheidung überschreiten und vor einer

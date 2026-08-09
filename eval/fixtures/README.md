@@ -93,6 +93,42 @@ Die Mobile-Teilmenge liegt vollständig als JPEG vor — **auch die Fixationskar
 
 Der Import misst das an einer Stichprobe und schreibt es als Hinweis in `index.json`, von wo es in jeden Report wandert. Es ist klein genug, um die Messung nicht zu entwerten, und zu groß, um es zu verschweigen.
 
+## Set 1b — das eingecheckte Gate-Set
+
+```bash
+npm run gate-fixtures        # baut es neu, braucht den vollen Import
+```
+
+`gate-web/` und `gate-mobile/`, je 20 Bilder, zusammen 7 MB — **die einzigen
+Fixtures, die im Repo liegen.** Sie sind die Datengrundlage des
+Regressions-Gates (A-7), und sie liegen hier statt in einem Actions-Cache, weil
+ein Cache verfallen kann und die Prüfung dann still weg ist. Genau das ist
+passiert: das Gate meldete monatelang „übersprungen".
+
+Drei Eigenschaften, die nicht verhandelbar sind:
+
+- **Nur Test-Split.** Die 40 Bilder sind der `quick`-Anteil, und der ist per
+  Konstruktion ein Präfix des Test-Splits. Aus dem Tuning-Split aufzufüllen
+  wäre ein Fehler — das Gate prüfte dann gegen Daten, auf denen kalibriert
+  wurde.
+- **Nur 3 s.** Das Gate bewertet eine Dauer; 1 s und 7 s würden das Set
+  verdreifachen.
+- **Auf dem Analyseraster gespeichert** (längste Kante 512). Genau das Raster,
+  auf dem die Engine rechnet und auf das der Loader die Ground Truth ohnehin
+  bringt. Die Fixationskarten sind dabei **maximum-gepoolt**, nicht
+  flächengemittelt: eine Fixationskarte ist eine Menge von Orten, und
+  Mittelung mit anschließendem Schwellwert würde einzelne Fixationen
+  verlieren.
+
+**Die absoluten Zahlen aus diesem Set sind nicht mit denen aus dem vollen Set
+vergleichbar** — die Heatmaps sind einmal mehr resampled. Für ein Gate ist das
+gleichgültig: es vergleicht zwei Läufe auf demselben Set. Für eine Aussage über
+die Engine ist es nicht gleichgültig; dafür ist der volle Import da.
+
+UEyes steht unter CC BY 4.0. Die Weitergabe ist ausdrücklich erlaubt, die
+Nennung ist Pflicht und steht in [`NOTICE.md`](../../NOTICE.md), im `index.json`
+beider Sets und in jedem Report, der sie liest.
+
 ## Set 2 — eigenes Validierungsset (offen)
 
 10 eigene Produkt-Screens mit First-Click-Test (Lyssna oder Maze, ca. 50 Teilnehmer). Kleiner und lauter als UEyes, aber domänennah — und vor allem das **einzige** Set, mit dem sich `textSalience`, `interactiveSalience` und `imageSalience` überhaupt bewerten lassen, weil dort ein Layer-Baum existiert. Solange es fehlt, bleibt jede Messung eine Teilmessung über rund 60 % der Engine-Gewichtung.

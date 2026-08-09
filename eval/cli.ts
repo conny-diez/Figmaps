@@ -10,7 +10,16 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { ACTIVE_CONFIG_ID, PROFILE_DURATIONS, PROFILE_IDS, type EngineParams, type ProfileId } from '../src/engine/params'
+import {
+  ACTIVE_CONFIG_ID,
+  cloneParams,
+  DEFAULT_PROFILE,
+  PROFILE_DURATIONS,
+  PROFILE_IDS,
+  resolveParams,
+  type EngineParams,
+  type ProfileId,
+} from '../src/engine/params'
 import { analyzeFrame } from '../src/engine/analyze'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
@@ -35,6 +44,7 @@ import { baseParams, beforeSharpnessVariant, sharpnessSweep, stageOneVariants, s
 import { buildSharpnessReport, verdictOf } from './sharpness-report'
 import { groupSweep, GROUP_LABELS, type GroupSweepResult } from './groups'
 import { measureCutoff } from './cutoff'
+import { buildGateFixtures } from './gate-fixtures'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -43,7 +53,7 @@ import { diagnose } from './diagnose'
 import { buildDiagnoseReport } from './diagnose-report'
 import { METRIC_IDS, METRIC_LABELS } from './metrics/types'
 import { computeMeanMap, type MeanMap } from './mean-map'
-import { CENTER_BIAS_SIGMAS, meanMapPredictor, resolvePredictors } from './predictors'
+import { CENTER_BIAS_SIGMAS, heuristicPredictor, meanMapPredictor, resolvePredictors } from './predictors'
 import { buildReport, type UniformCheck } from './report'
 import { meanProfile, runEvaluation, spatialProfile, sweepCenterBias, worstCases, type PredictorResult } from './runner'
 import { renderTunedModule, tuneProfile, type TuneOutcome } from './tune'
@@ -162,6 +172,29 @@ async function runEval(args: Args): Promise<number> {
         ? 'web'
         : undefined
   const predictors = resolvePredictors(engine, priorAsset)
+
+  // `--blend-gamma` verstellt die Tonkurve der ausgelieferten Konfiguration.
+  //
+  // Der Schalter existiert für **einen** Zweck: nachzuweisen, dass das
+  // Regressions-Gate überhaupt auslösen kann. Ein Gate, das nie rot wird, ist
+  // kein Gate — und genau das war es bis 1.2, weil es die eingefrorene
+  // Referenz bewachte. Dieselbe Lücke wie bei `cold-fold` und `flat`, drittes
+  // Vorkommen; deshalb ist die Erreichbarkeit jetzt ein Schritt in der CI.
+  if (typeof args['blend-gamma'] === 'string') {
+    const gamma = num(args, 'blend-gamma', 1)
+    for (const predictor of predictors) {
+      if (predictor.baseline) continue
+      const degraded = cloneParams(resolveParams(ACTIVE_CONFIG_ID))
+      degraded.blendGamma = gamma
+      const replacement = heuristicPredictor(ACTIVE_CONFIG_ID, DEFAULT_PROFILE, {
+        label: `${predictor.label} — ABSICHTLICH VERSTELLT, blendGamma ${gamma}`,
+        params: degraded,
+        ...(priorAsset ? { priorAsset } : {}),
+      })
+      predictors[predictors.indexOf(predictor)] = { ...replacement, id: predictor.id }
+    }
+    console.log(`ACHTUNG: blendGamma auf ${gamma} verstellt. Das ist kein Messlauf, sondern ein Selbsttest.`)
+  }
 
   // A-4, third baseline: the averaged ground truth of the *tuning* split.
   // Computed from tuning even when a different split is being scored, so the
@@ -1043,6 +1076,32 @@ async function runSideEffects(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
+//
+//   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
+// ---------------------------------------------------------------------------
+
+function runGateFixtures(args: Args): number {
+  const count = num(args, 'count', 20)
+  const pairs: Array<{ source: string; target: string }> = [
+    { source: 'ueyes-web', target: 'gate-web' },
+    { source: 'ueyes-mobile', target: 'gate-mobile' },
+  ]
+
+  let bytes = 0
+  for (const pair of pairs) {
+    console.log(`${pair.source} → eval/fixtures/${pair.target}, ${count} Bilder aus dem quick-Split:`)
+    const summary = buildGateFixtures({ ...pair, count })
+    bytes += summary.bytes
+    console.log(`  ${summary.count} Bilder, ${(summary.bytes / 1024 / 1024).toFixed(1)} MB`)
+  }
+  console.log('')
+  console.log(`Gesamt: ${(bytes / 1024 / 1024).toFixed(1)} MB — dieses Set wird eingecheckt.`)
+  console.log('UEyes steht unter CC BY 4.0. Die Nennung steht in NOTICE.md und im index.json jedes Sets.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // crossval — k-fold over the whole category, both data-dependent parts refit
 // ---------------------------------------------------------------------------
 
@@ -1311,6 +1370,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --report <path>     Zielpfad des Markdown-Reports',
         '  --limit <n>         nur die ersten n Bilder (Rauchtest)',
         '  --gate --baseline <file> [--max-cc-drop 0.02] [--write]   Regressions-Gate (A-7)',
+        '  --blend-gamma <x>   verstellt die Tonkurve — nur für den Selbsttest des Gates',
         '',
         'npm run diagnose -- [options]     nur Diagnose, kein Tuning, nur Tuning-Split',
         '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
@@ -1373,6 +1433,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args.sharpness) return await runSharpness(args)
     if (args.groups) return await runGroups(args)
     if (args.cutoff) return await runCutoff(args)
+    if (args['gate-fixtures']) return runGateFixtures(args)
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)
