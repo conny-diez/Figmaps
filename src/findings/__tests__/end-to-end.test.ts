@@ -144,6 +144,23 @@ describe('end-to-end reachability of every rule', () => {
     )
   })
 
+  it('does not ship `flat` — its threshold sits below the whole realistic range', () => {
+    // The decision quantity answers "how small is the strongest spot", not "how
+    // clear is the hierarchy": a large eye-catcher scores 0,137, none at all
+    // 0,123. The shipped threshold (web 0,086) is below the realistic range
+    // 0,103–0,220 entirely, so the rule fires only on a near-empty screen. See
+    // `rules.ts` for both sweeps.
+    expect(RULES.map((rule) => rule.id)).not.toContain('flat')
+  })
+
+  it('does not ship `cta-below-fold` — it is structurally blocked', () => {
+    // Top-heavy prior plus `sectionAttenuation^i`: a candidate below the fold
+    // starts at half the attention of one above it, so `candidates[0]` is
+    // almost never below the fold. 0 of 24 constructed frames. The attenuation
+    // is deliberately *not* adjusted to make the rule fire.
+    expect(RULES.map((rule) => rule.id)).not.toContain('cta-below-fold')
+  })
+
   it('does not ship `dead-cta` — its threshold is not backed by a measurement', () => {
     // 24 of 24 in each of three constructed frame shapes, in the redefined
     // form too: the quantity is a minimum over N candidates and falls with N,
@@ -154,12 +171,16 @@ describe('end-to-end reachability of every rule', () => {
   // --- cta-rank ------------------------------------------------------------
 
   it('cta-rank fires when the primary button is out-ranked', async () => {
-    const page = landingPage()
-    // A huge, reaction-carrying competitor outranks the small primary CTA.
-    page.signals.push(
-      signal({ name: 'Alle Angebote entdecken', nameHints: ['button'], hasReactions: true, x: 800, y: 620, width: 560, height: 120 }),
-    )
-    expect(await run(page)).toContain('cta-rank')
+    // The competitor wins on *attention*, not on area: the score has no size
+    // term any more, so „huge" is no longer a way to out-rank anything.
+    const source = canvas(720, 450, [248, 249, 250])
+    box(source, 60, 40, 300, 150, [10, 10, 20]) // strong block, top left
+    const signals = [
+      signal({ name: 'Alle Angebote entdecken', nameHints: ['button'], hasReactions: true, x: 120, y: 80, width: 560, height: 280 }),
+      // Same reaction bonus, but sitting in the quiet lower right.
+      signal({ name: 'Jetzt anfragen', nameHints: ['button', 'cta'], hasReactions: true, x: 1000, y: 760, width: 380, height: 110 }),
+    ]
+    expect(await run({ source, signals, frameWidth: 1440, frameHeight: 900 })).toContain('cta-rank')
   })
 
   it('cta-rank stays silent when the primary button leads', async () => {
@@ -232,25 +253,36 @@ describe('end-to-end reachability of every rule', () => {
     for (let y = 10; y < 444; y += 10) {
       for (let x = 4; x < 714; x += 12) box(source, x, y, 8, 7, [0, 0, 0])
     }
-    expect(await run({ source, signals: [], frameWidth: 1440, frameHeight: 900 })).toContain('flat')
+    expect(
+      await run({ source, signals: [], frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
+    ).toContain('flat')
   })
 
   it('flat stays silent on a screen with one dominant element', async () => {
     const source = canvas(720, 450)
     box(source, 240, 140, 240, 170, [0, 0, 0])
-    expect(await run({ source, signals: [], frameWidth: 1440, frameHeight: 900 })).not.toContain('flat')
+    expect(
+      await run({ source, signals: [], frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
+    ).not.toContain('flat')
   })
 
   // --- cta-below-fold ------------------------------------------------------
 
   it('cta-below-fold fires when the strongest button sits past fold 1', async () => {
-    const source = canvas(720, 2000)
-    box(source, 40, 1500, 400, 120, [20, 110, 220])
+    // Reachable, but only just — and that is the finding, not a test detail.
+    // Every section is attenuated by `sectionAttenuation^i`, so a candidate
+    // below the fold starts at half the attention of one above it. It takes a
+    // prototype reaction *and* a strong block behind it, against a competitor
+    // that has neither, for the deeper one to lead. On the constructed frames
+    // that combination does not occur, and the rule fires 0 of 24 times — see
+    // `rules.ts` for why it is not shipped.
+    const source = canvas(720, 1000, [248, 249, 250])
+    box(source, 40, 470, 620, 200, [0, 0, 0]) // just past fold 1
     const signals = [
-      signal({ name: 'Kleiner Link oben', nameHints: ['link'], x: 80, y: 100, width: 120, height: 40 }),
-      signal({ name: 'Jetzt anfragen', nameHints: ['button', 'cta'], hasReactions: true, x: 80, y: 3000, width: 800, height: 240 }),
+      signal({ name: 'Impressum', nameHints: ['link'], x: 80, y: 500, width: 160, height: 40 }),
+      signal({ name: 'Jetzt anfragen', nameHints: ['button', 'cta'], hasReactions: true, x: 100, y: 1000, width: 1200, height: 380 }),
     ]
-    const ids = await run({ source, signals, frameWidth: 1440, frameHeight: 4000 })
+    const ids = await run({ source, signals, frameWidth: 1440, frameHeight: 2000, includeUnshipped: true })
     expect(ids).toContain('cta-below-fold')
   })
 
@@ -261,7 +293,9 @@ describe('end-to-end reachability of every rule', () => {
       signal({ name: 'Jetzt anfragen', nameHints: ['button', 'cta'], hasReactions: true, x: 80, y: 200, width: 800, height: 240 }),
       signal({ name: 'Fußzeilen-Link', nameHints: ['link'], x: 80, y: 3800, width: 120, height: 40 }),
     ]
-    expect(await run({ source, signals, frameWidth: 1440, frameHeight: 4000 })).not.toContain('cta-below-fold')
+    expect(
+      await run({ source, signals, frameWidth: 1440, frameHeight: 4000, includeUnshipped: true }),
+    ).not.toContain('cta-below-fold')
   })
 
   // --- cold-fold -----------------------------------------------------------

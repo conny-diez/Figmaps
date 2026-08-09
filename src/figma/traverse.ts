@@ -55,9 +55,16 @@ export function fontWeightFromStyle(style: string | undefined): number {
   return 400
 }
 
-/** Lowercased name tokens that match an interactive keyword. */
+/**
+ * Lowercased name tokens that match an interactive keyword.
+ *
+ * The token separator keeps `äöüß`: splitting on `[^a-z0-9]` alone tore
+ * „Schaltfläche" into „schaltfl" and „che", so no German keyword carrying an
+ * umlaut could ever match — including the three the list needs most
+ * („Schaltfläche", „Menü", „Kontrollkästchen").
+ */
 export function extractNameHints(name: string): string[] {
-  const tokens = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+  const tokens = name.toLowerCase().split(/[^a-z0-9äöüß]+/).filter(Boolean)
   const hits = new Set<string>()
   for (const token of tokens) {
     for (const keyword of INTERACTIVE_KEYWORDS) {

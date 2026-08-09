@@ -9,32 +9,42 @@ import { percentile } from '../engine/imageops'
 import type { ScalarMap } from '../engine/types'
 import { context2d, createCanvas, drawScalarLayer } from './canvas'
 import { drawFoldLines } from './folds'
-import { drawFooter } from './legend'
 
 export type FocusmapOptions = {
-  /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
-  priorLabel?: string
-  /** Viewing duration shown in the footer (e.g. „Betrachtungsdauer: Scan (3 s)"). */
-  durationLabel?: string
-  /** CC BY 4.0 notice for the bundled prior — see NOTICE.md. */
-  attribution?: string
-  /** Percentile threshold, 60–95 (FR-10). */
-  threshold: number
+  /**
+   * Percentile the falloff is anchored at. Defaults to
+   * `ENGINE_CONFIG.focus.percentile`, which is what the plugin uses — the
+   * parameter stays so the eval harness can sweep it without touching the
+   * config.
+   */
+  threshold?: number
+  /** Exponent of the falloff. Defaults to `ENGINE_CONFIG.focus.falloffGamma`. */
+  gamma?: number
   /** B-2 — fold positions in frame pixels. */
   folds?: readonly number[]
   /** Frame height in frame pixels, required when `folds` is given. */
   frameHeight?: number
 }
 
-/** Binary-ish mask alpha from the attention map, feathered by the blur below. */
-export function focusMaskAlpha(map: ScalarMap, threshold: number): Uint8ClampedArray {
-  const cutoff = percentile(map.values, threshold)
-  // A soft shoulder below the cutoff avoids a hard stair-step after upscaling.
-  const shoulder = Math.max(1e-4, (1 - cutoff) * 0.25)
+/**
+ * Visibility mask from the attention map — a continuous falloff, not a cut.
+ *
+ * `alpha = min(1, (v / anchor)^gamma)` with `anchor` the value at
+ * `focus.percentile`. Everything at or above the anchor is fully sharp; below
+ * it the screen keeps a share of its visibility *proportional to the predicted
+ * attention*, so the focusmap and the heatmap rank the same regions the same
+ * way. The old binary version could not: a moderately warm area was either in
+ * or out, which read as „not seen at all".
+ *
+ * `anchor` can be 0 on a degenerate map (everything zero) — then nothing is
+ * distinguishable and the whole frame is drawn sharp rather than dark, which is
+ * the honest answer for „no prediction to show".
+ */
+export function focusAlpha(map: ScalarMap, threshold: number, gamma: number): Uint8ClampedArray {
+  const anchor = percentile(map.values, threshold)
   const rgba = new Uint8ClampedArray(map.width * map.height * 4)
   for (let i = 0, p = 0; i < map.values.length; i++, p += 4) {
-    const v = map.values[i]
-    const t = v <= cutoff - shoulder ? 0 : v >= cutoff ? 1 : (v - (cutoff - shoulder)) / shoulder
+    const t = anchor > 0 ? Math.min(1, Math.pow(Math.max(0, map.values[i]) / anchor, gamma)) : 1
     rgba[p] = 255
     rgba[p + 1] = 255
     rgba[p + 2] = 255
@@ -48,9 +58,11 @@ export function renderFocusmap(
   map: ScalarMap,
   width: number,
   height: number,
-  options: FocusmapOptions,
+  options: FocusmapOptions = {},
 ): HTMLCanvasElement {
   const cfg = ENGINE_CONFIG.focus
+  const threshold = options.threshold ?? cfg.percentile
+  const gamma = options.gamma ?? cfg.falloffGamma
   const longer = Math.max(width, height)
   const backgroundBlur = Math.max(1, Math.round(longer * cfg.blurSigmaRatio))
   const featherBlur = Math.max(1, Math.round(longer * cfg.maskFeatherRatio))
@@ -63,7 +75,7 @@ export function renderFocusmap(
   ctx.drawImage(base, 0, 0, canvas.width, canvas.height)
   ctx.restore()
 
-  // 2) the sharp original, clipped to the feathered attention mask
+  // 2) the sharp original, weighted by the attention mask
   const sharp = createCanvas(width, height)
   const sharpCtx = context2d(sharp)
   sharpCtx.drawImage(base, 0, 0, sharp.width, sharp.height)
@@ -72,7 +84,7 @@ export function renderFocusmap(
   const maskCtx = context2d(mask)
   maskCtx.save()
   maskCtx.filter = `blur(${featherBlur}px)`
-  drawScalarLayer(maskCtx, map.width, map.height, focusMaskAlpha(map, options.threshold), mask.width, mask.height)
+  drawScalarLayer(maskCtx, map.width, map.height, focusAlpha(map, threshold, gamma), mask.width, mask.height)
   maskCtx.restore()
 
   sharpCtx.globalCompositeOperation = 'destination-in'
@@ -86,10 +98,5 @@ export function renderFocusmap(
     drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
   }
 
-  drawFooter(ctx, canvas.width, canvas.height, {
-    priorLabel: options.priorLabel,
-    durationLabel: options.durationLabel,
-    attribution: options.attribution,
-  })
   return canvas
 }

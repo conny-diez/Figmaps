@@ -1,25 +1,19 @@
 /**
- * FR-7 — heatmap rendering: Turbo overlay on top of the original screen,
- * with legend and disclaimer footer.
+ * FR-7 — heatmap rendering: Turbo overlay on top of the original screen.
+ *
+ * Nothing but the prediction is painted onto the screenshot. Title, disclaimer,
+ * prediction parameters and the CC BY notice are Figma text nodes placed around
+ * the image (`figma/place.ts`) — see there for why.
  */
 import { ENGINE_CONFIG } from '../engine/config'
 import type { ScalarMap } from '../engine/types'
 import { context2d, createCanvas, drawScalarLayer } from './canvas'
 import { turbo } from './colormap'
 import { drawFoldLines } from './folds'
-import { drawFooter, drawLegend } from './legend'
 
 export type HeatmapOptions = {
-  /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
-  priorLabel?: string
-  /** Viewing duration shown in the footer (e.g. „Betrachtungsdauer: Scan (3 s)"). */
-  durationLabel?: string
-  /** CC BY 4.0 notice for the bundled prior — see NOTICE.md. */
-  attribution?: string
   /** Overlay opacity, `0..1`. */
   opacity: number
-  /** Title of the legend box — differs for the above-the-fold map (B-2). */
-  title?: string
   /** B-2 — fold positions in frame pixels, drawn as dashed markers. */
   folds?: readonly number[]
   /** Frame height in frame pixels, required when `folds` is given. */
@@ -72,12 +66,5 @@ export function renderHeatmap(
     drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
   }
 
-  const footer = {
-    priorLabel: options.priorLabel,
-    durationLabel: options.durationLabel,
-    attribution: options.attribution,
-  }
-  drawLegend(ctx, canvas.width, canvas.height, options.title ?? 'Heatmap — vorhergesagte Aufmerksamkeit', footer)
-  drawFooter(ctx, canvas.width, canvas.height, footer)
   return canvas
 }

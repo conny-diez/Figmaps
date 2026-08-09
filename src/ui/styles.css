@@ -23,6 +23,11 @@
   src: url("__FONT_JETBRAINS_MONO__") format("woff2");
 }
 
+/* The palette is written onto the root element by `ui/theme.ts` — both themes
+ * live there in TypeScript, because every value is one half of a contrast pair
+ * and `ui/__tests__/theme.test.ts` checks all of them against 4.5:1. The
+ * fallbacks below are the dark theme, so the panel is never unstyled for the
+ * frame before the first paint. */
 :root {
   --bg: #0d0d10;
   --bg-page: #08080a;
@@ -33,25 +38,34 @@
   --surface-row: #121217;
   --surface-hover: #212129;
 
+  --shell: #1f1f25;
+  --divider: #1b1b21;
   --border: #22222a;
   --border-strong: #2b2b34;
   --border-open: #3d3d49;
-  --border-icon: #33333d;
-  --divider: #1b1b21;
+  --border-icon: #2e2e38;
 
+  /* Two muted levels, both over 4.5:1 — see `theme.ts` for why not three. */
   --text: #ececef;
   --text-body: #b4b4c0;
-  --text-label: #a8a8b4;
-  --text-off: #75757f;
-  --text-muted: #8a8a96;
-  --text-dim: #6e6e7a;
-  --text-faint: #63636e;
-  --text-fainter: #5a5a64;
-  --text-rank: #55555e;
-  --text-ghost: #4e4e58;
+  --text-dim: #a8a8b4;
+  --text-quiet: #8a8a96;
 
   --accent: #f5c518;
-  --danger: #ef4444;
+  --accent-text: #f5c518;
+  --ink: #0d0d10;
+  --danger: #ff7a6e;
+
+  --track: #2b2b34;
+  --rank-fill: rgba(245, 197, 24, 0.12);
+
+  --schema-bg: #1b1b21;
+  --wire1: #33333d;
+  --wire2: #2b2b34;
+  --wire3: #26262f;
+  --cut-line: rgba(245, 197, 24, 0.55);
+  --fold-hatch: rgba(0, 0, 0, 0.55);
+  --fold-hatch-2: rgba(0, 0, 0, 0.22);
 
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -84,7 +98,7 @@ body {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #26262e;
+  background: var(--border-strong);
   border-radius: 99px;
   border: 2px solid var(--bg);
 }
@@ -128,12 +142,51 @@ body {
   font-weight: 700;
 }
 
+/* Plugin version, e.g. `v1.1` — set as written, so the lowercase `v` survives. */
 .app__subtitle {
   margin: 0;
   font-family: var(--mono);
   font-size: 9px;
-  text-transform: uppercase;
-  color: var(--text-fainter);
+  color: var(--text-quiet);
+}
+
+/* Theme-Umschalter — bewusst eigener Schalter statt `themeColors: true`:
+ * ob der Fußtext lesbar ist, darf nicht davon abhängen, was der Host als
+ * Nächstes tut. Dark ist immer der Startwert, auch wenn Figma hell läuft. */
+.themepill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.themepill:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+.themepill span {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 99px;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--text-quiet);
+  transition:
+    background 0.18s,
+    color 0.18s;
+}
+
+.themepill span.is-on {
+  background: var(--accent);
+  color: var(--ink);
 }
 
 /* ------------------------------------------------------------------ layout */
@@ -143,6 +196,9 @@ body {
   flex-direction: column;
   gap: 11px;
   flex: 1 1 auto;
+  /* Explicit, so the body is what shrinks and scrolls when the footer grows —
+   * a flex item's automatic minimum size would otherwise push the footer out. */
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 11px;
@@ -158,8 +214,10 @@ body {
   gap: 5px;
 }
 
+/* The bar sliders read as one strip of bars when they sit close together —
+   the gap has to be larger than the 26 px they are tall is wide. */
 .section--sliders {
-  gap: 10px;
+  gap: 18px;
   padding-top: 2px;
 }
 
@@ -193,7 +251,7 @@ body {
 
 .section__note {
   font-size: 10px;
-  color: var(--text-rank);
+  color: var(--text-quiet);
 }
 
 /* --------------------------------------------------------------- selection */
@@ -227,14 +285,14 @@ body {
 }
 
 .selection--empty .selection__name {
-  color: var(--text-off);
+  color: var(--text-dim);
 }
 
 .selection__meta {
   flex: none;
   font-family: var(--mono);
   font-size: 9px;
-  color: var(--text-faint);
+  color: var(--text-quiet);
 }
 
 /* --------------------------------------------------------------- segmented */
@@ -270,12 +328,12 @@ body {
   font: inherit;
   font-size: 11px;
   font-weight: 700;
-  color: var(--text-off);
+  color: var(--text-dim);
   cursor: pointer;
 }
 
 .segmented button[aria-pressed="true"] {
-  color: var(--bg);
+  color: var(--ink);
 }
 
 .segmented button:disabled {
@@ -364,7 +422,7 @@ body {
   font: inherit;
   font-size: 11.5px;
   font-weight: 600;
-  color: #c7c7d2;
+  color: var(--text-body);
   text-align: left;
   cursor: pointer;
 }
@@ -376,13 +434,13 @@ body {
 }
 
 .select__option[aria-selected="true"] {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .select__option::after {
   content: "";
   font-size: 9px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .select__option[aria-selected="true"]::after {
@@ -449,7 +507,7 @@ body {
 }
 
 .maptoggle.is-on .maptoggle__knob {
-  background: var(--bg);
+  background: var(--ink);
   transform: translateX(11px);
 }
 
@@ -462,9 +520,9 @@ body {
 }
 
 .maptoggle__label {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-off);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-dim);
 }
 
 .maptoggle.is-on .maptoggle__label {
@@ -472,80 +530,130 @@ body {
 }
 
 .maptoggle__desc {
-  font-size: 10px;
-  color: var(--text-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-quiet);
+  /* Wraps rather than truncates: the schema takes 56 px of a 320 px panel, and
+     „Was scharf bleibt, wenn der Rest ab…" is not a description. */
+  text-wrap: pretty;
 }
 
-/* Portrait thumbnail — a miniature of what the map looks like on a screen. */
-.maptoggle__swatch {
+/* Map-Schema — ein abstrakter Screen, KEIN Abbild der Auswahl.
+ *
+ * Deshalb heißt es nirgends „Vorschau": vier feste Balken zeigen, wie die
+ * jeweilige Map einen Screen einfärbt, nicht wie *dieser* Screen aussieht. Rein
+ * CSS, keine Engine, kein Export. Es reagiert aber auf die Einstellungen —
+ * Deckkraft auf die Schicht, Viewport-Höhe auf Schnittlinie und Falz, Map aus
+ * auf die Gesamtdeckkraft —, sonst wäre es Dekoration statt Erklärung. */
+.schema {
+  position: relative;
   flex: none;
-  width: 17px;
-  height: 26px;
-  border-radius: 3px;
-  border: 1px solid #2e2e38;
-  opacity: 0.25;
+  width: 56px;
+  height: 88px;
+  border-radius: 5px;
+  border: 1px solid var(--border-icon);
+  overflow: hidden;
+  background: var(--schema-bg);
+  opacity: 0.45;
   transition: opacity 0.2s;
 }
 
-.maptoggle.is-on .maptoggle__swatch {
+.maptoggle.is-on .schema {
   opacity: 1;
 }
 
-.maptoggle__swatch--heat {
-  background: radial-gradient(
-      circle at 52% 26%,
-      rgba(239, 68, 68, 0.95) 0%,
-      rgba(245, 158, 11, 0.9) 16%,
-      rgba(34, 197, 94, 0.85) 32%,
-      rgba(59, 130, 246, 0.75) 52%,
-      rgba(59, 130, 246, 0) 72%
-    ),
-    radial-gradient(
-      circle at 44% 70%,
-      rgba(245, 158, 11, 0.8) 0%,
-      rgba(34, 197, 94, 0.7) 20%,
-      rgba(59, 130, 246, 0.6) 42%,
-      rgba(59, 130, 246, 0) 64%
-    ),
-    #e2e7ee;
+.schema__wire {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
 }
 
-.maptoggle__swatch--click {
+.schema__wire i {
+  display: block;
+  border-radius: 2px;
+}
+
+.schema__wire i:nth-child(1) {
+  height: 6px;
+  background: var(--wire1);
+}
+
+.schema__wire i:nth-child(2),
+.schema__wire i:nth-child(3) {
+  height: 17px;
+  background: var(--wire2);
+}
+
+.schema__wire i:nth-child(4) {
+  height: 10px;
+  background: var(--wire3);
+}
+
+.schema__layer {
+  position: absolute;
+  inset: 0;
+  opacity: var(--layer-opacity, 0.65);
+  transition: opacity 0.12s;
+}
+
+.schema__layer--heat {
+  background: radial-gradient(
+    circle at 52% 30%,
+    rgba(239, 68, 68, 0.95) 0%,
+    rgba(245, 158, 11, 0.9) calc(var(--spread) * 0.35),
+    rgba(34, 197, 94, 0.8) calc(var(--spread) * 0.6),
+    rgba(59, 130, 246, 0.65) var(--spread),
+    rgba(59, 130, 246, 0) calc(var(--spread) * 1.4)
+  );
+}
+
+.schema__layer--focus {
+  background: radial-gradient(
+    circle at 50% 32%,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.35) calc(var(--spread) * 0.7),
+    rgba(0, 0, 0, 0.82) var(--spread)
+  );
+}
+
+.schema__layer--click {
   background: radial-gradient(
       circle at 56% 24%,
       rgba(120, 20, 20, 0.95) 0%,
       rgba(185, 28, 28, 0.5) 28%,
       rgba(0, 0, 0, 0) 56%
     ),
-    radial-gradient(
-      circle at 44% 64%,
-      rgba(120, 20, 20, 0.85) 0%,
-      rgba(185, 28, 28, 0.4) 26%,
-      rgba(0, 0, 0, 0) 54%
-    ),
-    #c7c7ce;
+    radial-gradient(circle at 44% 64%, rgba(120, 20, 20, 0.85) 0%, rgba(185, 28, 28, 0.4) 26%, rgba(0, 0, 0, 0) 54%);
 }
 
-.maptoggle__swatch--focus {
-  background: radial-gradient(
-      circle at 50% 30%,
-      rgba(255, 255, 255, 0.98) 0%,
-      rgba(255, 255, 255, 0.55) 32%,
-      rgba(255, 255, 255, 0) 58%
-    ),
-    #4a4a52;
+/* Where the first viewport ends, and what lies under the fold. */
+.schema__cut {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--cut-h, 100%);
+  border-bottom: 1px dashed var(--cut-line);
+  transition: height 0.18s ease;
 }
 
-.maptoggle__swatch--fold {
-  background: linear-gradient(180deg, var(--accent) 0 38%, #4a4a52 38% 100%);
+.schema__fold {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--fold-h, 0%);
+  background: repeating-linear-gradient(135deg, var(--fold-hatch) 0 4px, var(--fold-hatch-2) 4px 8px);
+  transition: height 0.18s ease;
 }
 
 /* ----------------------------------------------------------------- sliders */
 
-.slider {
+.slider,
+.slider-with-hint {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -560,55 +668,67 @@ body {
 
 .slider__name {
   font-size: 11.5px;
-  color: var(--text-label);
+  color: var(--text-dim);
 }
 
 .slider__value {
   font-family: var(--mono);
-  font-size: 11px;
-  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-text);
 }
 
-.slider input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 14px;
-  margin: 0;
-  background: transparent;
+/* Balken-Slider statt Track + Knopf.
+ *
+ * Ein natives `input[type=range]` kann die Balkenhöhen nicht darstellen, also
+ * ist es ein `role="slider"`-Element — und damit liegt die gesamte
+ * Zugänglichkeit bei uns: `aria-valuenow/min/max/valuetext`, Pfeiltasten,
+ * Home/End, Shift für große Schritte, ein sichtbarer Fokusring, und
+ * `setPointerCapture`, ohne das der Wert springt, sobald der Zeiger die Leiste
+ * verlässt. */
+.slider__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 4px;
   cursor: pointer;
+  touch-action: none;
 }
 
-.slider input[type="range"]::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 99px;
-  /* The filled part has to be an image layer — a bare colour cannot carry the
-     `position / size` part of the shorthand. */
-  background: linear-gradient(var(--accent), var(--accent)) 0 / var(--fill, 0%) 100% no-repeat,
-    var(--border);
+.slider__bars:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 3px;
 }
 
-.slider input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 11px;
-  height: 11px;
-  margin-top: -4px;
-  border-radius: 99px;
-  background: var(--accent);
-  border: 2px solid var(--bg);
-}
-
-.slider input[type="range"]:disabled {
+.slider__bars[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.slider__bars i {
+  flex: 1;
+  min-width: 0;
+  border-radius: 2px;
+  background: var(--track);
+  height: 6px;
+  transition:
+    height 0.18s cubic-bezier(0.2, 1.3, 0.4, 1),
+    background 0.18s;
+}
+
+.slider__bars i.is-on {
+  background: var(--accent);
 }
 
 .hint {
   margin: 0;
   font-size: 10.5px;
   line-height: 1.4;
-  color: var(--text-faint);
+  color: var(--text-quiet);
 }
 
 .linkbutton {
@@ -618,13 +738,13 @@ body {
   font: inherit;
   font-size: 11px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   border-bottom: 1px solid rgba(245, 197, 24, 0.35);
   cursor: pointer;
 }
 
 .linkbutton:hover {
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--accent-text);
 }
 
 /* --------------------------------------------------------------- CTA + run */
@@ -642,14 +762,14 @@ body {
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  color: var(--bg);
+  color: var(--ink);
   background: var(--accent);
 }
 
 .button:disabled {
   cursor: not-allowed;
-  color: var(--text-fainter);
-  background: #1a1a20;
+  color: var(--text-quiet);
+  background: var(--surface);
 }
 
 .button__hint {
@@ -667,7 +787,7 @@ body {
 }
 
 .button--secondary:disabled {
-  color: var(--text-fainter);
+  color: var(--text-quiet);
   background: var(--surface-row);
 }
 
@@ -679,19 +799,19 @@ body {
   justify-content: space-between;
   gap: 8px;
   font-size: 11.5px;
-  color: var(--text-label);
+  color: var(--text-dim);
 }
 
 .status__value {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .status__detail {
   font-family: var(--mono);
   font-size: 9px;
-  color: var(--text-faint);
+  color: var(--text-quiet);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -728,7 +848,7 @@ body {
   font-size: 15px;
   font-weight: 600;
   line-height: 1;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .result__text {
@@ -747,7 +867,7 @@ body {
   gap: 3px;
   font-size: 10.5px;
   line-height: 1.4;
-  color: var(--text-faint);
+  color: var(--text-quiet);
 }
 
 /* ---------------------------------------------------------------- findings */
@@ -782,7 +902,7 @@ body {
 }
 
 .findings__item--info .findings__bar {
-  background: #3a3a45;
+  background: var(--border-strong);
 }
 
 .findings__body {
@@ -797,15 +917,15 @@ body {
   font-size: 8.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .findings__item--problem .findings__severity {
-  color: #ff8a7a;
+  color: var(--danger);
 }
 
 .findings__item--info .findings__severity {
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 .findings__text {
@@ -856,7 +976,7 @@ body {
   flex: none;
   font-family: var(--mono);
   font-size: 9px;
-  color: var(--text-rank);
+  color: var(--text-quiet);
 }
 
 .ranking__name {
@@ -876,11 +996,11 @@ body {
   flex: none;
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-quiet);
 }
 
 .ranking li:first-child .ranking__score {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ----------------------------------------------------------------- notices */
@@ -896,13 +1016,13 @@ body {
 .notice--warning {
   background: rgba(245, 197, 24, 0.07);
   border: 1px solid rgba(245, 197, 24, 0.2);
-  color: #ddc689;
+  color: var(--accent-text);
 }
 
 .notice--error {
   background: rgba(239, 68, 68, 0.09);
   border: 1px solid rgba(239, 68, 68, 0.25);
-  color: #ffb3aa;
+  color: var(--danger);
 }
 
 /* ------------------------------------------------------------------ footer */
@@ -936,18 +1056,15 @@ body {
   gap: 3px;
 }
 
+/* All three footer paragraphs, one style. The graded secondary style this
+ * replaces was under the 4.5:1 floor in both themes; the measured values for
+ * every pair that occurs are in `ui/__tests__/theme.test.ts`, which fails below
+ * the floor rather than leaving it to the eye. */
 .disclaimer__text {
+  margin: 0;
   font-size: 9.5px;
   line-height: 1.45;
-  color: var(--text-dim);
-  text-wrap: pretty;
-}
-
-.attribution {
-  margin: 0;
-  font-size: 9px;
-  line-height: 1.45;
-  color: var(--text-ghost);
+  color: var(--text-quiet);
   text-wrap: pretty;
 }
 
@@ -964,7 +1081,7 @@ body {
   place-items: center;
   width: 16px;
   height: 16px;
-  color: var(--text-rank);
+  color: var(--text-quiet);
   cursor: nwse-resize;
   touch-action: none;
   -webkit-user-select: none;
@@ -973,7 +1090,7 @@ body {
 
 .resizer:hover,
 .resizer:focus-visible {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .resizer:focus-visible {

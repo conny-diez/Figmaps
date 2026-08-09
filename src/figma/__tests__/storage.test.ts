@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { ENGINE_CONFIG } from '../../engine/config'
 import { DEFAULT_PROFILE, PROFILE_IDS, shippedProfiles } from '../../engine/params'
 import { DEFAULT_PANEL_SIZE, DEFAULT_SETTINGS, PANEL_SIZE } from '../../messages'
 import { normalisePanelSize, normaliseSettings } from '../storage'
@@ -14,12 +13,14 @@ describe('normaliseSettings', () => {
   it('clamps the sliders into their documented ranges', () => {
     expect(normaliseSettings({ overlayOpacity: 500 }).overlayOpacity).toBe(100)
     expect(normaliseSettings({ overlayOpacity: -20 }).overlayOpacity).toBe(0)
-    expect(normaliseSettings({ focusThreshold: 10 }).focusThreshold).toBe(ENGINE_CONFIG.focus.minPercentile)
-    expect(normaliseSettings({ focusThreshold: 99 }).focusThreshold).toBe(ENGINE_CONFIG.focus.maxPercentile)
   })
 
   it('drops a stored export scale — the export is fixed at 2x', () => {
     expect(normaliseSettings({ exportScale: 1 })).toEqual(DEFAULT_SETTINGS)
+  })
+
+  it('drops a stored focus threshold — the focus area is fixed', () => {
+    expect(normaliseSettings({ focusThreshold: 95 })).toEqual(DEFAULT_SETTINGS)
   })
 
   it('keeps individually toggled maps', () => {

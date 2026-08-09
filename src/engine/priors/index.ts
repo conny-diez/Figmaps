@@ -152,13 +152,15 @@ export function shipsPriorAsset(): boolean {
 }
 
 /**
- * The attribution in the form that fits on a rendered map's footer.
+ * The attribution in the form that fits next to a placed map.
  *
- * An exported PNG leaves Figma without the panel, so the notice has to be on
- * the image too — CC BY 4.0 attaches to the derived asset, not to the UI that
- * happened to produce it. The panel carries the long form.
+ * **Source only, no label.** The label is the caller's — `figma/place.ts`
+ * writes „Datengrundlage: …" in front of it. This string used to start with
+ * „Ortsprior: " and produced „Datengrundlage: Ortsprior: UEyes …" on the
+ * wrapper: a double colon, and the one word that is no longer allowed to appear
+ * anywhere in the output.
  */
-export const PRIOR_ATTRIBUTION_SHORT = 'Ortsprior: UEyes (Jiang et al. 2023), CC BY 4.0'
+export const PRIOR_ATTRIBUTION_SHORT = 'UEyes (Jiang et al. 2023), CC BY 4.0'
 
 /** Categories that have a prior for every shipped duration. */
 export function availablePriorCategories(): PriorAssetId[] {

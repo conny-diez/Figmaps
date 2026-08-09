@@ -22,8 +22,27 @@
  */
 export const ENGINE_VERSION = 'hybrid-v1'
 
-/** Name tokens that mark a node as probably interactive (FR-3). */
+/**
+ * Name tokens that mark a node as probably interactive (FR-3).
+ *
+ * Matched as substrings of a lowercased name token, so the shortest useful stem
+ * is listed: `melden` covers „Anmelden" and „Abmelden", `schalter` covers
+ * „Umschalter", `feld` covers „Eingabefeld" und „Suchfeld".
+ *
+ * **Deutsch gehört dazu, nicht als Zugabe.** Bei meinestadt.de sind sämtliche
+ * Ebenennamen deutsch, und mit der rein englischen Liste traf davon *keiner*
+ * (gemessen an 24 typischen Namen: 0 Treffer). Das betrifft nicht nur die
+ * ausgeblendete Clickmap: `cta-rank` und `cta-below-fold` sind ausgeliefert und
+ * hängen an denselben Kandidaten.
+ *
+ * Bekannte Fehlgriffe, bewusst in Kauf genommen: `karte` trifft auch eine
+ * „Standortkarte", `reiter` steckt in „breiter", `feld` in „Umfeld". Ein
+ * Kandidat zu viel verschiebt eine Rangfolge, ein fehlender macht die Regel
+ * blind — und die zweite Richtung ist die, die auf dem Onboarding-Screen
+ * schiefging.
+ */
 export const INTERACTIVE_KEYWORDS: readonly string[] = [
+  // englisch
   'button',
   'btn',
   'cta',
@@ -40,6 +59,30 @@ export const INTERACTIVE_KEYWORDS: readonly string[] = [
   'dropdown',
   'select',
   'card',
+  'nav',
+  'accordion',
+  // deutsch
+  'knopf',
+  'schaltfläche',
+  'schalter',
+  'karte',
+  'kachel',
+  'kategorie',
+  'melden',
+  'registrier',
+  'senden',
+  'weiter',
+  'zurück',
+  'suche',
+  'filter',
+  'auswahl',
+  'eingabe',
+  'feld',
+  'reiter',
+  'menü',
+  'kästchen',
+  'verweis',
+  'akkordeon',
 ]
 
 export const ENGINE_CONFIG = {
@@ -209,10 +252,25 @@ export const ENGINE_CONFIG = {
 
   /** Clickmap scoring (FR-5). */
   clickmap: {
+    /**
+     * Der Flächenanteil ist **entfernt**, nicht neu kalibriert.
+     *
+     * `sizeRank = Fläche ÷ größte Fläche` mit 0,2 war für die Clickmap
+     * gedacht: ein größeres Ziel wird häufiger getroffen. Seit die Kandidaten
+     * *Kästen* statt Beschriftungen sind, addierte er 0,20 auf jede
+     * Ergebniskarte (230.400 px² gegen 17.784 px² beim CTA) und entschied die
+     * Rangfolge allein. Die drei Regeln, die noch daran hängen, sprechen aber
+     * über **Aufmerksamkeit**, nicht über Klickwahrscheinlichkeit — und die
+     * Clickmap, für die der Term Sinn ergäbe, ist nicht im Panel. „Median statt
+     * Maximum" wäre eine zweite Zahl gegen dieselbe unvalidierte Population
+     * gewesen.
+     *
+     * Die verbleibenden zwei Gewichte sind die alten, auf 1 renormiert:
+     * 0,5/0,8 und 0,3/0,8.
+     */
     weights: {
-      attention: 0.5,
-      reaction: 0.3,
-      size: 0.2,
+      attention: 0.625,
+      reaction: 0.375,
     },
     reactionBonus: {
       reactions: 1.0,
@@ -221,6 +279,13 @@ export const ENGINE_CONFIG = {
     },
     /** Max characters for a text node to qualify as a button label. */
     maxTextCharsForButton: 30,
+    /**
+     * How far up the ancestor chain the filled box around a label is looked
+     * for. 3 covers Button → Auto-Layout-Reihe → Icon+Text-Stapel → Label,
+     * which is as deep as component libraries usually nest before the box is
+     * no longer the tappable element.
+     */
+    buttonContainerDepth: 3,
     /** Candidates smaller than this (frame px²) are ignored. */
     minCandidateArea: 400,
     /** Candidates larger than this share of the frame are ignored (backdrops). */
@@ -238,16 +303,10 @@ export const ENGINE_CONFIG = {
     transparencyCutoff: 0.08,
     /** Width of the fade-in ramp above the cutoff. */
     transparencyRamp: 0.12,
-    /** Reference edge used to scale legend/footer typography. */
-    uiScaleReferenceEdge: 1200,
-    legend: {
-      barWidthRatio: 0.22,
-      barHeightRatio: 0.018,
-      fontSizeRatio: 0.016,
-      paddingRatio: 0.02,
-      minFontSize: 11,
-      maxFontSize: 40,
-    },
+    // The legend box and the disclaimer footer used to be drawn into every map
+    // and had their own typography block here. They are Figma text nodes beside
+    // the image now (`figma/place.ts`) — nothing but the prediction is painted
+    // onto the screenshot.
     /** Epic B — dashed fold markers drawn into every segmented output. */
     fold: {
       lineWidthRatio: 0.0016,
@@ -276,9 +335,37 @@ export const ENGINE_CONFIG = {
     blurSigmaRatio: 0.012,
     /** Feather of the mask edge as a fraction of the longer output edge. */
     maskFeatherRatio: 0.02,
-    defaultPercentile: 80,
-    minPercentile: 60,
-    maxPercentile: 95,
+    /**
+     * Anchor of the falloff curve, **not an edge**: at the value of this
+     * percentile the screen is fully sharp, below it visibility falls off
+     * smoothly instead of dropping to nothing.
+     *
+     * 80 is the value the panel slider defaulted to. The alternative — deriving
+     * it per screen from the concentration of the image term (the quantity
+     * `findings/rules.ts` → `flat` cuts on) — was measured and dropped: that
+     * quantity answers „how small is the strongest spot", not „how clear is the
+     * hierarchy", and it moves just as much with the sheer amount of content.
+     * On two constructed frames with a large hero it therefore *widened* the
+     * sharp area to 30–45 % of the page, the opposite of the intent. See the
+     * commit that removed the slider.
+     */
+    percentile: 80,
+    /**
+     * Exponent of the falloff below the anchor: `alpha = (v / anchor)^gamma`.
+     *
+     * The hard cut this replaces made the focusmap contradict the heatmap it is
+     * computed from — a region the heatmap draws distinctly warm was either
+     * fully sharp or fully dark, and on an onboarding screen a visibly warm CTA
+     * fell into the dark side of the cut. Both maps are the same numbers, so
+     * they have to say the same thing.
+     *
+     * 1.6 was chosen on the constructed frames: 1.0 is so flat that the whole
+     * screen stays half-visible and the map stops pointing anywhere, 2.4 is
+     * close enough to the old cut to reproduce the complaint. At 1.6 a region
+     * at 70 % of the anchor still shows at 57 % visibility, one at 40 % of it
+     * at 22 % — visible as "less", not as "not seen".
+     */
+    falloffGamma: 1.6,
   },
 
   /** Main-thread traversal limits (FR-1, FR-3). */

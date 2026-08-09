@@ -7,15 +7,11 @@ import { ENGINE_CONFIG } from '../engine/config'
 import { context2d, createCanvas } from './canvas'
 import { turbo } from './colormap'
 import { drawFoldLines } from './folds'
-import { drawFooter, FONT_STACK, uiScale } from './legend'
+
+/** Label typeface — the percentages are part of the prediction, not chrome. */
+const FONT_STACK = 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif'
 
 export type ClickmapOptions = {
-  /** Prior category shown in the footer (e.g. „Ortsprior: Webseite (automatisch)"). */
-  priorLabel?: string
-  /** Viewing duration shown in the footer (e.g. „Betrachtungsdauer: Scan (3 s)"). */
-  durationLabel?: string
-  /** CC BY 4.0 notice for the bundled prior — see NOTICE.md. */
-  attribution?: string
   /** Blob opacity, `0..1`. */
   opacity: number
   /** Frame size in frame pixels — candidates carry frame-pixel geometry. */
@@ -90,26 +86,6 @@ export function renderClickmap(
     drawFoldLines(ctx, canvas.width, canvas.height, { folds: options.folds, frameHeight: options.frameHeight })
   }
 
-  drawTitle(ctx, canvas.width, canvas.height, 'Clickmap — vorhergesagte Klickwahrscheinlichkeit')
-  drawFooter(ctx, canvas.width, canvas.height, {
-    priorLabel: options.priorLabel,
-    durationLabel: options.durationLabel,
-    attribution: options.attribution,
-  })
   return canvas
 }
 
-function drawTitle(ctx: CanvasRenderingContext2D, width: number, height: number, text: string): void {
-  const font = uiScale(width, height)
-  const pad = Math.round(font)
-  ctx.save()
-  ctx.textAlign = 'left'
-  ctx.textBaseline = 'top'
-  ctx.font = `600 ${Math.round(font)}px ${FONT_STACK}`
-  const textWidth = ctx.measureText(text).width
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.62)'
-  ctx.fillRect(pad, pad, textWidth + pad * 2, Math.round(font * 2))
-  ctx.fillStyle = '#ffffff'
-  ctx.fillText(text, pad * 2, pad + Math.round(font * 0.5))
-  ctx.restore()
-}

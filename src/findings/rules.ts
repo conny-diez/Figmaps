@@ -179,6 +179,27 @@ function hasValleyBetween(
  * Screens. Auf gescrollten Frames wird das von der Scroll-Dämpfung getrieben,
  * die den Fuß-CTA im Ranking nach unten schiebt.
  */
+/**
+ * Der primäre CTA liegt nicht auf einem der vordersten Ränge.
+ *
+ * **Nach dem Ausbau des Flächenanteils gemessen, gegen die bekannte Antwort.**
+ * Die konstruierten Frames stellen den primären CTA in 6 von 8 Varianten nach
+ * unten und in 2 von 8 direkt unter den Hero (`layoutFor`, `variant % 3 === 2`).
+ * Die Regel soll also in genau 6 Fällen feuern und in 2 schweigen:
+ *
+ *   Desktop scrollend   6/8 — feuert auf genau den 6 „CTA unten"-Varianten
+ *   Telefon 1 Viewport  6/8 — dieselbe Aufteilung, keine Abweichung
+ *   Telefon scrollend   7/8 — eine Fehlmeldung (v5, CTA oben)
+ *
+ * 23 von 24 Urteilen stimmen mit der Konstruktion überein. Die Quote von rund
+ * 79 % ist hoch, aber sie ist die Quote, die der Aufbau vorgibt — nicht das
+ * Zeichen einer Regel, die immer feuert.
+ *
+ * Solange der Flächenanteil im Score steckte, war das anders: er addierte 0,20
+ * auf jede Ergebniskarte (230.400 px² gegen 17.784 px² beim CTA) und schob die
+ * Karten unabhängig vom Entwurf auf Rang 1. Die Regel feuerte dann 8/8. Siehe
+ * `ENGINE_CONFIG.clickmap.weights`.
+ */
 const ctaRank: Rule = {
   id: 'cta-rank',
   evaluate(input) {
@@ -211,8 +232,48 @@ const ctaRank: Rule = {
  * Reaktions-Kandidaten weit unten aus. Sie ist nicht tot, aber sie meldet
  * seltener, als der Name vermuten lässt.
  */
+/**
+ * NICHT AUSGELIEFERT — strukturell blockiert, nicht falsch kalibriert.
+ *
+ * Die Regel liest `candidates[0]`, also den stärksten Kandidaten der
+ * komponierten Karte, und meldet, wenn der unterhalb des ersten Folds liegt.
+ * Zwei Eigenschaften der Vorhersage arbeiten dagegen, und beide sind
+ * beabsichtigt:
+ *
+ *   1. Der Ortsprior ist **oben-lastig** — er ist aus Einzel-Viewports
+ *      geschätzt, in denen der Blick oben beginnt.
+ *   2. Jeder Abschnitt wird zusätzlich mit `sectionAttenuation^i` gedämpft.
+ *      Ein Element unterhalb des Folds startet damit bei der Hälfte.
+ *
+ * Ein Kandidat unter dem Fold muss beides überkompensieren, um Rang 1 zu
+ * erreichen. Gemessen auf 24 konstruierten Frames mit deutschen Ebenennamen:
+ * **0 von 24**, in allen drei Frame-Formen. Der Erreichbarkeitstest zeigt, dass
+ * es geht — aber nur mit Prototype-Interaktion *und* einem starken Block
+ * dahinter *und* einem Gegenspieler, der beides nicht hat.
+ *
+ * **Die Dämpfung wird dafür nicht angefasst.** Sie ist ohnehin eine Annahme
+ * ohne Messung (`config.ts`); sie zu verstellen, damit eine Regel feuert, hieße
+ * die Vorhersage an die Regel anzupassen statt umgekehrt — genau der Fehler,
+ * der in diesem Projekt schon viermal passiert ist.
+ *
+ * Was die Regel stattdessen bräuchte: eine Größe, die den Kandidaten **innerhalb
+ * seines eigenen Abschnitts** bewertet statt auf der gedämpften Gesamtkarte.
+ *
+ * **Die gibt es schon.** `localMean` liest genau das — die mittlere
+ * Aufmerksamkeit eines Kandidaten auf der *ungedämpften* Karte seines eigenen
+ * Viewports — und wurde für `dead-cta` gebaut, aus demselben Grund: dort machte
+ * die Dämpfung jeden Fußzeilen-Knopf rechnerisch leise. In 1.2 ist das damit
+ * **eine Änderung für zwei Regeln**, nicht zwei Aufgaben: beide steigen von der
+ * komponierten Karte auf die Abschnittskarte um.
+ *
+ * Was dabei mitentschieden werden muss: die Aussage ändert sich. „Der stärkste
+ * Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
+ * eigenen Viewport dominiert, sitzt nicht im ersten" — der Satz muss neu
+ * geschrieben werden, nicht nur die Zahl. Siehe README, „Offen für 1.2".
+ */
 const ctaBelowFold: Rule = {
   id: 'cta-below-fold',
+  shipped: false,
   evaluate(input) {
     if (input.plan.folds.length === 0) return null
     const leader = input.candidates[0]
@@ -236,6 +297,15 @@ const ctaBelowFold: Rule = {
  * Auf echten Bildern nicht entartet: 3,3 % (Webseite, segmentiert) und 10,0 %
  * (Telefon, ein Viewport), Schwelle bei p3 bzw. p10. Die selektivste Regel,
  * wie beabsichtigt.
+ *
+ * **ACHTUNG — diese Quoten sind die einzige positive Evidenz dieser Regel, und
+ * sie wurden mit genau dem Abstandsmaß gemessen, das unten als falsch skaliert
+ * dokumentiert ist.** „Weit auseinander" bedeutete bei jeder der beiden
+ * Messungen etwas anderes (48,0 % bzw. 13,9 % der Kartenhöhe), die 3,3 % und
+ * 10,0 % sind also nicht dieselbe Frage, zweimal beantwortet. Sobald der
+ * Abstand in 1.2 auf die Diagonale oder auf getrennte x/y-Schwellen umgestellt
+ * wird, ist die Feuerrate **neu zu messen** — die alten Zahlen dürfen nicht
+ * übernommen werden, auch nicht als Plausibilitätsanker.
  *
  * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
  * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um
@@ -367,15 +437,43 @@ const coldFold: Rule = {
  * 0/24, Telefon scrollend 6/24, Desktop scrollend 5/24. Der Frame aus dem
  * Vergleichstest — farbiger Kopf, farbiger Fuß — feuert nicht mehr.
  *
- * **Was bleibt.** Die Größe reagiert weiterhin auch auf die *Menge* an Inhalt:
- * auf gescrollten Desktop-Frames feuerte sie bei den Varianten mit den meisten
- * Karten, darunter eine mit starkem Akzent und Hero. „Zwölf fast gleiche
- * Karten sind flach" ist vertretbar, aber es ist nicht dasselbe wie „kein
- * Blickfang". Wenn das im Gebrauch stört, ist es die nächste Frage — und
- * wieder eine Bedeutungs-, keine Kalibrierungsfrage.
+ * **Dritter Anlauf, und diesmal aus: die Größe misst das Falsche.** Der
+ * Vorbehalt oben („reagiert auch auf die Menge an Inhalt") ist zu milde. Zwei
+ * kontrollierte Sweeps auf derselben Fläche, gemessen auf dem Bildanalyse-Anteil:
+ *
+ *   Hierarchie konstant (ein Hero), nur mehr Inhalt
+ *     Hero + 2 Zeilen 0,176 · +4 0,156 · +6 0,143 · +8 0,134 · +10 0,127
+ *
+ *   Inhalt konstant (6 Zeilen), nur der Blickfang wächst
+ *     keiner 0,123 · 60 px 0,220 · 120 px 0,155 · 240 px 0,142 · 400 px 0,137
+ *
+ * Der zweite Sweep ist **nicht monoton**: ein *großer* Blickfang (0,137) landet
+ * fast dort, wo *kein* Blickfang landet (0,123). Die Größe beantwortet damit
+ * „wie klein ist die stärkste Stelle", nicht „wie deutlich ist die Hierarchie".
+ * Und die reine Inhaltsmenge bewegt sie um 0,049 — bei einem Klassenabstand von
+ * 0,004 (ohne Hierarchie 0,000–0,123, mit 0,127–0,220).
+ *
+ * **Warum das ein Abschalten ist und keine Nachjustierung.** Mit den
+ * ausgelieferten Schwellen (p10 je UI-Typ, web 0,086) gibt die Regel auf diesen
+ * 13 Fällen keine falsche Aussage ab — sie feuert auf keinem Screen mit
+ * Blickfang. Der Grund ist aber nicht Trennschärfe, sondern dass die Schwelle
+ * **unterhalb des gesamten realistischen Wertebereichs** (0,103–0,220) liegt:
+ * sie feuert praktisch nur auf einem leeren Screen (0,000), und drei von vier
+ * Screens ohne Hierarchie verpasst sie, darunter zwölf gleich starke Blöcke.
+ * Eine faktisch blockierte Regel, die im Gebrauch als stumm erscheint — das ist
+ * dieselbe Fehlerklasse wie beim wirkungslosen `cold-fold`, nur andersherum.
+ * Und jede Schwelle, die „zwölf gleiche Blöcke" fängt, wird von einer Seite mit
+ * Hero und viel Inhalt wieder gekippt.
+ *
+ * **Nächster Schritt (1.2, nicht hier).** Andere Entscheidungsgröße: ein
+ * Kontrast zwischen der stärksten Stelle und dem Rest, unabhängig von deren
+ * *Fläche* — z. B. p99 ÷ Median des Bildanalyse-Anteils statt des Massenanteils
+ * der stärksten 5 %. Das ist eine Neuentwicklung mit eigener Messung. Steht im
+ * README neben der Kandidaten-Gruppierung für `dead-cta`.
  */
 const flat: Rule = {
   id: 'flat',
+  shipped: false,
   evaluate(input) {
     // Concentration, not the p90-p50 spread. The spread depends on the map's
     // overall contrast, which differs systematically between UI types: on the
@@ -466,6 +564,16 @@ const flat: Rule = {
  * Erst danach neu kalibrieren, und dafür fehlt weiterhin das Set mit echten
  * Layer-Bäumen (PRD Set 2) — ohne Layer-Baum gibt es keine Kandidaten, also an
  * UEyes grundsätzlich keine Messung.
+ *
+ * **ACHTUNG, alle Zahlen oben sind an einer anderen Population gemessen.** Sie
+ * stammen von vor der Änderung der Kandidatenerkennung (deutsche Stichwörter +
+ * Suche über die Vorfahrenkette, Kandidat ist jetzt der *Kasten* statt der
+ * Beschriftung). Auf den konstruierten Frames mit deutschen Ebenennamen fiel
+ * die Kandidatenzahl dadurch von 96 auf 87 (Desktop) bzw. 65 auf 47 (Telefon),
+ * und die Größenverteilung ist eine völlig andere: statt vieler gleich großer
+ * Beschriftungen wenige, sehr unterschiedlich große Kästen. Die Entscheidungs-
+ * größe dieser Regel — ein Minimum über alle Kandidaten — hängt an genau
+ * diesen beiden Dingen. Die 1.2-Aufgabe misst neu, sie übernimmt nichts.
  */
 const deadCta: Rule = {
   id: 'dead-cta',

@@ -9,7 +9,7 @@ import { planSections, type SegmentPlan } from '../../engine/segments'
 import type { ScalarMap } from '../../engine/types'
 import { makeSignal } from '../../engine/__tests__/helpers'
 import type { NodeSignal } from '../../messages'
-import { collectFindings } from '../index'
+import { ALL_RULES, collectFindings } from '../index'
 import { evaluateRule, formatPercent } from '../rules'
 import type { FindingsInput } from '../types'
 
@@ -46,7 +46,7 @@ function candidate(overrides: Partial<ClickCandidate> = {}): ClickCandidate {
     width: 200,
     height: 60,
     score: 0.3,
-    parts: { attention: 0.3, reaction: 0.4, size: 0.5 },
+    parts: { attention: 0.3, reaction: 0.4 },
     ...overrides,
   }
 }
@@ -278,6 +278,9 @@ describe('collectFindings', () => {
 
 describe('C-2 — language rules', () => {
   const tall = planSections(1440, 4000)
+  // Over ALL_RULES, not just the shipped ones: the language rules are about the
+  // sentences, and a rule that is switched off today has to be re-readable the
+  // day it comes back.
   const everything = collectFindings(
     input({
       plan: tall,
@@ -288,6 +291,7 @@ describe('C-2 — language rules', () => {
       signals: [makeSignal({ id: 'x', name: 'Headline' })],
       candidates: [candidate({ id: 'a', name: 'Alle Angebote', y: 2400 }), candidate({ id: 'b', name: 'CTA', y: 2600 })],
     }),
+    ALL_RULES,
   )
 
   it('produces findings to check', () => {

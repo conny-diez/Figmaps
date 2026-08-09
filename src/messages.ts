@@ -5,6 +5,9 @@
  */
 import { DEFAULT_PROFILE, type ProfileId } from './engine/params'
 import type { PriorAssetId } from './engine/priors'
+import { DEFAULT_THEME, type ThemeName } from './ui/theme'
+
+export type { ThemeName }
 
 export type { ProfileId, PriorAssetId }
 
@@ -21,10 +24,33 @@ export type UiTypeSetting = PriorAssetId | 'auto'
 /** `fold` is derived, not selectable — see `SELECTABLE_MAP_KINDS`. */
 export type MapKind = 'heat' | 'click' | 'focus' | 'fold'
 
-/** The maps the user can switch on and off. */
-export const SELECTABLE_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = ['heat', 'click', 'focus']
+/**
+ * The maps the user can switch on and off, in the order they are shown in the
+ * panel — and the order the result frames are placed on the canvas (FR-8).
+ * Heatmap first (where attention goes at all), then Focusmap (what stays sharp),
+ * then Clickmap (what gets clicked).
+ */
+export const SELECTABLE_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = ['heat', 'focus', 'click']
 
-export const MAP_KINDS: readonly MapKind[] = ['heat', 'click', 'focus', 'fold']
+export const MAP_KINDS: readonly MapKind[] = ['heat', 'focus', 'click', 'fold']
+
+/**
+ * Whether the clickmap is offered in the panel. **Display only** — candidate
+ * detection keeps running either way, because `cta-rank` and `cta-below-fold`
+ * are derived from it (see `ui/pipeline.ts`).
+ *
+ * Off since the onboarding-screen review: exactly one candidate was found on a
+ * screen that has at least six tappable things, and it was labelled „100 %".
+ * A distribution over one element is not a prediction, it is an artefact of
+ * normalising a single number. The conditions for switching this back on are in
+ * the README („Clickmap — warum sie nicht im Panel steht").
+ */
+export const CLICKMAP_IN_PANEL = false
+
+/** The maps the panel currently offers — `SELECTABLE_MAP_KINDS` minus the flag. */
+export const PANEL_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = SELECTABLE_MAP_KINDS.filter(
+  (kind) => kind !== 'click' || CLICKMAP_IN_PANEL,
+)
 
 export const MAP_LABELS: Record<MapKind, string> = {
   heat: 'Heatmap',
@@ -101,8 +127,6 @@ export type Settings = {
   maps: Record<Exclude<MapKind, 'fold'>, boolean>
   /** Heatmap overlay opacity in percent, 0–100. */
   overlayOpacity: number
-  /** Focusmap percentile threshold, 60–95. */
-  focusThreshold: number
   /** Epic D — viewing-duration profile. Only shipped profiles are offered. */
   profile: ProfileId
   /** Which location prior to use; `auto` derives it from the frame geometry. */
@@ -112,15 +136,20 @@ export type Settings = {
    * Overridable because "900 px desktop" is an assumption, not a measurement.
    */
   viewportHeight: number | null
+  /**
+   * Panel skin. Deliberately not derived from Figma's theme — see `ui/theme.ts`.
+   * Dark is the default at first start and when the stored value is unusable.
+   */
+  theme: ThemeName
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   maps: { heat: true, click: true, focus: true },
   overlayOpacity: 65,
-  focusThreshold: 80,
   profile: DEFAULT_PROFILE,
   uiType: 'auto',
   viewportHeight: null,
+  theme: DEFAULT_THEME,
 }
 
 /**
@@ -169,6 +198,26 @@ export type RenderedMap = {
   kind: MapKind
   png: Uint8Array
   meta?: ClickRanking[]
+}
+
+/**
+ * What a map depends on, in the words the panel uses.
+ *
+ * Nothing of this is painted onto the screenshot any more — it is written as
+ * Figma text nodes next to the image (`figma/place.ts`). It still has to travel
+ * with the result, because the iframe is the only realm that knows which prior
+ * and which profile were actually used.
+ *
+ * „Ortsprior" is gone from all of it on purpose: the term named the mechanism,
+ * not the thing, and the panel now says „Blickverhalten" above the same choice.
+ */
+export type MapMeta = {
+  /** Which reference population, e.g. „Mobile App" or „Webseite (automatisch)". */
+  screenBehaviour: string
+  /** Viewing duration the prediction is calibrated for, e.g. „Blick (1 s)". */
+  duration: string
+  /** CC BY 4.0 notice for the bundled data, or absent when none ships. */
+  attribution?: string
 }
 
 /**
@@ -232,6 +281,8 @@ export type UiToMain =
       warnings: string[]
       findings: FindingPayload[]
       segments?: SegmentInfo
+      /** Absent only when the frame failed before anything was rendered. */
+      mapMeta?: MapMeta
     }
   | { type: 'SAVE_SETTINGS'; settings: Settings }
   /** C-3 — "Im Canvas zeigen": select the nodes and scroll them into view. */

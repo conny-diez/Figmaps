@@ -8,14 +8,17 @@ Erzeugt für einen ausgewählten Frame Visualisierungen und legt sie als Bild
 rechts neben dem Original auf dem Canvas ab:
 
 - **Heatmap** — vorhergesagte Verteilung visueller Aufmerksamkeit (Turbo-Colormap)
-- **Clickmap** — vorhergesagte Klickwahrscheinlichkeit je interaktivem Element, inkl. Ranking
-- **Focusmap** — Screen abgedunkelt und unscharf, nur die Top-Regionen bleiben klar
+- **Focusmap** — der Screen bleibt dort scharf, wo Aufmerksamkeit vorhergesagt
+  wird, und wird zum ruhigen Rand hin **stufenlos** abgedunkelt und unscharf
 - **Above the Fold** — bei langen Frames zusätzlich der erste Abschnitt allein
 - **Befunde** — 3–6 Sätze in Deutsch, im Panel und als Textframe neben den Maps
+- **Clickmap** — implementiert, aber derzeit nicht im Panel angeboten, siehe
+  „Clickmap — warum sie nicht im Panel steht"
 
 > Die Ausgabe ist eine **algorithmische Vorhersage**, keine Messung. Es fließen
-> keine Daten echten Nutzerverhaltens ein. Jede Map trägt ein Label mit
-> Engine-Version und Disclaimer.
+> keine Daten echten Nutzerverhaltens ein. Auf die Screenshots wird **nichts**
+> gemalt außer der Vorhersage selbst; Titel, Disclaimer, Parameter und die
+> CC-BY-Nennung stehen als Figma-Textebenen daneben (`figma/place.ts`).
 
 Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 `["none"]`, das Design verlässt die Maschine nicht.
@@ -79,11 +82,34 @@ Community vergibt Figma eine echte ID, die dann eingetragen wird.
 ## Bedienung
 
 1. Frame, Component, Instance, Section oder Group auswählen (Mehrfachauswahl = Batch)
-2. Maps an-/abwählen, Overlay-Deckkraft, Focus-Schwelle und ggf. Viewport-Höhe einstellen
+2. Maps an-/abwählen, Overlay-Deckkraft und ggf. Viewport-Höhe einstellen
 3. **Maps erstellen** — Ergebnis landet in einem neuen Wrapper-Frame
-   `[Figmaps] {Frame-Name} — {Zeitstempel}` rechts daneben
+   `[Figmaps] {Frame-Name} — {Betrachtungsdauer} — {Zeitstempel}` rechts daneben
 4. Befunde unter dem Ergebnis lesen; **Im Canvas zeigen** springt auf die
    betroffene Ebene und wählt sie aus
+
+### Was neben den Maps steht — und warum nicht darauf
+
+Auf dem Screenshot steht nur die Vorhersage. Alles andere sind Textebenen im
+Weißraum des Wrapper-Frames:
+
+| wo | was |
+|---|---|
+| Frame-Name der Map | `Heatmap · Blick (1 s) · hybrid-v1` |
+| unter dem Titel jeder Map | `Algorithmische Vorhersage, keine Messdaten · Blickverhalten: Mobile App · Betrachtungsdauer: Blick (1 s) · hybrid-v1` |
+| einmal unten am Wrapper | `Datengrundlage: UEyes (Jiang et al. 2023), CC BY 4.0` |
+
+Die beiden Anforderungen ziehen gegeneinander, und die Aufteilung ist der
+Kompromiss: der **Frame-Name reist nicht mit**, wenn jemand eine einzelne Map
+als PNG exportiert — deshalb steht der Disclaimer als Text im *Bildbereich*,
+nicht nur in der Ebenenbenennung. Und die Map ist ein Screenshot fremder
+Arbeit — deshalb liegt der Text *neben* dem Bild statt als Balken darin. Die
+CC-BY-Nennung steht einmal pro Lauf statt dreimal nebeneinander.
+
+Der Begriff **„Ortsprior" kommt im UI nicht mehr vor**. Er benannte den
+Mechanismus, nicht die Sache; im Panel heißt dieselbe Auswahl „Art des
+Screens", auf den Maps steht „Blickverhalten", bei der Herkunft
+„Datengrundlage".
 
 Wiederholte Läufe erzeugen immer einen **neuen** Wrapper und überschreiben nichts.
 Frames mit einer Kante unter 200 px werden abgelehnt.
@@ -98,6 +124,71 @@ Die **Export-Skalierung ist fest auf 2×** — die Engine ist bei dieser
 Abtastdichte gemessen, und 1× verliert genau die Kanten- und Textdetails, aus
 denen die Merkmale bestehen. Nur die technischen Grenzen unten schalten
 automatisch herunter.
+
+### Panel: Design, Theming, Bedienelemente
+
+**Zwei Themes, eigener Schalter.** Im Header sitzt eine Pille mit Mond und
+Sonne. Bewusst **nicht** `figma.showUI({ themeColors: true })`: die Farben des
+Panels — und damit die Lesbarkeit des Disclaimers unter den Maps — sollen nicht
+davon abhängen, was der Host als Nächstes tut. **Dark ist immer der Startwert**,
+auch beim ersten Öffnen und wenn Figma im Light-Mode läuft; die Wahl wird in
+`figma.clientStorage` gemerkt (`Settings.theme`, `ui/theme.ts`).
+
+**Der Kontrast ist eine Zusage, keine Absicht.** Beide Paletten stehen in
+TypeScript, nicht in der CSS-Datei, weil jeder Wert die Hälfte eines
+Kontrastpaares ist und `ui/__tests__/theme.test.ts` **jedes tatsächlich
+vorkommende Paar** gegen 4,5:1 prüft und darunter fehlschlägt. Der Anlass ist
+konkret: die Fußzeile war schon einmal mit 3,93:1 und 2,41:1 ausgeliefert,
+wurde behoben — und die nächste Design-Übergabe brachte exakt dieselben Werte
+zurück. Gemessen, beide Themes:
+
+| Paar | dark | light |
+|---|---:|---:|
+| `text` auf `bg` | 16,46:1 | 17,17:1 |
+| `text-body` auf `surface` | 8,94:1 | 10,31:1 |
+| `text-dim` auf `bg` | 8,25:1 | 7,37:1 |
+| `text-quiet` auf `bg-footer` (die drei Fußtext-Absätze) | 5,80:1 | 5,69:1 |
+| `text-quiet` auf `surface` | 5,38:1 | 5,46:1 |
+| `accent-text` auf `bg` (Reglerwert) | 11,90:1 | 5,94:1 |
+| `ink` auf `accent` (Knopfbeschriftung) | 11,90:1 | 11,19:1 |
+| `danger` auf `bg` | 7,63:1 | 6,54:1 |
+
+Zwei Entscheidungen dahinter:
+
+- **Zwei Abstufungen für leise Schrift, nicht drei.** Die Übergabe hatte
+  `dim`/`dim2`/`dim3`, alle drei unter der Grenze. Hebt man alle drei über
+  4,5:1, rücken sie so eng zusammen, dass die dritte Stufe nur noch eine
+  Gelegenheit ist, die falsche zu wählen: `text-dim` für Sekundärtext,
+  `text-quiet` für die leiseste Schrift, die noch Schrift ist.
+- **Das Gelb ist im Light-Theme keine Textfarbe.** `#F5C518` auf Weiß sind
+  1,63:1. Es bleibt Flächenfarbe; Text, der als Akzent lesen soll, nimmt
+  `accent-text` (`#7A6100`). Ein Test hält das fest. Aus demselben Grund heißt
+  die Farbe *auf* dem gelben Knopf `ink` und nicht „Hintergrundfarbe" — mit
+  `--bg` wäre die Beschriftung im Light-Theme weiß auf Gelb gewesen.
+
+**Balken-Slider.** Statt Schiene und Knopf 24 Balken, deren Höhe mit dem Wert
+wächst. Ein natives `input[type=range]` kann das nicht darstellen, also ist es
+ein `role="slider"` — und damit liegt alles, was das native Element geschenkt
+hätte, bei uns und ist Pflicht, nicht Kür: `aria-valuenow/min/max` **plus**
+`aria-valuetext` (die nackte Zahl liest sich als „80", wo das Panel „80 %"
+zeigt), Pfeiltasten, Home/End, Shift für den groben Schritt, ein sichtbarer
+Fokusring in beiden Themes, und `setPointerCapture` — ohne das springt der Wert,
+sobald der Zeiger die Leiste verlässt.
+
+**Map-Schema.** Neben jeder Map-Zeile steht ein 56 × 88 px großes Wireframe:
+vier feste Balken, darüber die für die Map typische Fläche, eine gestrichelte
+Schnittlinie und die Falz-Schraffur. Es ist ein **abstrakter Screen, kein
+Abbild der Auswahl** — kein Export, keine Engine, kein Caching, reines CSS.
+Deshalb heißt es im UI nirgends „Vorschau"; falls es je eine Beschriftung
+braucht, „Schema". Es reagiert aber auf die Einstellungen, sonst wäre es
+Dekoration statt Erklärung: Overlay-Deckkraft steuert die Schicht,
+Viewport-Höhe die Schnittlinie und die Schraffur, eine abgeschaltete Map dimmt
+das Ganze.
+
+**Schriften.** Manrope und JetBrains Mono, je ein Latin-Subset, zusammen 56 KB,
+als base64 in `build/ui.html`. `networkAccess` steht auf `"none"` — nachladen
+ist nicht möglich, alles muss ins Bundle. Die 12 woff2-Dateien aus der
+Design-Übergabe (~140 KB, alle Unicode-Bereiche) wurden **nicht** übernommen.
 
 ### Lange Frames (Epic B)
 
@@ -185,8 +276,7 @@ src/
 │  ├─ heatmap.ts           FR-7
 │  ├─ clickmap.ts          FR-5 Rendering
 │  ├─ focusmap.ts          FR-6
-│  ├─ folds.ts             B-2  gestrichelte Fold-Marker
-│  └─ legend.ts            Legende + zweizeilige Fußzeile (Prior, Dauer, CC BY)
+│  └─ folds.ts             B-2  gestrichelte Fold-Marker
 └─ ui/
    ├─ pipeline.ts          iframe-Pipeline: PNG rein, Map-PNGs raus
    ├─ logo.tsx             Figmaps-Wortmarke als Inline-SVG
@@ -884,6 +974,104 @@ Messlatte und eine Erklärung.
 
 ---
 
+## Clickmap — warum sie nicht im Panel steht
+
+Die Clickmap ist implementiert, getestet und wird **nicht angeboten**:
+`CLICKMAP_IN_PANEL` in `messages.ts` steht auf `false`. Die
+Kandidatenerkennung läuft unverändert weiter — `cta-rank` und
+`cta-below-fold` leiten sich daraus ab, das Ausblenden darf keine zwei Regeln
+still abschalten. Es ist ausschließlich die Anzeige (Checkbox, Map,
+Klick-Ranking).
+
+**Anlass.** Auf einem Onboarding-Screen wurde genau **ein** Kandidat erkannt
+und mit **100 %** ausgewiesen. „Hier anmelden" und vier offensichtlich
+tappbare Kategorie-Karten fehlten. Eine Verteilung über einen einzigen
+Kandidaten ist keine Vorhersage, sondern ein Artefakt der Normierung: die
+Prozentwerte summieren sich auf 1, egal wie unvollständig die Menge ist.
+
+**Warum die Elemente fehlten.** Der Erkenner (`engine/clickmap.ts`) nimmt einen
+Knoten auf, wenn er eine Prototype-Reaktion trägt, wenn sein *Name* ein
+Stichwort aus `INTERACTIVE_KEYWORDS` enthält, oder wenn er ein kurzer **Text**
+ist, dessen **direkter** Elternteil eine Füllung hat. Nachgestellt an den
+Ebenenformen, die solche Screens haben:
+
+| Aufbau | erkannt? |
+|---|---|
+| Frame „Primary Button" + Text | ja, über den Namen |
+| Frame „Anmelden" (kein Stichwort), Text direkt darin | ja, über den Text im gefüllten Container |
+| Frame „Anmelden" → Auto-Layout ohne Füllung → Text | **nein** |
+| Outline-Button ohne Füllung, Text direkt darin | **nein** |
+| Karte „Kategorie/Sport" mit Füllung + Text | ja |
+| Karte „Kachel" mit Bild + Text in einem Auto-Layout | **nein** |
+| Karte „Category Card" (englisch benannt) | ja, über „card" |
+| Karte „Kachel" mit Prototype-Interaktion | ja |
+
+Drei Ursachen, alle systematisch. Zwei davon sind behoben:
+
+1. ~~**Nur der direkte Elternteil** wird auf eine Füllung geprüft.~~
+   **Behoben:** die Suche läuft jetzt die Vorfahrenkette hoch, bis zu
+   `clickmap.buttonContainerDepth` (3) Ebenen, und der gefundene *Kasten* wird
+   Kandidat statt der Beschriftung — „die Schaltfläche, nicht ihr Text", dieselbe
+   Vorliebe, die `dropNestedCandidates` schon kannte. Der Kasten muss die
+   Größengrenzen selbst einhalten, sonst wandert die Suche aus dem Knopf heraus
+   in den Seitenhintergrund.
+2. **Rahmen ohne Text** werden nie über die Label-Regel erfasst; die verlangt
+   `isText`. Eine Bildkachel ohne Beschriftung ist nur über Namen oder
+   Reaktion erreichbar. **Offen** — Aufwandsschätzung unten.
+3. ~~Die Stichwortliste ist **englisch**.~~ **Behoben:** deutsche Stichwörter
+   ergänzt und der Tokenizer repariert. `extractNameHints` zerlegte an
+   `[^a-z0-9]`, was „Schaltfläche" in „schaltfl" + „che" zerriss — kein
+   Stichwort mit Umlaut konnte je treffen. Der Trenner lässt jetzt `äöüß`
+   stehen.
+
+**Gemessen, vorher → nachher:**
+
+| | vorher | nachher |
+|---|---:|---:|
+| 24 typische deutsche Ebenennamen, die ein Stichwort treffen | 0 | **21** |
+| Kandidaten im Onboarding-Nachbau (Kachel + Knopf, je mit Auto-Layout-Zwischenebene) | 0 | **2** |
+| Kandidaten über die 24 konstruierten Frames | 445 | **368** |
+
+Die Zahl auf den konstruierten Frames *sinkt*, und das ist der Zweck: drei
+Beschriftungen einer Karte fallen zu einem Kandidaten — der Karte — zusammen,
+statt als drei konkurrierende Einträge in der Rangfolge zu stehen. Das entlastet
+nebenbei `dead-cta`, dessen Entscheidungsgröße mit der Kandidatenzahl sinkt.
+
+**Was jetzt gefunden wird.** Ein nachgebauter Onboarding-Screen (393 × 852,
+zwei Knöpfe, vier Kategorie-Kacheln je 165 × 150 px mit Bild und Beschriftung in
+einer Auto-Layout-Zwischenebene) liefert **6 von 6** erwarteten Kandidaten. Die
+Größengrenzen waren nie das Problem: die Kacheln belegen 7,4 % der Fläche, die
+Grenze liegt bei 50 %. Was fehlte, war die Vorfahrenkette — und für die Kacheln
+zusätzlich, dass „Freizeit", „Immobilien", „Jobs", „Nachrichten" kein englisches
+Stichwort treffen.
+
+Dieselben Kacheln **ohne Textbeschriftung** — nur ein Bild darin — liefern
+weiterhin **0 Kandidaten**. Das ist Ursache (2) und nichts anderes.
+
+**Aufwand für Ursache (2), noch nicht umgesetzt.** Ein Rahmen ohne Text und ohne
+Stichwort ist nur über Form-Heuristik erkennbar, und jede davon ist eine neue
+Entscheidungsgröße mit eigener Fehlerrate: „gefüllt, abgerundet, zwischen 24 und
+72 px hoch, breiter als hoch" fängt Knöpfe und Kacheln — und ebenso Badges,
+Chips, Bildplatzhalter und jede farbige Trennfläche. Der Code selbst ist klein
+(eine Bedingung in `findCandidates`, ~20 Zeilen); die Arbeit steckt in der
+Messung, denn ohne Beleg tauscht man fehlende Kandidaten gegen falsche. Das ist
+dieselbe Kalibrierungsfrage wie bei `flat` und `dead-cta` und gehört an
+dasselbe Set mit echten Layer-Bäumen (PRD Set 2). Schätzung: ein halber Tag
+Code, der Rest ist das Set.
+
+**Bedingungen für die Rückkehr ins Panel.** Beide, nicht eine davon:
+
+- **(a) Die Kandidatenerkennung ist gegen Enrico belegt vollständig.** Nicht
+  „findet viel", sondern: auf einer gezogenen Stichprobe echter Screens mit
+  Layer-Baum ist ausgewiesen, welcher Anteil der tatsächlich bedienbaren
+  Elemente gefunden wird, aufgeschlüsselt nach den drei Ursachen oben.
+- **(b) Die Rückkehr erfolgt ohne Prozentwerte** — als Liste oder als
+  Hervorhebung der Kandidaten, nicht als Verteilung. Enrico validiert die
+  **Erkennung**, nicht die Rangfolge; eine Zahl, die Rangfolge behauptet,
+  wäre durch nichts gedeckt.
+
+---
+
 ## Befunde (Epic C)
 
 Nach der Berechnung läuft ein Satz deterministischer Regeln über Heatmap,
@@ -893,16 +1081,25 @@ wird nach Severity, angezeigt werden maximal sechs.
 | ID | Auslöser | ausgeliefert |
 |---|---|---|
 | `cta-rank` | Primärer Kandidat der Clickmap nicht auf Rang 1 | ja |
-| `cta-below-fold` | Höchstbewerteter Kandidat unterhalb Fold 1 | ja |
+| `cta-below-fold` | Höchstbewerteter Kandidat unterhalb Fold 1 | **nein** (siehe unten) |
 | `competition` | Zwei Regionen über 65 % Intensität, weit auseinander, mit Tal dazwischen | ja |
 | `cold-fold` | Above-the-fold-Abschnitt bündelt Aufmerksamkeit schwächer als ein späterer | ja |
 | `dead-cta` | Interaktives Element unter 45 % des stärksten Kandidaten seines Viewports | **nein** (siehe unten) |
-| `flat` | Konzentration des Bildanalyse-Anteils unter Schwellwert | ja |
+| `flat` | Konzentration des Bildanalyse-Anteils unter Schwellwert | **nein** (siehe unten) |
 
-`dead-cta` ist abgeschaltet: die Größe, die sie misst, ist ein Minimum über
-alle Kandidaten und sinkt mit deren Anzahl, sodass keine Konstante über die
-Frame-Formen hinweg trennscharf ist. `flat` war es aus verwandtem Grund und ist
-es nicht mehr — siehe die beiden Abschnitte unten.
+Drei von sechs Regeln sind abgeschaltet, aus zwei verschiedenen Gründen.
+
+`dead-cta` und `flat`: die **Entscheidungsgröße misst nicht das, was die Regel
+behauptet**. Bei `dead-cta` ist es ein Minimum über alle Kandidaten, das mit
+deren Anzahl sinkt; bei `flat` ein Massenanteil, der auf die *Fläche* der
+stärksten Stelle reagiert statt auf die Deutlichkeit der Hierarchie.
+
+`cta-below-fold`: **strukturell blockiert**, nicht falsch kalibriert. Der
+oben-lastige Prior und die Scroll-Dämpfung zusammen sorgen dafür, dass der
+stärkste Kandidat fast nie unter dem Fold liegt — 0 von 24 konstruierten
+Frames.
+
+Alle drei bleiben implementiert und erreichbarkeitsgetestet — siehe unten.
 
 Die Reihenfolge der Regeln in `rules.ts` ist die Reihenfolge, in der Befunde
 gelistet werden — als **Tie-Break innerhalb einer Severity**, denn sortiert
@@ -1216,6 +1413,16 @@ Scroll-Dämpfung (`sectionAttenuation`, laut `config.ts` ausdrücklich eine
 Annahme ohne Messung). Wer eine Regel gegen eine solche Karte kalibriert,
 kalibriert gegen die Konfiguration, nicht gegen den Screen.
 
+**Die einzige positive Evidenz von `competition` steht auf demselben Maß.** Die
+3,3 % (Webseite) und 10,0 % (Telefon) wurden mit genau dem Abstandsmaß gemessen,
+das hier als falsch skaliert dokumentiert ist: „weit auseinander" bedeutete bei
+den beiden Messungen 48,0 % bzw. 13,9 % der Kartenhöhe. Es sind also nicht
+dieselbe Frage, zweimal beantwortet. Sobald der Abstand in 1.2 auf die Diagonale
+oder auf getrennte x/y-Schwellen umgestellt wird, **ist die Feuerrate neu zu
+messen** — die alten Zahlen dürfen weder übernommen noch als
+Plausibilitätsanker benutzt werden. Bis dahin ist die Regel ausgeliefert, weil
+sie nicht entartet ist, nicht weil sie validiert wäre.
+
 `competition` bleibt mit 3–10 % die selektivste Regel. Das ist kein Fehler —
 zwei wirklich getrennte, gleich starke Blickfänge sind selten —, aber sie ist
 die erste, die man streichen sollte, falls sie sich im Gebrauch nicht bewährt.
@@ -1273,12 +1480,58 @@ Telefon scrollend 6/24, Desktop scrollend 5/24. Der Frame aus dem
 Vergleichstest — farbiger Kopf, farbiger Fuß — feuert nicht mehr, und zwar in
 keiner der 20 Varianten.
 
-**Was bleibt.** Die Größe reagiert weiterhin auch auf die *Menge* an Inhalt: auf
-gescrollten Desktop-Frames feuerte sie bei den Varianten mit den meisten Karten,
-darunter eine mit starkem Akzent und Hero. „Zwölf fast gleiche Karten sind
-flach" ist vertretbar, aber es ist nicht dasselbe wie „kein Blickfang". Wenn das
-im Gebrauch stört, ist es die nächste Frage — und wieder eine Bedeutungs-, keine
-Kalibrierungsfrage.
+### `flat` ist wieder aus — die Größe misst das Falsche
+
+Der Vorbehalt oben („reagiert auch auf die Menge an Inhalt") war zu milde
+formuliert. Zwei kontrollierte Sweeps auf derselben Fläche, gemessen auf dem
+Bildanalyse-Anteil des ersten Abschnitts:
+
+| Hierarchie konstant (ein Hero), nur mehr Inhalt | c |
+|---|---:|
+| Hero + 2 Zeilen | 0,176 |
+| Hero + 4 Zeilen | 0,156 |
+| Hero + 6 Zeilen | 0,143 |
+| Hero + 8 Zeilen | 0,134 |
+| Hero + 10 Zeilen | 0,127 |
+
+| Inhalt konstant (6 Zeilen), nur der Blickfang wächst | c |
+|---|---:|
+| kein Blickfang | 0,123 |
+| 60 px | 0,220 |
+| 120 px | 0,155 |
+| 240 px | 0,142 |
+| 400 px | 0,137 |
+
+Der zweite Sweep ist **nicht monoton**: ein *großer* Blickfang (0,137) landet
+fast dort, wo *kein* Blickfang landet (0,123). Präzise formuliert misst die
+Größe, **wie klein die stärkste Stelle ist, nicht wie deutlich die Hierarchie
+ist**. Dazu bewegt die reine Inhaltsmenge sie um 0,049 — bei einem
+Klassenabstand von 0,004 (ohne Hierarchie 0,000–0,123, mit 0,127–0,220).
+
+**Warum das ein Abschalten ist und keine Nachjustierung.** Mit den
+ausgelieferten Schwellen gibt die Regel auf 13 Fällen mit bekannter Antwort
+keine falsche Aussage ab — sie feuert auf keinem Screen mit Blickfang. Der Grund
+ist aber nicht Trennschärfe:
+
+| Fall | c | `flat` |
+|---|---:|---|
+| Hero + 2…10 Zeilen | 0,176…0,127 | schweigt ✓ |
+| Blickfang 60…400 px | 0,220…0,137 | schweigt ✓ |
+| kein Blickfang, 6 Zeilen | 0,123 | schweigt — **verpasst** |
+| 4 gleiche Blöcke | 0,120 | schweigt — **verpasst** |
+| 12 gleiche Blöcke | 0,103 | schweigt — **verpasst** |
+| leerer Screen | 0,000 | feuert ✓ |
+
+Die Schwelle (web 0,086) liegt **unterhalb des gesamten realistischen
+Wertebereichs** (0,103–0,220). Die Regel ist damit faktisch blockiert: sie
+feuert nur auf einem leeren Screen und erscheint im Gebrauch als stumm — genau
+die Fehlerklasse, die bei `cold-fold` schon einmal ein Jahr lang unbemerkt
+blieb, nur andersherum. Und jede Schwelle, die „zwölf gleiche Blöcke" fängt,
+wird von einer Seite mit Hero und viel Inhalt wieder gekippt.
+
+`flat` steht deshalb auf `shipped: false`, mit demselben Muster wie `dead-cta`:
+Erreichbarkeitstest bleibt (beide Richtungen), Zahlen stehen im Kommentar,
+Grund steht hier.
 
 ### Bekannte Einschränkungen — bewusst nicht in diesem Schritt behoben
 
@@ -1289,12 +1542,169 @@ es in diesem Abschnitt geht.
 
 | Was | Beleg | warum jetzt nicht |
 |---|---|---|
-| `competitionMinDistance` misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Kartenhöhe | Tabelle oben | Die Regel ist mit 3–10 % nicht entartet. Eine Umstellung auf die Diagonale oder auf getrennte x/y-Schwellen ändert die Verteilung und verlangt eine eigene Neukalibrierung — ein eigener Schritt. |
+| `competitionMinDistance` misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Kartenhöhe | Tabelle oben | Die Regel ist mit 3–10 % nicht entartet. Eine Umstellung auf die Diagonale oder auf getrennte x/y-Schwellen ändert die Verteilung und verlangt eine eigene Neukalibrierung — ein eigener Schritt. **Die 3–10 % selbst stammen von diesem Maß und sind danach ungültig.** |
 | `cta-below-fold` ist durch `sectionAttenuation` strukturell unterdrückt (0 von 48 konstruierten Scrollframes) | Tabelle oben | Die Ursache ist die Scroll-Dämpfung, laut `config.ts` ausdrücklich eine **Annahme ohne Messung**. Sie zu ändern, um eine Regel häufiger feuern zu lassen, hieße die Vorhersage an die Regel anzupassen statt umgekehrt. Erst die Dämpfung belegen, dann die Regel. |
 
 Beide stehen zusätzlich als Kommentar an der jeweiligen Regel in
 `src/findings/rules.ts`, damit sie beim Lesen des Codes nicht erst gesucht
 werden müssen.
+
+### Der Umlaut-Fehler war ein Engine-Fehler, nicht nur ein Findings-Fehler
+
+`extractNameHints` zerlegte Ebenennamen an `[^a-z0-9]` und zerriss damit jeden
+Namen mit Umlaut. Betroffen war nicht nur die Kandidatenerkennung:
+`nameHints` speist über `isInteractive` auch die Feature-Map
+**`interactiveSalience`** — Gewicht 0,10 in der Basiskonfiguration, unter
+`hybrid-v1` nach Renormierung ohne Prior **0,111 des Bildanalyse-Anteils**, der
+wiederum mit 0,3 auf den Prior addiert wird.
+
+Auf einer deutschsprachigen Datei fiel damit für die Bildanalyse praktisch
+jedes Bedienelement weg. Übrig blieben nur Knoten mit echter
+Prototype-Interaktion. Gemessen auf den konstruierten Frames mit eingedeutschten
+Ebenennamen, je 4 Varianten:
+
+| Frame | interaktive Knoten vorher | nachher | CC(Karte alt, neu) | CC(Bildanteil) |
+|---|---:|---:|---:|---:|
+| Desktop scrollend | 4 | 44 | 0,998 | 0,962 |
+| Telefon 1 Viewport | 4 | 24 | 0,996 | 0,939 |
+| Telefon scrollend | 4 | 48 | 0,999 | 0,984 |
+
+Die Größenordnung ehrlich eingeordnet: die **fertige** Karte ändert sich wenig
+(CC 0,996–0,999), weil `hybrid-v1` prior-dominiert ist und diese eine Feature-
+Map rund 3 % des Endergebnisses trägt. Auf dem **Bildanalyse-Anteil**, also auf
+dem, was der Screen selbst beiträgt, sind es 0,939–0,984 — dort war der Fehler
+messbar. Er hat die Vorhersage auf allen deutschen Dateien systematisch
+geschwächt, ohne je aufzufallen, weil die englischen Testnamen
+(„Primary Button", „SearchInputField") immer trafen.
+
+### Der Flächenanteil ist raus — und was das an den Regeln geändert hat
+
+Die Änderung der Kandidatenerkennung (deutsche Stichwörter, Suche über die
+Vorfahrenkette, Kandidat ist der *Kasten* statt der Beschriftung) hat beide
+ausgelieferten Regeln, die an der Rangfolge hängen, aus dem Tritt gebracht:
+`cta-rank` feuerte plötzlich 8/8, `cta-below-fold` 0/8.
+
+**Ursache war der Flächenanteil im Score.** `scoreCandidates` rechnete
+`sizeRank = Fläche ÷ größte Fläche` mit Gewicht 0,2. Solange Kandidaten
+Beschriftungen waren, lagen die Flächen nah beieinander. Als Kästen nicht mehr:
+
+| Element | Fläche | `sizeRank` | Aufmerksamkeit |
+|---|---:|---:|---:|
+| Stellenkarte | 230.400 px² | 1,00 | 0,55 |
+| Suchfeld | 56.320 px² | 0,24 | 0,61 |
+| Jetzt bewerben (CTA) | 17.784 px² | 0,38 | 0,16 |
+
+Der Term addierte 0,20 auf jede Karte und entschied die Rangfolge allein.
+
+**Entfernt, nicht neu kalibriert.** Der Flächenanteil war für die *Clickmap*
+gedacht — ein größeres Ziel wird häufiger getroffen. Die drei Regeln, die noch
+an der Rangfolge hängen, sprechen aber über **Aufmerksamkeit**, nicht über
+Klickwahrscheinlichkeit, und die Clickmap steht nicht im Panel. „Median statt
+Maximum" wäre eine zweite Zahl gegen dieselbe unvalidierte Population gewesen.
+Der Score ist jetzt `0,625 · meanAttention + 0,375 · reactionBonus` — die alten
+zwei Gewichte, auf 1 renormiert. Die Ordnung lautet damit
+`Suchfeld > Stellenkarte > CTA`.
+
+**`cta-rank` bleibt ausgeliefert.** Die konstruierten Frames stellen den
+primären CTA in 6 von 8 Varianten nach unten und in 2 von 8 direkt unter den
+Hero — die richtige Antwort ist also bekannt:
+
+| Frame | Quote | Übereinstimmung mit der Konstruktion |
+|---|---|---|
+| Desktop scrollend | 6/8 | feuert auf genau den 6 „CTA unten"-Varianten |
+| Telefon 1 Viewport | 6/8 | dieselbe Aufteilung, keine Abweichung |
+| Telefon scrollend | 7/8 | eine Fehlmeldung (v5, CTA oben) |
+
+23 von 24 Urteilen stimmen. Die Quote von rund 79 % ist hoch, aber sie ist die
+Quote, die der Aufbau vorgibt — kein Zeichen einer Regel, die immer feuert.
+
+**`cta-below-fold` steht auf `shipped: false`, und der Grund ist strukturell.**
+Nicht „die Schwelle ist falsch", sondern: die Regel liest `candidates[0]` auf der
+komponierten Karte, und diese Karte ist zweifach oben-lastig — der Ortsprior ist
+aus Einzel-Viewports geschätzt, und jeder Abschnitt wird zusätzlich mit
+`sectionAttenuation^i` gedämpft. Ein Element unter dem Fold startet bei der
+Hälfte. **0 von 24** konstruierten Frames, in allen drei Formen. Der
+Erreichbarkeitstest zeigt, dass es geht — aber nur mit Prototype-Interaktion
+*und* einem starken Block dahinter *und* einem Gegenspieler ohne beides.
+
+Die Dämpfung wird dafür **nicht** angefasst. Sie ist selbst eine Annahme ohne
+Messung; sie zu verstellen, damit eine Regel feuert, hieße die Vorhersage an die
+Regel anzupassen. Was die Regel bräuchte, ist eine Größe, die den Kandidaten
+**innerhalb seines Abschnitts** bewertet statt auf der gedämpften Gesamtkarte —
+eine Neuentwicklung, kein Schwellenwert.
+
+Damit sind **drei von sechs** Regeln ausgeliefert: `cta-rank`, `competition`,
+`cold-fold`.
+
+### Auf einem Handy-Screen feuert fast nichts — der wichtigste offene Punkt
+
+Ein typischer Onboarding-Screen (393 × 852) ist **nicht segmentiert**: 852 ÷ 786
+= 1,08 Viewport-Höhen, die Schwelle liegt bei 1,5. Von den drei ausgelieferten
+Regeln fällt damit eine strukturell aus, bevor irgendetwas gerechnet wird:
+
+| Regel | auf einem Ein-Viewport-Handy | Grund |
+|---|---|---|
+| `cold-fold` | **kann nicht feuern** | verlangt `plan.segmented` und ≥ 2 Abschnitte |
+| `competition` | kann — feuerte in der Messung 0/8 | Mindestabstand am Kartenbreitenanteil, siehe oben |
+| `cta-rank` | kann — feuerte 6/8, korrekt gegen die Konstruktion | |
+
+**Effektiv bleibt eine Regel.** Das ist der wichtigste offene Produktpunkt: der
+häufigste Fall unserer Nutzung — ein Handy-Screen, der in einen Viewport passt —
+bekommt aus dem Befundsystem fast nichts. Die Regeln sind für scrollende Seiten
+entworfen; sie sprechen über Abschnittsgrenzen, und auf einem Screen ohne
+Abschnitte gibt es nichts zu sagen.
+
+#### Was 1.2 dafür bauen müsste — und was schon da ist
+
+Drei Regeln, die ohne Folds und ohne Abschnitte auskommen:
+
+| Regel-Idee | vorhanden | neu zu bauen |
+|---|---|---|
+| **Konkurrierende Blickfänge** — zwei etwa gleich starke, weit auseinanderliegende Spitzen | `competition` gibt es bereits: Zwei-Maxima-Suche, Talprüfung, Schwellen in `config.ts` | Der Mindestabstand misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Höhe (Tabelle oben). Für Hochkant-Screens braucht es die Diagonale oder getrennte x/y-Schwellen — und danach eine **Neumessung der Feuerrate**, siehe unten |
+| **CTA in der ruhigsten Zone** — der primäre Kandidat liegt dort, wo die Karte kalt ist | `meanInRect` über die Kandidatengeometrie, `percentile` über die ganze Karte, `isPrimaryCandidate` | Die Entscheidungsgröße muss der Rang des CTA **innerhalb der Kartenverteilung** sein (z. B. „unter dem 30. Perzentil aller Pixel"), nicht relativ zu den anderen Kandidaten — genau der Fehler, an dem `dead-cta` hängt. Schwelle aus Daten |
+| **Kopfbereich stärker als Inhalt** — die Aufmerksamkeit bleibt im oberen Band hängen | Die Karte selbst, `sectionSalience` als Konzentrationsmaß, Geometrie aller Knoten | Bandaufteilung (z. B. obere 25 % gegen Rest) und ein Verhältnismaß. Dieselbe Vorsicht wie bei `flat`: die Größe darf nicht auf die *Menge* an Inhalt reagieren |
+
+**Der entscheidende Vorteil dieser drei:** sie lesen nur die Karte und die
+Geometrie, nicht die Abschnittsstruktur — und damit sind sie **an UEyes
+kalibrierbar**. Der Datensatz besteht aus 1.980 Einzel-Viewport-Screenshots,
+also genau der Population, um die es hier geht. Nur der CTA-Teil der zweiten
+Regel braucht Layer-Bäume (PRD Set 2); die anderen beiden nicht. Das ist der
+Unterschied zu `flat` und `dead-cta`, die ohne das fehlende Set gar nicht
+messbar sind.
+
+**Die Contrastmap ist die naheliegende Kompensation.** Sie braucht weder Folds
+noch Abschnitte und funktioniert auf einem Ein-Viewport-Screen vollständig —
+damit deckt sie genau die Lücke ab, die die Befunde dort lassen. (In diesem
+Branch existiert sie noch nicht; hier steht sie als Vormerkung für 1.2.)
+
+### Offen für 1.2 — die abgeschalteten Regeln
+
+Alle drei brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle.
+In allen Fällen ist der Umbau benannt und die Messung fehlt noch:
+
+**Zwei der drei teilen sich eine Änderung.** `cta-below-fold` und `dead-cta`
+scheitern am selben Mechanismus — die komponierte Karte ist um
+`sectionAttenuation^i` gedämpft, also ist alles weiter unten rechnerisch leise,
+unabhängig vom Entwurf. Die Größe, die das behebt, **ist bereits gebaut**:
+`localMean` in `rules.ts` liest die mittlere Aufmerksamkeit eines Kandidaten auf
+der *ungedämpften* Karte seines eigenen Viewports und wird von `dead-cta` schon
+benutzt. `cta-below-fold` müsste seine Rangfolge nur ebenfalls darauf stellen.
+Das ist in 1.2 **eine Änderung für zwei Regeln**, nicht zwei Aufgaben.
+
+Mitentschieden werden muss dabei, dass sich die *Aussage* ändert: „der stärkste
+Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
+eigenen Viewport dominiert, sitzt nicht im ersten". Der Satz ist neu zu
+schreiben, nicht nur die Zahl.
+
+| Regel | neue Größe | warum sie das Problem löst |
+|---|---|---|
+| `cta-below-fold` | Rangfolge über `localMean` statt über die komponierte Karte — **derselbe Umbau wie bei `dead-cta`** | Die Regel ist nicht falsch kalibriert, sie ist blockiert: oben-lastiger Prior plus `sectionAttenuation^i`. Auf der ungedämpften Abschnittskarte ist „stärkster Kandidat dieses Viewports" wieder eine beantwortbare Frage. |
+| `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
+| `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden — auf `localMean`, das dafür schon existiert | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
+
+Was für beide gilt: nach dem Umbau ist neu zu kalibrieren, und dafür fehlt
+weiterhin das Set mit echten Layer-Bäumen (PRD Set 2). An UEyes ist keine der
+beiden messbar — ein Screenshot hat keine Ebenen.
 
 Sprachregeln (C-2), von den Tests erzwungen:
 
@@ -1546,18 +1956,23 @@ App durchzugehen:
 | 2 | Frame auswählen | Name + Dimensionen erscheinen, Button aktiv |
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |
-| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps] … — …` rechts daneben, Viewport springt darauf, `3 Maps erstellt` |
-| 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt, Legende + Fußzeile mit `hybrid-v1` vorhanden |
-| 7 | Clickmap begutachten | Ranking im Panel; primärer CTA auf Platz 1 (mind. 2 von 3 Referenz-Screens) |
-| 8 | Focus-Schwelle 60 → 95, neu erzeugen | Sichtbare klare Fläche wird monoton kleiner |
+| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps] … — {Dauer} — …` rechts daneben, Viewport springt darauf, `2 Maps erstellt` |
+| 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt; **nichts** ins Bild gemalt außer Overlay und Fold-Marken |
+| 7 | Beschriftung neben den Maps | Unter jedem Titel eine Zeile „Algorithmische Vorhersage, keine Messdaten · Blickverhalten: … · Betrachtungsdauer: … · hybrid-v1"; CC-BY-Zeile genau **einmal** unten am Wrapper; nirgends „Ortsprior" |
+| 8 | Focusmap gegen die Heatmap halten | Kein harter Rand: ein in der Heatmap deutlich warmer Bereich ist auch in der Focusmap sichtbar, nur schwächer; völlig dunkel ist nur, was in der Heatmap kalt ist |
 | 9 | Overlay-Deckkraft ändern, neu erzeugen | Heatmap-Overlay entsprechend transparenter/kräftiger |
-| 10 | Frame ohne benannte Buttons/Reactions | Hinweis „Keine interaktiven Elemente erkannt…", Heat- und Focusmap entstehen trotzdem |
+| 10 | Frame ohne benannte Buttons/Reactions | Heat- und Focusmap entstehen; Befunde, die Kandidaten brauchen, entfallen still |
 | 11 | 5 Frames auswählen, erzeugen | „Frame 2 von 5", je Frame ein eigener Wrapper |
 | 12 | Während des Batches **Abbrechen** | Lauf stoppt, bereits erzeugte Wrapper bleiben, Notify „Abgebrochen" |
 | 13 | Plugin schließen und neu öffnen | Slider- und Checkbox-Einstellungen sowie die Panelgröße sind erhalten |
 | 14 | Frame mit 6000 px Höhe | Hinweis auf Downscale, Maps entstehen, kein Absturz |
 | 15 | Zweiter Lauf auf demselben Frame | Neuer Wrapper, der erste bleibt unverändert |
 | 15a | Griff unten rechts über den ganzen Bildschirm ziehen | Panel folgt dem Cursor ohne Sprung, stoppt bei 720 × 2400, Layout bleibt intakt; Doppelklick stellt 320 × 680 her |
+| 15b | Panel auf 420 px Höhe ziehen | Fußtext bleibt vollständig sichtbar, der Bereich darüber scrollt |
+| 15d | Theme-Pille umschalten | Panel wechselt vollständig, nichts bleibt auf der alten Palette; nach Schließen und Öffnen ist die Wahl erhalten |
+| 15e | Plugin bei hellem Figma zum ersten Mal öffnen | Panel startet **dunkel** |
+| 15f | Regler nur mit der Tastatur bedienen | Tab setzt einen sichtbaren Fokusring, Pfeiltasten ändern den Wert, Shift+Pfeil grob, Home/End ans Ende |
+| 15c | Frame mit vielen Befunden erzeugen | Der Befunde-Frame ist so hoch wie sein Inhalt, kein Text angeschnitten |
 
 Zusätzlich für 1.1 (M4, M5):
 

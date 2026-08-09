@@ -18,6 +18,7 @@ import {
   type ErrorCode,
   type FindingPayload,
   type MainToUi,
+  type MapMeta,
   type PanelSize,
   type RenderedMap,
   type SegmentInfo,
@@ -32,6 +33,8 @@ type FrameResult = {
   warnings: string[]
   findings: FindingPayload[]
   segments?: SegmentInfo
+  /** Parameters of the prediction — written next to the maps, not onto them. */
+  mapMeta?: MapMeta
 }
 
 type PendingResult = {
@@ -55,7 +58,10 @@ function postError(code: ErrorCode, error?: unknown, frameName?: string): void {
 figma.showUI(__html__, {
   width: DEFAULT_PANEL_SIZE.width,
   height: DEFAULT_PANEL_SIZE.height,
-  themeColors: true,
+  // The panel ships its own two palettes and its own switch (`ui/theme.ts`).
+  // Letting Figma inject its theme variables would tie the readability of the
+  // disclaimer to the host's next redesign.
+  themeColors: false,
   title: 'Figmaps',
 })
 
@@ -196,6 +202,7 @@ async function generate(frameIds: string[]): Promise<void> {
         const wrapper = await placeMaps(node, result.maps, {
           findings: result.findings,
           segments: result.segments,
+          mapMeta: result.mapMeta,
         })
         wrappers.push(wrapper)
         created += result.maps.length
@@ -281,6 +288,7 @@ figma.ui.onmessage = (message: UiToMain): void => {
               warnings: message.warnings,
               findings: message.findings,
               segments: message.segments,
+              mapMeta: message.mapMeta,
             })
           }
           break
