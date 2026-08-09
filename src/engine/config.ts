@@ -157,12 +157,21 @@ export const ENGINE_CONFIG = {
     /**
      * Untergrenze der Dämpfung.
      *
-     * Bewusst knapp unter der Transparenzschwelle des Renderers gewählt: auf
-     * inhaltsfreien Flächen fallen tiefe Abschnitte damit unter die Schwelle
-     * und werden gar nicht gezeichnet, während ein echter Blickfang dort noch
-     * schwach sichtbar bleibt. Eine höhere Untergrenze erzeugt wieder ein
-     * Plateau gleich heller Bänder — genau das Artefakt, das die Dämpfung
-     * beseitigen soll.
+     * Ursprünglich knapp unter der damaligen Transparenzschwelle des Renderers
+     * gewählt (0,08): auf inhaltsfreien Flächen fielen tiefe Abschnitte damit
+     * unter die Schwelle und wurden gar nicht gezeichnet, während ein echter
+     * Blickfang dort noch schwach sichtbar blieb. Eine höhere Untergrenze
+     * erzeugt wieder ein Plateau gleich heller Bänder — genau das Artefakt, das
+     * die Dämpfung beseitigen soll.
+     *
+     * **Diese Kopplung ist seit 1.2 A8 gebrochen, und zwar bewusst.** Die
+     * Schwelle steht jetzt bei 0,02, das vierte Band einer inhaltsfreien Seite
+     * bei 0,0506 — es ist also wieder schwach sichtbar. Der Boden hier ist
+     * daran unbeteiligt: nachgemessen von 0,12 bis 0,03 bleibt das vierte Band
+     * unverändert, weil dort noch `sectionAttenuation^3` greift und nicht der
+     * Boden. Wegzubekommen wäre es nur über eine steilere `sectionAttenuation`
+     * — und die ist eine nicht gemessene Annahme, die nicht verstellt wird,
+     * damit ein Bild ruhiger aussieht. Steht als offener Punkt im README.
      */
     sectionAttenuationFloor: 0.12,
   },
@@ -270,15 +279,19 @@ export const ENGINE_CONFIG = {
    *
    *                          AUC     CC      NSS     KL      Konzentration
    *   Ist-Zustand 1.1        0,783   0,447   1,061   1,091   0,133
-   *   nur blendGamma 2       0,783   0,454   1,080   1,055   0,225
+   *   nur blendGamma 1,6     0,783   0,456   1,083   1,038   0,188
+   *   nur blendGamma 2,0     0,783   0,454   1,080   1,055   0,225
    *   nur Blur 0,035         0,784   0,449   1,063   1,094   0,131
-   *   **beide**              0,784   0,456   1,083   1,049   0,221
+   *   **ausgeliefert**       —       —       —       —       0,188
    *                                                          (Webpage)
    *
-   * Auf Mobile derselbe Befund: CC 0,552 → 0,557, NSS 1,091 → 1,115,
-   * KL 0,785 → 0,728, Konzentration 0,138 → 0,247. **Alle vier Metriken
-   * verbessern sich, KL eingeschlossen** — die Zuspitzung wird hier nicht mit
-   * Vorhersagegüte bezahlt, sondern bringt welche mit.
+   * **Alle vier Metriken verbessern sich, KL eingeschlossen** — die Zuspitzung
+   * wird hier nicht mit Vorhersagegüte bezahlt, sondern bringt welche mit. Auf
+   * Mobile derselbe Befund.
+   *
+   * Welcher Gamma-Wert ausgeliefert wird, entscheidet nicht diese Tabelle,
+   * sondern die Aufteilung nach Gewinnern und Verlierern der Mean-Map-Diagnose
+   * — siehe `blendGamma` unten.
    *
    * Der Mechanismus ist gegenläufig und deshalb erklärungsbedürftig: die
    * Bildanalyse wird **weicher** gezeichnet und das Ergebnis **härter**
@@ -304,12 +317,56 @@ export const ENGINE_CONFIG = {
      * ein glättendes; ein zuspitzendes hat nie jemand gemessen. Es verbessert
      * KL (1,091 → 1,055) statt es zu verschlechtern.
      *
-     * 2,0 ist der größte Wert, der in **beiden** Kategorien keine der drei
-     * Hauptmetriken kostet: bei 2,5 hält Webpage noch (Konzentration 0,270),
-     * Mobile verliert CC belastbar (0,538 gegen 0,552). Die Grenze ist
-     * gemessen, nicht gewählt.
+     * **1,6 und nicht 2,0 — und der Unterschied ist kein Feinschliff.**
+     *
+     * Über alle Bilder gemittelt ist 2,0 der größte Wert, der in beiden
+     * Kategorien keine der drei Hauptmetriken kostet (bei 2,5 verliert Mobile
+     * CC belastbar). Ein Mittelwert kann aber zwei gegenläufige Effekte
+     * verdecken, und genau das tut er hier. `npm run groups` misst getrennt für
+     * die beiden Hälften der Mean-Map-Diagnose — Screens, auf denen unsere
+     * Vorhersage die Mean Map schlägt, und die übrigen. ΔCC gegen „kein Gamma":
+     *
+     *              Gewinner (Vorhersage schlägt Mean Map)   übrige
+     *   Webpage
+     *     γ 1,3     +0,0058 [0,0043, 0,0073]                +0,0092
+     *     γ 1,6     +0,0072 [0,0044, 0,0100]                +0,0134
+     *     γ 2,0     +0,0051 [0,0008, 0,0094]                +0,0141
+     *   Mobile
+     *     γ 1,3     +0,0057 [0,0038, 0,0077]                +0,0076
+     *     γ 1,6     +0,0055 [0,0019, 0,0092]                +0,0087
+     *     γ 2,0     −0,0007 [−0,0063, 0,0048]               +0,0034
+     *
+     * Bei 2,0 **verschwindet der Gewinn für die Gewinner-Gruppe auf Mobile
+     * ganz** (Intervall über der Null), während die übrigen weiter zulegen; auf
+     * Webpage bekommt die Gruppe noch ein Drittel dessen, was die andere
+     * bekommt. Bei 1,6 gewinnen **beide** Gruppen in **beiden** Kategorien,
+     * jedes Intervall ohne Null.
+     *
+     * Warum das den Ausschlag gibt: die Gewinner sind die Screens, auf denen
+     * die Bildanalyse überhaupt etwas beiträgt. Wo die Mean Map schon reicht,
+     * ist die Vorhersage ein Ortsprior mit Zierrat — dort besser zu werden ist
+     * billig und sagt über das Produkt nichts. Ein Wert, der den Mittelwert
+     * hebt, indem er die Mehrheit verbessert und die Minderheit stehen lässt,
+     * verbessert die Zahl und verschlechtert das Werkzeug.
+     *
+     * Gekostet wird das mit Konzentration: 0,184/0,207 statt 0,220/0,253. Die
+     * Lücke zur Ground Truth schließt sich damit zu gut einem Drittel statt zur
+     * Hälfte. Das ist der Preis, und er steht hier, damit er nicht in einer
+     * Mittelwertstabelle verschwindet.
+     *
+     * **Ein Vorbehalt zur Benennung:** die Gewinner-Gruppe wird gern
+     * „hero-dominiert" genannt. Die Konzentration ihrer *Ground Truth* stützt
+     * das nicht — sie liegt bei 0,479 gegen 0,488 (Webpage) und 0,390 gegen
+     * 0,362 (Mobile), also praktisch gleich. Die beiden Gruppen unterscheiden
+     * sich nachweislich in der Wirkung dieses Parameters, aber nicht darin, wie
+     * scharf ihre gemessene Aufmerksamkeit ist. Woran sie sich unterscheiden,
+     * ist offen.
+     *
+     * Ein Gamma **unter** 1 ist gemessen und eindeutig falsch: γ 0,3 kostet
+     * rund 0,05 CC in jeder Gruppe und Kategorie. Der 1.1 ausgebaute Wert war
+     * ein solcher.
      */
-    blendGamma: 2.0,
+    blendGamma: 1.6,
   },
 
   /** Clickmap scoring (FR-5). */
@@ -361,10 +418,37 @@ export const ENGINE_CONFIG = {
   render: {
     /** Hard limit of `figma.createImage` — verified against the API docs. */
     maxImageEdge: 4096,
-    /** Heat values below this render fully transparent. */
-    transparencyCutoff: 0.08,
-    /** Width of the fade-in ramp above the cutoff. */
-    transparencyRamp: 0.12,
+    /**
+     * Heat values below this render fully transparent.
+     *
+     * **0,02 seit 1.2 A8, vorher 0,08 — nachgezogen, nicht neu erfunden.**
+     *
+     * Die Schwelle ist ein *Wert*, die Karte hat sich aber in der Form
+     * geändert (`hybrid.blendGamma`). Dieselbe Zahl verdeckte danach 37,5 %
+     * der Karte statt 18,0 % (Webpage; Mobile 36,4 % statt 13,1 %) — ein
+     * Gutteil des Eindrucks „das Overlay ist leerer geworden" war der
+     * Renderer, nicht die Vorhersage.
+     *
+     * Nachgezogen wurde nach einer Regel, nicht nach Augenmaß: **derselbe
+     * Anteil der Karte bleibt verdeckt wie bisher.** Gemessen mit
+     * `npm run cutoff` über je 150 Bilder, ergibt 0,021 (Webpage) und 0,020
+     * (Mobile); ausgeliefert wird 0,02.
+     *
+     * Was damit ausdrücklich **nicht** entschieden ist: ob 18 % die richtige
+     * verdeckte Fläche sind. Diese Frage hat keine Ground Truth — sie wird
+     * übernommen, nicht geprüft, und gehört an einen Menschen mit echten
+     * Screens vor sich.
+     */
+    transparencyCutoff: 0.02,
+    /**
+     * Width of the fade-in ramp above the cutoff.
+     *
+     * Nach derselben Regel nachgezogen: das Rampenende lag bei 0,20 und
+     * verdeckte teilweise 38,1 % (Webpage) bzw. 36,0 % (Mobile) der Karte;
+     * derselbe Anteil liegt auf der neuen Karte bei 0,082 bzw. 0,079. Ende
+     * also 0,08, Rampenbreite 0,06.
+     */
+    transparencyRamp: 0.06,
     // The legend box and the disclaimer footer used to be drawn into every map
     // and had their own typography block here. They are Figma text nodes beside
     // the image now (`figma/place.ts`) — nothing but the prediction is painted

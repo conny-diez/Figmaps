@@ -33,6 +33,8 @@ import { alphaVariants, runVisualCheck, type CheckVariant } from './visual-check
 import { ALL_RULE_IDS, buildSideEffectReport, measureSideEffects, SHIPPED_RULES } from './side-effects'
 import { baseParams, beforeSharpnessVariant, sharpnessSweep, stageOneVariants, stageTwoVariants, type SharpnessResult, type Variant } from './sharpness'
 import { buildSharpnessReport, verdictOf } from './sharpness-report'
+import { groupSweep, GROUP_LABELS, type GroupSweepResult } from './groups'
+import { measureCutoff } from './cutoff'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -736,6 +738,132 @@ function printSharpness(result: SharpnessResult): void {
 }
 
 // ---------------------------------------------------------------------------
+// groups — 1.2 A7: wirkt blendGamma auf beide Hälften des Datensatzes gleich?
+//
+//   npm run groups -- --gammas 0.3,1.6,2.0
+// ---------------------------------------------------------------------------
+
+async function runGroups(args: Args): Promise<number> {
+  const duration = num(args, 'duration', 3)
+  const folds = num(args, 'folds', 5)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+  const blendGammas = typeof args.gammas === 'string'
+    ? args.gammas.split(',').map(Number).filter(Number.isFinite)
+    : [0.3, 1.6, 2.0]
+  const sets = typeof args.fixtures === 'string'
+    ? ALPHA_SETS.filter((entry) => (args.fixtures as string).split(',').includes(entry.setName))
+    : ALPHA_SETS
+
+  const results: GroupSweepResult[] = []
+  for (const set of sets) {
+    console.log(`Gruppen-Sweep "${set.setName}" — blendGamma ∈ {${blendGammas.join(', ')}}, ${folds} Folds.`)
+    console.log('  Die Gruppen werden EINMAL im Zustand vor der Schärfe-Änderung bestimmt und dann festgehalten.')
+    let last = 0
+    const result = await groupSweep({
+      setName: set.setName,
+      duration,
+      folds,
+      blendGammas,
+      ...(limit ? { limit } : {}),
+      onProgress: (done, total) => {
+        if (done - last >= 25 || done === total) {
+          last = done
+          process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+        }
+      },
+    })
+    process.stdout.write(`\r  ${result.imageCount} Bilder bewertet          \n`)
+    printGroups(result)
+    results.push(result)
+  }
+
+  writeFile(str(args, 'report', 'out/gruppen.md'), buildGroupReport(results, timestamp()))
+  console.log(`Report: ${str(args, 'report', 'out/gruppen.md')}`)
+  return 0
+}
+
+function printGroups(result: GroupSweepResult): void {
+  for (const group of result.groups) {
+    console.log('')
+    console.log(
+      `  ${GROUP_LABELS[group.group]} — ${group.imageCount} Bilder, ` +
+        `Konzentration der Ground Truth ${group.truthConcentration.mean.toFixed(3)}`,
+    )
+    console.log(`  ${'γ'.padEnd(6)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}${'Konz.'.padStart(10)}   ΔCC gegen γ=1`)
+    for (const point of group.points) {
+      const cells = METRIC_IDS.map((id) => point.metrics[id].mean.toFixed(3).padStart(10)).join('')
+      const delta = point.versusNoGamma.cc
+      const verdict = point.blendGamma === 1 ? '' : `   ${delta.mean >= 0 ? '+' : ''}${delta.mean.toFixed(4)} [${delta.ci95[0].toFixed(4)}, ${delta.ci95[1].toFixed(4)}]`
+      console.log(`  ${String(point.blendGamma).padEnd(6)}${cells}${point.concentration.mean.toFixed(3).padStart(10)}${verdict}`)
+    }
+  }
+  console.log('')
+}
+
+function buildGroupReport(results: readonly GroupSweepResult[], generatedAt: string): string {
+  const lines: string[] = []
+  lines.push('# Wirkt `blendGamma` auf beide Hälften des Datensatzes gleich? (1.2 A7)')
+  lines.push('')
+  lines.push(`Erzeugt: ${generatedAt}`)
+  lines.push('')
+  lines.push(
+    'Die Gruppen kommen aus der Mean-Map-Diagnose: **Gewinner** sind die Screens, auf denen die Vorhersage die ' +
+      '(fold-eigene) Mean Map in CC schlägt, **Verlierer** die übrigen. Sie werden **einmal** im Zustand vor der ' +
+      'Schärfe-Änderung bestimmt und für jeden Gamma-Wert unverändert verwendet — würde die Zugehörigkeit ' +
+      'mitwandern, verglichen man zwei Populationen statt zwei Konfigurationen.',
+  )
+  lines.push('')
+  lines.push(
+    '**Warum das zählt:** die Gewinner sind die Minderheit, für die das Plugin existiert. Auf einem Screen, dessen ' +
+      'Aufmerksamkeit schon aus der Position folgt, trägt die Bildanalyse nichts bei. Ein Parameter, der den ' +
+      'Mittelwert hebt, indem er die Mehrheit verbessert und die Minderheit verschlechtert, verbessert die Zahl ' +
+      'und verschlechtert das Produkt.',
+  )
+  lines.push('')
+
+  for (const result of results) {
+    lines.push('---')
+    lines.push('')
+    lines.push(`## ${result.setName} — ${result.imageCount} Bilder`)
+    lines.push('')
+    for (const group of result.groups) {
+      lines.push(`### ${GROUP_LABELS[group.group]}`)
+      lines.push('')
+      lines.push(
+        `${group.imageCount} Bilder (${((group.imageCount / result.imageCount) * 100).toFixed(1).replace('.', ',')} %). ` +
+          `Konzentration der **Ground Truth**: ${group.truthConcentration.mean.toFixed(3)} ` +
+          `(Median ${group.truthConcentrationQuantiles[2].toFixed(3)}). ` +
+          `Vorsprung gegen die Mean Map im Referenzzustand: ${group.referenceMargin.mean >= 0 ? '+' : ''}${group.referenceMargin.mean.toFixed(4)} CC.`,
+      )
+      lines.push('')
+      lines.push('| γ | AUC | CC | NSS | KL | Konzentration | ΔCC gegen γ = 1 | ΔNSS | Urteil (CC) |')
+      lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---|')
+      for (const point of group.points) {
+        const cells = METRIC_IDS.map((id) => point.metrics[id].mean.toFixed(3))
+        const cc = point.versusNoGamma.cc
+        const nss = point.versusNoGamma.nss
+        const verdict =
+          point.blendGamma === 1
+            ? '—'
+            : cc.ci95[0] > 0
+              ? '**besser**'
+              : cc.ci95[1] < 0
+                ? '**schlechter**'
+                : 'nicht unterscheidbar'
+        const fmtDelta = (d: { mean: number; ci95: [number, number] }): string =>
+          point.blendGamma === 1 ? '—' : `${d.mean >= 0 ? '+' : ''}${d.mean.toFixed(4)}`
+        lines.push(
+          `| ${point.blendGamma}${point.blendGamma === 1 ? ' (Referenz)' : ''} | ${cells.join(' | ')} | ` +
+            `${point.concentration.mean.toFixed(3)} | ${fmtDelta(cc)} | ${fmtDelta(nss)} | ${verdict} |`,
+        )
+      }
+      lines.push('')
+    }
+  }
+  return lines.join('\n')
+}
+
+// ---------------------------------------------------------------------------
 // visual-check — 1.2 A4: die zwei Prüffälle am Onboarding-Screen
 //
 //   npm run visual-check -- --alphas 0.3,0.5
@@ -761,12 +889,16 @@ async function runVisualCheckCommand(args: Args): Promise<number> {
   for (const region of result.regions) {
     console.log('')
     console.log(`${region.label} — ${region.question}`)
-    console.log(`  ${'Variante'.padEnd(22)}${'Mittel'.padStart(9)}${'Spitze'.padStart(9)}${'Perzentil'.padStart(11)}   Farbe der Spitze`)
+    console.log(
+      `  ${'Variante'.padEnd(22)}${'Mittel'.padStart(9)}${'Spitze'.padStart(9)}${'Perzentil'.padStart(11)}` +
+        `${'Deckkraft'.padStart(11)}${'(alt)'.padStart(8)}   Farbe der Spitze`,
+    )
     for (const picture of result.pictures) {
       const measurement = picture.measurements.find((entry) => entry.regionId === region.id)!
       console.log(
-        `  ${picture.label.padEnd(22)}${measurement.mean.toFixed(3).padStart(9)}` +
-          `${measurement.max.toFixed(3).padStart(9)}${(measurement.percentileOfMax * 100).toFixed(1).padStart(10)} %   ` +
+        `  ${picture.label.slice(0, 21).padEnd(22)}${measurement.mean.toFixed(3).padStart(9)}` +
+          `${measurement.max.toFixed(3).padStart(9)}${(measurement.percentileOfMax * 100).toFixed(1).padStart(10)} %` +
+          `${(measurement.opacityShipped * 100).toFixed(0).padStart(10)} %${(measurement.opacityOldCutoff * 100).toFixed(0).padStart(7)} %   ` +
           measurement.bandOfMax,
       )
     }
@@ -805,6 +937,49 @@ function sharpnessVariants(ids: string): CheckVariant[] {
 }
 
 // ---------------------------------------------------------------------------
+// cutoff — 1.2 A8: die Transparenzschwelle auf die neue Verteilung nachziehen
+//
+//   npm run cutoff -- --limit 150
+// ---------------------------------------------------------------------------
+
+async function runCutoff(args: Args): Promise<number> {
+  const duration = num(args, 'duration', 3)
+  const limit = args.limit ? num(args, 'limit', 0) : 150
+  const sets = typeof args.fixtures === 'string'
+    ? ALPHA_SETS.filter((entry) => (args.fixtures as string).split(',').includes(entry.setName))
+    : ALPHA_SETS
+
+  console.log(`Transparenzschwelle nachziehen — Regel: derselbe **Anteil** der Karte bleibt verdeckt.`)
+  for (const set of sets) {
+    let last = 0
+    const result = await measureCutoff({
+      setName: set.setName,
+      duration,
+      limit,
+      onProgress: (done, total) => {
+        if (done - last >= 25 || done === total) {
+          last = done
+          process.stdout.write(`\r  ${set.setName}: ${done}/${total} Bilder …   `)
+        }
+      },
+    })
+    process.stdout.write(`\r  ${set.setName}: ${result.imageCount} Bilder                \n`)
+    console.log(
+      `    alte Schwelle ${result.oldCutoff} verdeckte ${(result.hiddenShare.mean * 100).toFixed(1)} % der Karte, ` +
+        `Rampenende ${result.oldRampEnd.toFixed(2)} bei ${(result.rampedShare.mean * 100).toFixed(1)} %`,
+    )
+    console.log(
+      `    dieselbe Schwelle verdeckt auf der neuen Karte ${(result.hiddenShareUnchanged.mean * 100).toFixed(1)} %`,
+    )
+    console.log(
+      `    gleicher Anteil ⇒ neue Schwelle ${result.newCutoff.mean.toFixed(3)} ± ${result.newCutoff.se.toFixed(4)}, ` +
+        `neues Rampenende ${result.newRampEnd.mean.toFixed(3)} ± ${result.newRampEnd.se.toFixed(4)}`,
+    )
+  }
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // side-effects — 1.2 A5: Feuerraten der ausgelieferten Regeln vor und nach
 // einer Änderung an blendAlpha
 //
@@ -840,6 +1015,7 @@ async function runSideEffects(args: Args): Promise<number> {
     before,
     after,
     ruleIds,
+    ...(args['mobile-viewport'] ? { mobileViewport: num(args, 'mobile-viewport', 400) } : {}),
     ...(limit ? { limit } : {}),
     onProgress: (message) => console.log(`  ${message} …`),
   })
@@ -1158,6 +1334,11 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --stage 1           nur die Einzelhebel, ohne die Kombinationen',
         '  --fixtures <liste>  Kommaliste der Sets                (default: ueyes-web,ueyes-mobile)',
         '',
+        'npm run groups -- [options]      1.2 A7 — blendGamma getrennt für Gewinner und Verlierer',
+        '  --gammas <liste>    Kommaliste der blendGamma-Werte              (default: 0.3,1.6,2.0)',
+        '',
+        'npm run cutoff -- [options]      1.2 A8 — Transparenzschwelle auf die neue Verteilung ziehen',
+        '',
         'npm run visual-check -- [options]  1.2 A4 — der Onboarding-Prüffall, je Alpha ein Bild',
         '  --alphas <liste>    Kommaliste der Alpha-Werte                    (default: 0.3,0.5,0.8,1.2)',
         '  --sharp <ids>       statt Alphas: Varianten-Ids aus dem Schärfe-Sweep, kommagetrennt',
@@ -1167,6 +1348,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --before <α> --after <α>   die beiden verglichenen Alpha-Werte        (default: 0.3 / 0.5)',
         '  --before-variant <id> --after-variant <id>   stattdessen Varianten aus dem Schärfe-Sweep',
         '  --rules all         auch die stillgelegten Regeln berichten',
+        '  --mobile-viewport <px>   Telefon-Screens zusätzlich segmentiert messen (für cold-fold)',
         '  --limit <n>         Bilder je echter Population begrenzen',
         '',
         'npm run crossval -- [options]    k-fache Kreuzvalidierung über Tuning + Test',
@@ -1189,6 +1371,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args['findings-audit']) return await runFindingsAudit(args)
     if (args.alpha) return await runAlpha(args)
     if (args.sharpness) return await runSharpness(args)
+    if (args.groups) return await runGroups(args)
+    if (args.cutoff) return await runCutoff(args)
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)

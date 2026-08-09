@@ -41,7 +41,7 @@ export const SHIPPED_RULES: readonly string[] = ['cta-rank', 'competition', 'col
  */
 export const ALL_RULE_IDS: readonly string[] = ALL_RULES.map((rule) => rule.id)
 
-export type PopulationId = 'konstruiert' | 'ueyes-web-segmentiert' | 'ueyes-mobile-1vp'
+export type PopulationId = 'konstruiert' | 'ueyes-web-segmentiert' | 'ueyes-mobile-1vp' | 'ueyes-mobile-segmentiert'
 
 export type RateEntry = {
   population: string
@@ -109,6 +109,17 @@ export type SideEffectOptions = {
   variants?: number
   /** Erzwungene Viewport-Höhe für die Webseiten — sonst ist nichts segmentiert. */
   webViewport?: number
+  /**
+   * Erzwungene Viewport-Höhe für die Telefon-Screens, **zusätzlich** zur
+   * Ein-Viewport-Population.
+   *
+   * `cold-fold` ist eine von nur zwei belastbaren Regeln und braucht
+   * Abschnitte. Auf einem Ein-Viewport-Screen ist sie strukturell blockiert,
+   * also gäbe es sonst genau *eine* echte Population, in der sie überhaupt
+   * gefragt werden kann. Eine Quote aus einer einzigen Population ist keine
+   * Quote, sondern eine Beobachtung.
+   */
+  mobileViewport?: number
   /** Bildzahl je echter Population. Eine Begrenzung wird im Report ausgewiesen. */
   limit?: number
   onProgress?: (message: string) => void
@@ -148,6 +159,26 @@ async function measureSide(side: Side, options: SideEffectOptions): Promise<{ si
   })
   entries.push(...entriesOf(mobile, 'ueyes-mobile-1vp', 'UEyes Telefon-Screens (ein Viewport)', ruleIds))
   counts['UEyes Telefon'] = mobile.imageCount
+
+  if (options.mobileViewport) {
+    options.onProgress?.(`${side.label}: UEyes-Telefon-Screens, Viewport ${options.mobileViewport} px erzwungen`)
+    const segmented = await auditFindings({
+      setName: 'ueyes-mobile',
+      priorAsset: 'mobile',
+      viewportOverride: options.mobileViewport,
+      params: side.params,
+      ...(options.limit ? { limit: options.limit } : {}),
+    })
+    entries.push(
+      ...entriesOf(
+        segmented,
+        'ueyes-mobile-segmentiert',
+        `UEyes Telefon-Screens (Viewport ${options.mobileViewport} px erzwungen)`,
+        ruleIds,
+      ),
+    )
+    counts['UEyes Telefon segmentiert'] = segmented.imageCount
+  }
 
   return { side: { label: side.label, configuration: describeParams(side.params), entries }, counts }
 }

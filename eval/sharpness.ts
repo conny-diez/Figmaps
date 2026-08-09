@@ -194,7 +194,7 @@ export type SharpnessOptions = {
 }
 
 /** Analyseraster, das die Engine für dieses Bild verwenden würde. */
-function gridOf(sample: EvalSample): [number, number] {
+export function gridOf(sample: EvalSample): [number, number] {
   const grid = fitWithin(sample.image.width, sample.image.height, ENGINE_CONFIG.analysisEdge)
   return [grid.width, grid.height]
 }
@@ -208,7 +208,7 @@ function quantisePrior(meanField: Float32Array, sourceSize: number, targetSize: 
 }
 
 /** Ortsprior je Fold, ausschließlich aus den übrigen Folds — wie `crossval.ts`. */
-function fitFoldPriors(
+export function fitFoldPriors(
   setName: string,
   duration: number,
   ids: readonly string[],

@@ -309,10 +309,11 @@ const ctaBelowFold: Rule = {
  *
  *                                 α 0,3     α 0,5    + Schärfe (Stand)
  *      Webseite, segmentiert        2,2 %    11,9 %     10,3 %
- *      Telefon, ein Viewport       10,3 %    31,1 %     21,2 %
+ *      Telefon, ein Viewport       10,3 %    31,1 %     22,4 %
+ *      Telefon, segmentiert           —       6,3 %      2,6 %
  *      Desktop scrollend (konstr.)  0,0 %     8,3 %      4,2 %
  *      Telefon scrollend (konstr.)  0,0 %    20,8 %      4,2 %
- *      Telefon 1 VP (konstruiert)   0,0 %    20,8 %     16,7 %
+ *      Telefon 1 VP (konstruiert)   0,0 %    20,8 %     12,5 %
  *
  *    Die dritte Spalte ist der ausgelieferte Stand nach 1.2 A6 (Blur 0,035,
  *    `blendGamma` 2,0). Die Zuspitzung nimmt einen Teil des Anstiegs zurück —
@@ -329,7 +330,7 @@ const ctaBelowFold: Rule = {
  * wäre eine weitere unkalibrierte Bewegung. Die Regel wird in 1.2 B1 ohnehin
  * umgebaut (Abstand auf Diagonale oder getrennte x/y-Schwellen) und **danach**
  * neu kalibriert — auf der ausgelieferten Karte, in jeder der drei Frame-Formen
- * getrennt. Bis dahin gilt: 10,3 % / 21,2 % ist der Stand, nicht 3,3 % / 10,0 %.
+ * getrennt. Bis dahin gilt: 10,3 % / 22,4 % ist der Stand, nicht 3,3 % / 10,0 %.
  *
  * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
  * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um
@@ -402,14 +403,28 @@ const competition: Rule = {
  * Gemessen beim Umstieg auf 0,5 (`npm run side-effects`):
  *
  *                                      α 0,3     α 0,5    + Schärfe (Stand)
- *   Webseite, Viewport 500 erzwungen   27,7 %   34,9 %     40,9 %
+ *   Webseite, Viewport 500 erzwungen   27,7 %   34,9 %     40,0 %
+ *   Telefon, Viewport 400 erzwungen       —     58,6 %     61,6 %
  *   Desktop scrollend (konstruiert)    83,3 %   95,8 %    100,0 %
  *   Telefon scrollend (konstruiert)   100,0 %  100,0 %    100,0 %
  *
- * Auf der konstruierten Desktop-Form feuert sie damit **immer** und sagt dort
+ * Auf beiden konstruierten Formen feuert sie damit **immer** und sagt dort
  * nichts mehr.
  *
- * Auf echten Bildern bleibt die Regel mit 40,9 % im brauchbaren Bereich; die
+ * **DER EIGENTLICHE BEFUND STEHT NICHT IN DER RATE, SONDERN IN DER
+ * VERTEILUNG.** Der relative Vorsprung des stärksten Abschnitts liegt
+ *
+ *   auf Webseiten       im Median bei 0,037  — die Schwelle 0,08 liegt darüber
+ *   auf Telefon-Screens im Median bei 0,131  — die Schwelle liegt **darunter**
+ *
+ * Auf Telefon-Screens sagt die Regel also häufiger ja als nein, und zwar nicht
+ * knapp. 0,08 stammt aus der Webseiten-Verteilung und ist auf der Telefon-
+ * Verteilung nie geprüft worden — dieselbe Fehlerklasse wie bei `flat`, nur
+ * dass die Schwelle diesmal zwischen **Populationen** wandert statt zwischen
+ * Konfigurationen. Eine Schwelle je UI-Typ, wie sie `flat` schon hat, ist der
+ * naheliegende Umbau; er gehört zu 1.2 B und braucht eine eigene Messung.
+ *
+ * Auf Webseiten bleibt die Regel mit 40,0 % im brauchbaren Bereich; die
  * konstruierten Frames stellen den Hero absichtlich weiter unten auf, ihre
  * Quote ist die des Aufbaus. Die Richtung ist über beide Schritte eindeutig,
  * und 0,08 ist damit endgültig nachzumessen — an echten Designs mit Layer-Baum

@@ -13,7 +13,12 @@
 import { analyzeFrame } from '../src/engine/analyze'
 import { scoreCandidates } from '../src/engine/clickmap'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
+import { ENGINE_CONFIG } from '../src/engine/config'
 import { meanInRect } from '../src/engine/imageops'
+
+/** Die Transparenzschwelle vor 1.2 A8 — der Vergleichspunkt, nicht mehr. */
+const OLD_CUTOFF = 0.08
+const OLD_RAMP = 0.12
 import type { Bitmap } from '../src/engine/ops'
 import { resizeBitmap } from '../src/engine/ops-pure'
 import { cloneParams, resolveParams, type EngineParams } from '../src/engine/params'
@@ -53,6 +58,23 @@ export type RegionMeasurement = {
   percentileOfMax: number
   bandOfMean: string
   bandOfMax: string
+  /**
+   * Mittlere Deckkraft, die der Renderer über diesem Element aufträgt — einmal
+   * mit der ausgelieferten Transparenzschwelle, einmal mit der von vor 1.2 A8.
+   *
+   * Trennt die zwei Effekte, die sich im Bild überlagern: die Karte hat andere
+   * *Werte* (Engine), und dieselbe Schwelle verdeckt davon einen anderen
+   * *Anteil* (Renderer). Ohne diese Spalte ist „der CTA verschwindet" eine
+   * Beobachtung ohne Ursache.
+   */
+  opacityShipped: number
+  opacityOldCutoff: number
+}
+
+/** Der Alpha-Verlauf aus `heatmapToRgba`, für eine wählbare Schwelle. */
+function rampAlpha(value: number, cutoff: number, ramp: number): number {
+  if (value < cutoff) return 0
+  return ramp > 0 ? Math.min(1, (value - cutoff) / ramp) : 1
 }
 
 export type Picture = {
@@ -95,12 +117,26 @@ function measure(map: ScalarMap, region: Region, frameWidth: number): RegionMeas
     }
   }
 
+  let opacityShipped = 0
+  let opacityOld = 0
+  let cells = 0
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const value = map.values[y * map.width + x]
+      opacityShipped += rampAlpha(value, ENGINE_CONFIG.render.transparencyCutoff, ENGINE_CONFIG.render.transparencyRamp)
+      opacityOld += rampAlpha(value, OLD_CUTOFF, OLD_RAMP)
+      cells++
+    }
+  }
+
   return {
     regionId: region.id,
     label: region.label,
     question: region.question,
     mean,
     max,
+    opacityShipped: cells > 0 ? opacityShipped / cells : 0,
+    opacityOldCutoff: cells > 0 ? opacityOld / cells : 0,
     percentileOfMax: percentileOf(map.values, max),
     bandOfMean: bandOf(mean),
     bandOfMax: bandOf(max),

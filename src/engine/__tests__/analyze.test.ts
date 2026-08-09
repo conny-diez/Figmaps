@@ -131,11 +131,29 @@ describe('analyzeFrame', () => {
    * The prior is still rebuilt per section, so a featureless page still shows
    * one local maximum per section. What the scroll-depth attenuation changes is
    * their *amplitude*: without it all five sit at 0.50 — five equally bright
-   * bands — with it they halve (0.50 / 0.25 / 0.13) and fall below the
-   * renderer's transparency cutoff from the third section on.
+   * bands — with it they halve.
    *
    * Measured on a featureless grey frame, which is the worst case: any real
    * content dominates the prior.
+   *
+   * DIESER TEST HAT BIS 1.2 A8 EINE ZWEITE AUSSAGE GEPRÜFT, DIE NICHT MEHR
+   * STIMMT: dass die Bänder ab dem dritten Abschnitt unter die
+   * Transparenzschwelle fallen und gar nicht mehr gezeichnet werden. Diese
+   * Aussage hing an `transparencyCutoff` = 0,08; mit der nachgezogenen Schwelle
+   * (0,02) liegt das vierte Band bei 0,0506 und ist wieder sichtbar.
+   *
+   * Der Boden `sectionAttenuationFloor` ist daran unschuldig — nachgemessen mit
+   * 0,12 / 0,08 / 0,06 / 0,05 / 0,04 / 0,03 bleibt das vierte Band unverändert
+   * bei 0,0506, weil dort noch die geometrische Dämpfung greift (0,5³ = 0,125)
+   * und nicht der Boden. Unsichtbar zu bekommen wäre es nur über eine steilere
+   * `sectionAttenuation` — und die ist eine ausdrücklich **nicht gemessene**
+   * Annahme (siehe `config.ts`). Sie zu verstellen, damit ein Bild ruhiger
+   * aussieht, wäre dieselbe Bewegung, die dieses Projekt sich an anderer Stelle
+   * verboten hat.
+   *
+   * Geprüft wird deshalb nur noch, was der Zweck der Dämpfung war: **kein
+   * Plateau gleich heller Bänder**. Dass die tiefen Bänder auf inhaltsfreien
+   * Flächen wieder schwach sichtbar sind, steht als offener Punkt im README.
    */
   it('attenuates the per-section prior with scroll depth', async () => {
     const frameWidth = 1440
@@ -174,10 +192,10 @@ describe('analyzeFrame', () => {
     expect(peaks[1].value).toBeLessThan(peaks[0].value * 0.65)
     expect(peaks[2].value).toBeLessThan(peaks[1].value * 0.65)
 
-    // From the third section on, nothing is drawn at all on empty areas.
+    // Der erste Abschnitt wird gezeichnet, die tiefen sind ein Bruchteil davon.
     const cutoff = ENGINE_CONFIG.render.transparencyCutoff
     expect(peaks[0].value).toBeGreaterThan(cutoff)
-    for (const peak of peaks.slice(3)) expect(peak.value).toBeLessThan(cutoff)
+    for (const peak of peaks.slice(3)) expect(peak.value).toBeLessThan(peaks[0].value / 6)
   })
 
   it('leaves an unsegmented frame untouched by the attenuation', async () => {

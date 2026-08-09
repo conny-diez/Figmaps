@@ -46,7 +46,9 @@ C Contrastmap). **Fertig ist A.**
 |---|---|
 | **`blendAlpha` 0,3 → 0,5** | Kreuzvalidiert und out-of-sample nachgemessen statt in-sample abgelesen. AUC, CC und NSS haben ihr Optimum einstimmig bei 0,5, in beiden Kategorien. Siehe [Alpha-Kurve](#alpha-kurve-12-a). |
 | **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
-| **Schärfe: Blur 0,035 + `blendGamma` 2,0** | Der A1-Befund ist zur Hälfte behoben — Konzentration 0,133 → 0,221 (Webpage) und 0,138 → 0,247 (Mobile), bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis). |
+| **Schärfe: Blur 0,035 + `blendGamma` 1,6** | Der A1-Befund ist zu gut einem Drittel behoben, bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Nicht 2,0, obwohl der Mittelwert dafür spräche: dieser Wert lässt die Gruppe stehen, für die das Plugin existiert. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis) und [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften). |
+| **Transparenzschwelle nachgezogen** | 0,08 → 0,02. Dieselbe Schwelle hätte auf der neuen Karte 37,5 % statt 18,0 % verdeckt — ein Gutteil von „das Overlay ist leerer" war der Renderer, nicht die Vorhersage. |
+| **CI zum ersten Mal grün** | Sechs von sechs Läufen waren an `npm ci` gescheitert. Damit hat auch das Eval-Gate aus A-7 nie ausgeführt — und beim ersten echten Lauf kam heraus, dass es die **eingefrorene** 1.0-Referenz bewacht hätte statt der ausgelieferten Engine. |
 | **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
 | **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
 | **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.1" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
@@ -1174,8 +1176,8 @@ Tuning-Split, Ortsprior je Fold, 468 Bilder je Kategorie.
 | `post.gamma` | 2,0 | 0,781 | 0,450 | 1,067 | 1,055 | 0,150 | verloren |
 | Clip | p20/p99 | 0,782 | 0,448 | 1,062 | 1,074 | 0,140 | besser |
 | Clip | p40/p99 | 0,781 | 0,449 | 1,066 | 1,058 | 0,148 | verloren |
-| `blendGamma` | 1,6 | 0,783 | 0,456 | 1,083 | 1,038 | 0,188 | **besser** |
-| `blendGamma` | **2,0** | 0,783 | 0,454 | 1,080 | 1,055 | 0,225 | **besser** |
+| `blendGamma` | **1,6** | 0,783 | 0,456 | 1,083 | 1,038 | 0,188 | **besser** |
+| `blendGamma` | 2,0 | 0,783 | 0,454 | 1,080 | 1,055 | 0,225 | **besser** |
 | `blendGamma` | 2,5 | 0,783 | 0,448 | 1,066 | 1,117 | 0,270 | gehalten |
 | `blendGamma` | 3,5 | 0,783 | 0,430 | 1,025 | 1,337 | 0,353 | verloren |
 
@@ -1201,8 +1203,9 @@ ganz unter der Null. Bei 468 Bildern ist das ein strenges Kriterium — `post.ga
 
 Auf Mobile derselbe Verlauf. Die Obergrenze ist gemessen, nicht gewählt: bei
 `blendGamma` 2,5 hält Webpage noch (Konzentration 0,270), Mobile verliert CC
-belastbar (0,538 gegen 0,552). 2,0 ist der größte Wert, der in **beiden**
-Kategorien keine Metrik kostet.
+belastbar (0,538 gegen 0,552). 2,0 ist damit der größte Wert, der **im
+Mittel** keine Metrik kostet — welcher Wert ausgeliefert wird, entscheidet
+allerdings nicht der Mittelwert, sondern die Aufteilung im Abschnitt danach.
 
 #### Die Kombination, und warum sie gegenläufig ist
 
@@ -1223,8 +1226,57 @@ glatterer Bildanteil passt besser zu einer Ground Truth, die selbst aus
 überlagerten Blickpunkten besteht; die Schärfe kommt danach aus der Tonkurve
 über der fertigen Karte, wo sie den Ortsprior mitnimmt statt ihn zu umgehen.
 
-Die Lücke zur Ground Truth schließt sich damit **etwa zur Hälfte**: Faktor 3,6
-auf 2,2 (Webpage), 2,8 auf 1,6 (Mobile). Sie ist nicht geschlossen.
+### A7 — derselbe Mittelwert, zwei gegenläufige Hälften
+
+```bash
+npm run groups -- --gammas 0.3,1.3,1.6,2.0
+```
+
+Die Tabelle oben mittelt über alle Bilder, und ein Mittelwert kann zwei
+gegenläufige Effekte verdecken. Für den Verdacht gibt es hier einen konkreten
+Anlass: die Mean-Map-Diagnose teilt den Datensatz in zwei Gruppen — Screens,
+auf denen unsere Vorhersage die (fold-eigene) Mean Map schlägt, und die
+übrigen. **Die erste Gruppe ist die, für die das Plugin existiert.** Wo ein
+Ortsprior schon reicht, ist unsere Vorhersage ein Prior mit Zierrat; dort
+besser zu werden ist billig.
+
+Die Gruppen werden **einmal** im Zustand vor der Schärfe-Änderung bestimmt und
+dann festgehalten. Würde die Zugehörigkeit je Gamma-Wert neu berechnet,
+verglichen man zwei Populationen statt zwei Konfigurationen.
+
+ΔCC gegen „kein Gamma", je Gruppe:
+
+| γ | Webpage, Gewinner (326) | Webpage, übrige (142) | Mobile, Gewinner (351) | Mobile, übrige (117) |
+|---|---:|---:|---:|---:|
+| 0,3 | −0,0492 | −0,0594 | −0,0550 | −0,0634 |
+| 1,3 | +0,0058 | +0,0092 | +0,0057 | +0,0076 |
+| **1,6** | **+0,0072** | +0,0134 | **+0,0055** | +0,0087 |
+| 2,0 | +0,0051 | +0,0141 | **−0,0007** | +0,0034 |
+
+**Der Verdacht bestätigt sich.** In jeder Zeile gewinnt die Gewinner-Gruppe
+weniger als die andere, und der Abstand wächst mit γ. Bei 2,0 **verschwindet
+der Gewinn für die Gewinner auf Mobile ganz** (−0,0007, Intervall über der
+Null), während die übrigen weiter zulegen; auf Webpage bekommt die Gruppe noch
+ein Drittel dessen, was die andere bekommt. Bei **1,6 gewinnen beide Gruppen in
+beiden Kategorien**, jedes 95-%-Intervall ohne Null.
+
+**Ausgeliefert wird deshalb 1,6, nicht 2,0.** Der Mittelwert spricht für 2,0;
+die Aufteilung sagt, dass dieser Mittelwert von der Hälfte kommt, auf die es
+weniger ankommt. Gekostet wird das mit Konzentration — 0,188/0,207 statt
+0,221/0,253 — und damit schließt sich die Lücke zur Ground Truth zu **gut einem
+Drittel** statt zur Hälfte: Faktor 3,6 → 2,6 (Webpage), 2,8 → 1,9 (Mobile).
+
+**Ein Nebenbefund, der eine gängige Beschreibung kippt.** Die Gewinner-Gruppe
+wird gern „hero-dominiert" genannt. Die Konzentration ihrer **Ground Truth**
+stützt das nicht: 0,479 gegen 0,488 (Webpage) und 0,390 gegen 0,362 (Mobile) —
+praktisch gleich, auf Webpage sogar in die falsche Richtung. Die beiden Gruppen
+unterscheiden sich nachweislich in der Wirkung dieses Parameters, aber **nicht**
+darin, wie scharf ihre gemessene Aufmerksamkeit ist. Woran sie sich
+unterscheiden, ist offen — und die bisherige Erklärung ist damit hinfällig,
+nicht bestätigt.
+
+γ unter 1 ist nebenbei eindeutig erledigt: 0,3 kostet rund 0,05 CC in jeder
+Gruppe und Kategorie. Der 1.1 wegen KL ausgebaute Wert war ein solcher.
 
 Ausgeliefert wird das als eigener Block `ENGINE_CONFIG.hybrid`, **nicht** in
 `post`: `HEURISTIC_V1` liest `post` und ist die eingefrorene 1.0-Referenz des
@@ -1258,17 +1310,21 @@ bekannter Antwort.
 
 #### Nebenwirkungen, zum zweiten Mal gemessen
 
-Dieselbe Prüfung wie A5, jetzt für die Nachbearbeitung — und diesmal über
-**alle sechs** Regeln, nicht nur die drei ausgelieferten: `flat` liest den
-Bildanteil direkt, und der Blur formt genau den.
+Dieselbe Prüfung wie A5, jetzt für die Nachbearbeitung — über **alle sechs**
+Regeln statt nur die drei ausgelieferten (`flat` liest den Bildanteil direkt,
+und der Blur formt genau den) und mit einer zweiten echten Population für
+`cold-fold`: Telefon-Screens mit erzwungener Segmentierung. Ohne die gäbe es
+für die Regel genau *eine* echte Population, und eine Quote aus einer einzigen
+Population ist keine Quote, sondern eine Beobachtung.
 
-| Regel | Population | vor A6 | nach A6 | seit 1.1 insgesamt |
+| Regel | Population | vor A6 | jetzt | seit 1.1 |
 |---|---|---:|---:|---|
 | `cta-rank` | alle drei konstruierten Formen | 66,7 % | 66,7 % | unverändert |
-| `competition` | UEyes Telefon, ein Viewport | 31,1 % | **21,2 %** | 10,3 % → 21,2 % |
+| `competition` | UEyes Telefon, ein Viewport | 31,1 % | **22,4 %** | 10,3 % → 22,4 % |
 | `competition` | UEyes Webseiten, segmentiert | 11,9 % | 10,3 % | 2,2 % → 10,3 % |
-| `competition` | Telefon scrollend (konstruiert) | 20,8 % | 4,2 % | 0,0 % → 4,2 % |
-| `cold-fold` | UEyes Webseiten, segmentiert | 34,9 % | **40,9 %** | 27,7 % → 40,9 % |
+| `competition` | UEyes Telefon, segmentiert | 6,3 % | 2,6 % | — |
+| `cold-fold` | UEyes Webseiten, segmentiert | 34,9 % | **40,0 %** | 27,7 % → 40,0 % |
+| `cold-fold` | UEyes Telefon, segmentiert | 58,6 % | **61,6 %** | — |
 | `cold-fold` | Desktop scrollend (konstruiert) | 95,8 % | 100,0 % | 83,3 % → 100,0 % |
 | `flat` (nicht ausgeliefert) | UEyes Webseiten, segmentiert | 15,2 % | 22,2 % | — |
 | `dead-cta` (nicht ausgeliefert) | Desktop scrollend (konstruiert) | 83,3 % | 100,0 % | — |
@@ -1276,15 +1332,35 @@ Bildanteil direkt, und der Blur formt genau den.
 
 **`competition` bewegt sich zurück.** Die Zuspitzung senkt die Fläche *neben*
 den Blickfängen stärker als die zwischen ihnen, das Tal-Verhältnis steigt
-wieder. Über beide Schritte von 1.2 hinweg bleibt aber eine Verdopplung stehen
-(10,3 % → 21,2 % auf Telefon-Screens) — die Regel ist damit **zweimal** auf
-einer Karte gemessen worden, für die sie nicht kalibriert wurde. B1 baut sie um
-und kalibriert danach neu; bis dahin ist keine dieser Zahlen eine Schwelle.
+wieder. Über beide Schritte von 1.2 bleibt eine Verdopplung stehen (10,3 % →
+22,4 % auf Telefon-Screens) — die Regel ist damit zweimal auf einer Karte
+gemessen worden, für die sie nicht kalibriert wurde. B1 baut sie um und
+kalibriert danach neu; bis dahin ist keine dieser Zahlen eine Schwelle.
 
-**`cold-fold` steigt weiter** und feuert auf der konstruierten Desktop-Form
-jetzt in 100 % der Fälle — also gar nicht mehr. Auf echten Bildern sind es
-40,9 %, noch im brauchbaren Bereich, aber die Richtung ist eindeutig und 0,08
-ist damit endgültig nachzumessen.
+##### `cold-fold`: die Rate steigt auch auf echten Daten — der Befund steht aber in der Verteilung
+
+Auf echten UEyes-Daten klettert sie mit, in beiden Populationen und in beiden
+Schritten: Webseiten 27,7 % → 34,9 % → **40,0 %**, Telefon-Screens 58,6 % →
+**61,6 %**. Die 100 % auf der konstruierten Desktop-Form bleiben ein Artefakt
+des Aufbaus — dort steht der Hero absichtlich weiter unten, die Quote ist die
+der Konstruktion, nicht die der Regel.
+
+Wichtiger als die Rate ist, **wo die Schwelle in der Verteilung sitzt**. Der
+relative Vorsprung des stärksten Abschnitts liegt
+
+| Population | p5 | Median | p95 | Schwelle 0,08 |
+|---|---:|---:|---:|---|
+| UEyes Webseiten, segmentiert | −0,172 | 0,037 | 0,318 | **über** dem Median |
+| UEyes Telefon, segmentiert | −0,129 | 0,131 | 0,502 | **unter** dem Median |
+
+Auf Telefon-Screens sagt die Regel damit häufiger ja als nein, und zwar nicht
+knapp. 0,08 stammt aus der Webseiten-Verteilung und ist auf der
+Telefon-Verteilung nie geprüft worden — **dieselbe Fehlerklasse wie bei `flat`,
+nur dass die Schwelle diesmal zwischen Populationen wandert statt zwischen
+Konfigurationen.** Eine Schwelle je UI-Typ, wie `flat` sie schon hat, ist der
+naheliegende Umbau; er gehört zu 1.2 B und braucht eine eigene Messung. Bis
+dahin gilt: von den zwei belastbaren Regeln ist eine auf der Hälfte ihrer
+Population unkalibriert.
 
 **`flat` und `dead-cta` sind nicht ausgeliefert, ihre Zahlen aber trotzdem
 veraltet.** Genau deshalb stehen sie hier: eine abgeschaltete Regel, deren
@@ -1292,34 +1368,91 @@ Schwelle im Stillen wegdriftet, ist beim Wiedereinschalten eine Falle. `flat`
 liegt jetzt bei 22,2 % statt 15,2 %, weil sein Bildanteil mit dem neuen Blur
 gerechnet wird.
 
-**Ein Nebeneffekt, der zur Darstellung gehört und nicht zur Vorhersage:** der
-Renderer blendet alles unter `transparencyCutoff` = 0,08 aus und fadet bis 0,20
-ein. Diese beiden Zahlen sind an der *alten* Werteverteilung gewählt worden. Mit
-einer zugespitzten Karte fällt mehr Fläche unter die Schwelle, das Bild wirkt
-also leerer, als die Konzentrationszahl allein erwarten lässt. Das ist keine
-Änderung an der Vorhersage, aber es ist eine offene Kalibrierung — siehe unten.
+### A8 — wie viel davon war der Renderer?
+
+```bash
+npm run cutoff -- --limit 150
+```
+
+Der Renderer blendet alles unter `transparencyCutoff` aus und fadet über
+`transparencyRamp` ein. Beides sind **Werte**, gewählt an einer Karte, deren
+Masse breiter lag. Gemessen, was dieselben Zahlen auf der neuen Karte tun:
+
+| | verdeckt vorher | verdeckt nachher, gleiche Schwelle |
+|---|---:|---:|
+| Webpage | 18,0 % | **37,5 %** |
+| Mobile | 13,1 % | **36,4 %** |
+
+Die Schwelle allein verdoppelt bis verdreifacht die unsichtbare Fläche. Ein
+Gutteil des Eindrucks „das Overlay ist leerer geworden" war also nicht die
+Vorhersage.
+
+Nachgezogen wurde nach einer Regel statt nach Augenmaß: **derselbe Anteil der
+Karte bleibt verdeckt wie bisher.** Das ergibt 0,021 (Webpage) und 0,020
+(Mobile) für die Schwelle und 0,082 bzw. 0,079 für das Rampenende —
+ausgeliefert werden 0,02 und eine Rampenbreite von 0,06. Was damit **nicht**
+entschieden ist: ob 18 % die richtige verdeckte Fläche sind. Diese Frage hat
+keine Ground Truth; sie wird übernommen, nicht geprüft.
+
+#### Was vom Prüffall-Effekt übrig bleibt
+
+![A8 — Onboarding-Prüffall mit nachgezogenem Cutoff](assets/messungen/a8-onboarding-cutoff.png)
+
+Links das Original, Mitte der Stand nach A6–A8, rechts der Stand vor 1.2 A6.
+
+| Element | Kartenwert (Spitze) | Deckkraft, neue Schwelle | Deckkraft, alte Schwelle |
+|---|---:|---:|---:|
+| dunkle Kachel, vor A6 | 0,591 | — | 100 % |
+| dunkle Kachel, jetzt | 0,469 | 100 % | 87 % |
+| gelber CTA, vor A6 | 0,370 | — | 99 % |
+| gelber CTA, jetzt | 0,199 | **97 %** | **41 %** |
+
+**Beim CTA war es fast vollständig der Renderer.** Mit nachgezogener Schwelle
+wird er wieder mit 97 % Deckkraft gezeichnet, praktisch wie vorher (99 %) — mit
+der alten Schwelle wären es 41 % gewesen. Was bleibt, ist die **Farbe**: er ist
+blau statt türkis, die Karte weist ihn also weiterhin als kalte Zone aus. Das
+ist die Aussage der Engine, und sie steht.
+
+Bei der dunklen Kachel war es umgekehrt: 100 % gegen 87 % Deckkraft, der
+Renderer trägt wenig bei. Ihr Rückgang von 0,591 auf 0,469 ist echt — und
+kleiner als die 0,388, die `blendGamma` 2,0 ergeben hätte.
 
 ### Was offen bleibt
 
-1. **Die Schärfe ist halb geschlossen, nicht geschlossen.** Faktor 3,6 → 2,2
-   (Webpage) und 2,8 → 1,6 (Mobile). Was noch fehlt, holt keiner der vier
-   geprüften Hebel: `post.gamma` und der Clip spitzen den Bildanteil zu und
+1. **Die Schärfe ist zu gut einem Drittel geschlossen, nicht ganz.** Faktor
+   3,6 → 2,6 (Webpage) und 2,8 → 1,9 (Mobile). Weiter zu gehen wäre technisch
+   möglich (γ 2,0 bringt die Hälfte), kostet aber genau die Gruppe, für die das
+   Plugin gebaut ist — siehe A7. Was noch fehlt, holt keiner der vier geprüften
+   Hebel: `post.gamma` und der Clip spitzen den Bildanteil zu und
    kosten dabei zuverlässig AUC, ein schärferer Blur verliert überall, und
    `blendGamma` ist bei 2,0 an seiner gemessenen Obergrenze. Der nächste Schritt
    ist keine Konstante mehr, sondern eine andere Bildanalyse — der
    Ortsprior selbst ist eine weiche Glocke und deckelt, wie scharf die Summe
    werden kann.
-2. **Der `transparencyCutoff` des Renderers ist auf der alten Verteilung
-   kalibriert.** 0,08 mit einer Rampe bis 0,20 war für eine Karte gewählt, deren
-   Masse breiter lag. Auf der zugespitzten Karte fällt mehr Fläche darunter, das
-   Bild wirkt leerer. Das ist eine Darstellungsfrage, keine Vorhersagefrage —
-   aber sie ist offen, und sie gehört an einen Menschen mit Blick auf echte
-   Screens, nicht an eine Metrik.
-3. **`competition` neu kalibrieren**, nach dem Umbau in B1, auf der Karte mit
-   α = 0,5 **und** `blendGamma` 2,0, getrennt je Frame-Form.
-4. **`cold-fold` bei 0,08 nachprüfen**, sobald ein Set mit echten Layer-Bäumen
-   existiert.
-5. **`flat` ist doppelt veraltet.** Seine Schwellen sind auf dem Bildanteil mit
+2. **Wie viel Fläche ein Overlay verdecken soll, ist weiterhin ungeprüft.** Die
+   Schwelle ist auf denselben *Anteil* nachgezogen wie vorher (A8) — aber dass
+   18 % der richtige Anteil sind, ist eine Annahme aus 1.0, nicht eine Messung.
+   Diese Frage hat keine Ground Truth und gehört an einen Menschen mit echten
+   Screens vor sich.
+3. **Die tiefen Abschnittsbänder sind auf leeren Flächen wieder schwach
+   sichtbar.** Die Scroll-Dämpfung sollte sie unsichtbar machen, und das tat sie
+   nur zusammen mit der alten Transparenzschwelle: auf einem inhaltsfreien
+   1440 × 4000-Frame liegt das vierte Band bei 0,0506, die neue Schwelle bei
+   0,02. Der Boden `sectionAttenuationFloor` ist daran unbeteiligt —
+   nachgemessen von 0,12 bis 0,03 bleibt das Band unverändert, weil dort noch
+   `sectionAttenuation³` greift. Wegzubekommen wäre es nur über eine steilere
+   Dämpfung, und die ist eine ausdrücklich nicht gemessene Annahme; sie zu
+   verstellen, damit ein Bild ruhiger aussieht, ist genau die Bewegung, die
+   dieses Projekt sich anderswo verboten hat. Der Fall betrifft nur Flächen ohne
+   jeden Inhalt — echter Inhalt dominiert den Prior.
+4. **`competition` neu kalibrieren**, nach dem Umbau in B1, auf der
+   ausgelieferten Karte, getrennt je Frame-Form.
+5. **`cold-fold` braucht eine Schwelle je UI-Typ.** 0,08 liegt auf Webseiten
+   über dem Median der Entscheidungsgröße (Rate 40,0 %) und auf Telefon-Screens
+   darunter (61,6 %). Das ist keine Feinjustierung, sondern eine fehlende
+   Kalibrierung auf der halben Population — und `cold-fold` ist eine von nur
+   zwei belastbaren Regeln.
+6. **`flat` ist doppelt veraltet.** Seine Schwellen sind auf dem Bildanteil mit
    Blur 0,025 geschätzt; der ist jetzt 0,035. Die Regel ist nicht ausgeliefert,
    aber die Zahlen in `config.ts` sind es dem Namen nach — beim
    Wiedereinschalten sind sie neu zu messen, nicht zu übernehmen.
@@ -2587,29 +2720,23 @@ Zusätzlich für 1.1 (M4, M5):
    Regel feuert, deren Text nicht von einem Menschen bestätigt wurde.
 6. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
    für Figmaps nicht die relevanten UI-Typen.
-7. **Die CI ist rot, und zwar seit dem ersten Lauf — `package-lock.json` zeigt
-   auf eine interne Registry.** Alle 211 `resolved`-URLs im Lockfile verweisen
-   auf `repository.meinestadt.de`, keine einzige auf `registry.npmjs.org`. Ein
-   GitHub-Runner kommt an diesen Host nicht heran und bekommt `503 Service
-   Temporarily Unavailable`; `npm ci` bricht ab, `npm run lint` und
-   `npm run verify` laufen gar nicht erst an, und das Eval-Gate wird
-   übersprungen, weil es `needs: verify` hat. **`npm run verify` lokal grün
-   heißt deshalb nichts über den Zustand der Action.**
-
-   **Die Ursache liegt nicht im Lockfile, sondern in der npm-Konfiguration, die
-   es erzeugt hat.** Es gibt keine `.npmrc` im Repo — der Registry-Eintrag kommt
-   aus der Benutzerkonfiguration der Maschine, auf der zuletzt installiert
-   wurde (`npm config get registry`), und `npm install` schreibt ihn in jedes
-   `resolved`-Feld. Das Lockfile hier zu reparieren wäre folgenlos: der nächste
-   `npm install` auf derselben Maschine schriebe die Hosts zurück. Der Fix ist
-   entweder eine Repo-`.npmrc`, die auf die öffentliche Registry zeigt, oder
-   ein Schritt in der Action, der die Registry vor `npm ci` setzt — beides
-   berührt, wie intern gebaut wird, und ist deshalb keine Entscheidung, die im
-   Vorbeigehen getroffen wird. **Bewusst nicht angefasst**, liegt bei Security.
-
-   Zweite, unabhängige Meldung aus demselben Lauf, kein Fehler: `actions/checkout@v4`
-   und `actions/setup-node@v4` laufen auf Node 20, das auf GitHub-Runnern
-   abgekündigt ist.
+7. **Das Lockfile zeigt weiterhin auf eine interne Registry** — 211 von 211
+   `resolved`-URLs. Die CI kommt inzwischen daran vorbei
+   (`scripts/ci-lockfile.mjs` nimmt die Adressen vor `npm ci` aus der
+   Arbeitskopie, `integrity` bleibt), aber die Ursache liegt weiter in der
+   npm-Konfiguration, die das Lockfile erzeugt: es gibt keine Repo-`.npmrc`,
+   der Eintrag kommt aus der Benutzerkonfiguration der Maschine, und der
+   nächste `npm install` schreibt die Hosts zurück. Der dauerhafte Ort für
+   diese Entscheidung ist eine Repo-`.npmrc` oder die Benutzerkonfiguration —
+   beides berührt, wie intern gebaut wird, und liegt bei Security.
+8. **Das Eval-Gate ist grün und misst trotzdem nichts.** Der Job läuft, aber
+   das Referenz-Set liegt nicht im Actions-Cache (`figmaps-fixtures-v1`), also
+   überspringt er den eigentlichen Vergleich und meldet „übersprungen". Damit
+   ist A-7 formal erfüllt und praktisch weiterhin unwirksam. Was fehlt, ist
+   eine Entscheidung darüber, wo die Fixtures liegen dürfen — Größe und
+   CC-BY-Pflicht, siehe `eval/fixtures/README.md`. Bis dahin ist das Gate ein
+   grüner Haken ohne Messung, und das ist genau die Sorte Prüfung, die dieses
+   Projekt schon zweimal in die Irre geführt hat.
 
 ## Nicht in 1.1
 
