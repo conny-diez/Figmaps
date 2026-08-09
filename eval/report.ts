@@ -92,7 +92,7 @@ export function buildReport(input: ReportInput): string {
 
   const lines: string[] = []
 
-  lines.push(`# FigMaps Eval — ${input.setName} / ${input.split}`)
+  lines.push(`# Figmaps Eval — ${input.setName} / ${input.split}`)
   lines.push('')
   lines.push(
     `Erzeugt: ${input.generatedAt} · **${input.samples.length} ausgewertete Bilder** · Betrachtungsdauer ${input.duration} s`,

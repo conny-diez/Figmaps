@@ -9,23 +9,20 @@
 import { exportFrame } from './figma/export'
 import { placeMaps } from './figma/place'
 import { currentSelection, isAnalysable, type AnalysableNode } from './figma/selection'
-import { loadSettings, saveSettings } from './figma/storage'
+import { loadPanelSize, loadSettings, normalisePanelSize, savePanelSize, saveSettings } from './figma/storage'
 import { collectSignals } from './figma/traverse'
 import { ENGINE_CONFIG } from './engine/config'
 import {
+  DEFAULT_PANEL_SIZE,
   ERROR_TEXT,
   type ErrorCode,
   type FindingPayload,
   type MainToUi,
+  type PanelSize,
   type RenderedMap,
   type SegmentInfo,
-  type Settings,
   type UiToMain,
 } from './messages'
-
-// Panel size from the redesign (compact variant).
-const UI_WIDTH = 320
-const UI_HEIGHT = 680
 
 /** Safety net so a crashed iframe cannot wedge the batch forever. */
 const PLACE_RESULT_TIMEOUT_MS = 180_000
@@ -55,7 +52,36 @@ function postError(code: ErrorCode, error?: unknown, frameName?: string): void {
   post({ type: 'ERROR', code, message: `${ERROR_TEXT[code]}${detail}`, frameName })
 }
 
-figma.showUI(__html__, { width: UI_WIDTH, height: UI_HEIGHT, themeColors: true, title: 'FigMaps' })
+figma.showUI(__html__, {
+  width: DEFAULT_PANEL_SIZE.width,
+  height: DEFAULT_PANEL_SIZE.height,
+  themeColors: true,
+  title: 'Figmaps',
+})
+
+// `showUI` is synchronous, `clientStorage` is not — the panel therefore opens at
+// the default size and snaps to the remembered one a tick later.
+void (async () => {
+  const size = await loadPanelSize()
+  if (size.width !== DEFAULT_PANEL_SIZE.width || size.height !== DEFAULT_PANEL_SIZE.height) {
+    figma.ui.resize(size.width, size.height)
+  }
+})()
+
+// A drag emits a resize message per pointer move. Resizing on each is what makes
+// the drag feel direct; persisting on each would hammer clientStorage, so only
+// the size the drag came to rest at is written.
+let sizeWriteTimer: ReturnType<typeof setTimeout> | null = null
+
+function rememberPanelSize(size: PanelSize): void {
+  if (sizeWriteTimer !== null) clearTimeout(sizeWriteTimer)
+  sizeWriteTimer = setTimeout(() => {
+    sizeWriteTimer = null
+    void savePanelSize(size).catch(() => {
+      // Best effort — a panel that forgets its size is not worth an error dialog.
+    })
+  }, 400)
+}
 
 figma.on('selectionchange', () => {
   post({ type: 'SELECTION', frames: currentSelection() })
@@ -90,7 +116,11 @@ async function resolveNode(frameId: string): Promise<AnalysableNode> {
   return node
 }
 
-async function generate(frameIds: string[], settings: Settings): Promise<void> {
+/**
+ * The analysis settings are not read here — they belong to the iframe realm,
+ * which does the rendering. The main thread only exports, places and persists.
+ */
+async function generate(frameIds: string[]): Promise<void> {
   cancelled = false
   running = true
   const wrappers: SceneNode[] = []
@@ -119,7 +149,7 @@ async function generate(frameIds: string[], settings: Settings): Promise<void> {
       }
 
       try {
-        const exported = await exportFrame(node, settings.exportScale)
+        const exported = await exportFrame(node)
         const tree = collectSignals(node)
 
         post({
@@ -228,7 +258,7 @@ figma.ui.onmessage = (message: UiToMain): void => {
           } catch {
             // Persisting settings is best effort — never block a run for it.
           }
-          await generate(frames, message.config.settings)
+          await generate(frames)
           break
         }
 
@@ -271,6 +301,13 @@ figma.ui.onmessage = (message: UiToMain): void => {
           }
           figma.currentPage.selection = nodes
           figma.viewport.scrollAndZoomIntoView(nodes)
+          break
+        }
+
+        case 'RESIZE': {
+          const size = normalisePanelSize(message.size)
+          figma.ui.resize(size.width, size.height)
+          rememberPanelSize(size)
           break
         }
 

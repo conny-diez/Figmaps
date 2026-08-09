@@ -1,5 +1,5 @@
 /**
- * Diagnose — zwei Versuche zur Frage, woher die Vorhersagekraft von FigMaps 1.0
+ * Diagnose — zwei Versuche zur Frage, woher die Vorhersagekraft von Figmaps 1.0
  * eigentlich kommt.
  *
  * **Kein Tuning.** Es wird nichts gespeichert, nichts ausgeliefert und keine

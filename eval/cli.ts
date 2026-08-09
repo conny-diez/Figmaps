@@ -588,7 +588,7 @@ async function runDiagnose(args: Args): Promise<number> {
   const width = 14
   console.log('Versuch 1 — Prior-Gewichtung')
   console.log(`${'Prior'.padEnd(width)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}`)
-  console.log(`${'FigMaps 1.0'.padEnd(width)}${METRIC_IDS.map((id) => result.engineV1[id].toFixed(3).padStart(10)).join('')}`)
+  console.log(`${'Figmaps 1.0'.padEnd(width)}${METRIC_IDS.map((id) => result.engineV1[id].toFixed(3).padStart(10)).join('')}`)
   for (const entry of result.priorSweep) {
     console.log(
       `${entry.weight.toFixed(1).padEnd(width)}${METRIC_IDS.map((id) => entry.mean[id].toFixed(3).padStart(10)).join('')}`,
@@ -611,7 +611,7 @@ async function runDiagnose(args: Args): Promise<number> {
     )
   }
   console.log('')
-  console.log(`FigMaps schlägt die Mean Map auf ${result.winCount} von ${result.sampleCount} Bildern.`)
+  console.log(`Figmaps schlägt die Mean Map auf ${result.winCount} von ${result.sampleCount} Bildern.`)
 
   // Contact sheet of the winners — what do these screens have in common?
   const reportPath = str(args, 'report', `out/diagnose-${setName}.md`)

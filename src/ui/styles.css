@@ -1,4 +1,4 @@
-/* FigMaps panel skin — compact variant.
+/* Figmaps panel skin — compact variant.
  *
  * The panel ships its own fixed dark theme, so the Figma `--figma-color-*`
  * variables are deliberately not used any more.
@@ -286,23 +286,6 @@ body {
   font-family: var(--mono);
   font-size: 9.5px;
   opacity: 0.75;
-}
-
-/* Compact variant — export scale. */
-.segmented--sm {
-  width: 88px;
-  border-radius: 6px;
-}
-
-.segmented--sm .segmented__thumb {
-  border-radius: 4px;
-}
-
-.segmented--sm button {
-  padding: 4px 0;
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 400;
 }
 
 /* ------------------------------------------------------------------ select */
@@ -619,14 +602,6 @@ body {
 .slider input[type="range"]:disabled {
   cursor: not-allowed;
   opacity: 0.55;
-}
-
-/* Label + control on one row — export scale. */
-.control-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
 
 .hint {
@@ -974,4 +949,39 @@ body {
   line-height: 1.45;
   color: var(--text-ghost);
   text-wrap: pretty;
+}
+
+/* ----------------------------------------------------------------- resizer */
+
+/* Sits over the footer's bottom-right corner. `touch-action: none` is what
+ * makes pointer capture deliver a continuous drag instead of a scroll gesture. */
+.resizer {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-rank);
+  cursor: nwse-resize;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.resizer:hover,
+.resizer:focus-visible {
+  color: var(--accent);
+}
+
+.resizer:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* The footer text must not run under the grip. */
+.app__footer {
+  padding-right: 18px;
 }

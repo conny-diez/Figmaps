@@ -103,7 +103,6 @@ export type Settings = {
   overlayOpacity: number
   /** Focusmap percentile threshold, 60–95. */
   focusThreshold: number
-  exportScale: 1 | 2
   /** Epic D — viewing-duration profile. Only shipped profiles are offered. */
   profile: ProfileId
   /** Which location prior to use; `auto` derives it from the frame geometry. */
@@ -119,10 +118,39 @@ export const DEFAULT_SETTINGS: Settings = {
   maps: { heat: true, click: true, focus: true },
   overlayOpacity: 65,
   focusThreshold: 80,
-  exportScale: 2,
   profile: DEFAULT_PROFILE,
   uiType: 'auto',
   viewportHeight: null,
+}
+
+/**
+ * Panel geometry in CSS pixels, as `figma.ui.resize` takes it.
+ *
+ * Kept out of `Settings` on purpose: the size is a property of the window, not
+ * of the analysis, and it is written on every frame of a resize drag — mixing
+ * it into the settings record would rewrite the analysis config hundreds of
+ * times per drag.
+ */
+export type PanelSize = { width: number; height: number }
+
+/**
+ * The default is the compact panel of the redesign. `minWidth` is the width the
+ * layout was drawn for — the map rows truncate rather than wrap, so narrower
+ * would cut labels off. The maxima only exist so a stray pointer event cannot
+ * produce an absurd window; Figma clamps to the viewport on top of this.
+ */
+export const PANEL_SIZE = {
+  defaultWidth: 320,
+  defaultHeight: 680,
+  minWidth: 320,
+  maxWidth: 720,
+  minHeight: 420,
+  maxHeight: 2400,
+} as const
+
+export const DEFAULT_PANEL_SIZE: PanelSize = {
+  width: PANEL_SIZE.defaultWidth,
+  height: PANEL_SIZE.defaultHeight,
 }
 
 export type GenerateConfig = {
@@ -208,6 +236,8 @@ export type UiToMain =
   | { type: 'SAVE_SETTINGS'; settings: Settings }
   /** C-3 — "Im Canvas zeigen": select the nodes and scroll them into view. */
   | { type: 'REVEAL_NODES'; nodeIds: string[] }
+  /** Sent continuously while the corner grip is dragged. */
+  | { type: 'RESIZE'; size: PanelSize }
 
 // ---------------------------------------------------------------------------
 // Main -> UI

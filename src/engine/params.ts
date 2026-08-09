@@ -32,7 +32,7 @@ export type PostParams = {
 /**
  * How the position prior is obtained.
  *
- * `analytic` is the F-pattern bell of `features/prior.ts` (FigMaps 1.0).
+ * `analytic` is the F-pattern bell of `features/prior.ts` (Figmaps 1.0).
  * `data` is a small greyscale map averaged over a reference set — measurably
  * better, but it makes the prediction dependent on that reference set and
  * carries its licence (see `NOTICE.md`).
@@ -92,7 +92,7 @@ function cloneParams(params: EngineParams): EngineParams {
   }
 }
 
-/** The configuration FigMaps 1.0 shipped — the frozen reference of A-4. */
+/** The configuration Figmaps 1.0 shipped — the frozen reference of A-4. */
 export const HEURISTIC_V1: EngineParams = {
   weights: { ...ENGINE_CONFIG.weights },
   prior: { ...ENGINE_CONFIG.prior },
@@ -142,7 +142,7 @@ const READ_HYPOTHESIS = withWeights(HEURISTIC_V1, {
 
 const BASE_CONFIG: EngineConfigEntry = {
   id: 'heuristic-v1',
-  label: 'FigMaps 1.0 (heuristisch, handkalibriert)',
+  label: 'Figmaps 1.0 (heuristisch, handkalibriert)',
   profiles: {
     glance: GLANCE_HYPOTHESIS,
     scan: HEURISTIC_V1,
@@ -193,7 +193,7 @@ const HYBRID_PARAMS: EngineParams = {
 
 const HYBRID_CONFIG: EngineConfigEntry = {
   id: 'hybrid-v1',
-  label: 'FigMaps 1.1 (datengeschätzter Ortsprior + Bildanalyse)',
+  label: 'Figmaps 1.1 (datengeschätzter Ortsprior + Bildanalyse)',
   // Identical parameters on purpose: Epic D turned out to be a *prior* effect,
   // not a weighting one. The profile selects which viewing duration the
   // location prior was estimated from (see `priors/index.ts`), the feature

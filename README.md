@@ -1,6 +1,6 @@
-<img src="assets/logo.svg" width="72" height="72" alt="FigMaps">
+<img src="assets/logo.svg" width="72" height="72" alt="Figmaps">
 
-# FigMaps — Figma Plugin
+# Figmaps — Figma Plugin
 
 **Version 1.1** — „Messbar und handlungsleitend"
 
@@ -81,12 +81,23 @@ Community vergibt Figma eine echte ID, die dann eingetragen wird.
 1. Frame, Component, Instance, Section oder Group auswählen (Mehrfachauswahl = Batch)
 2. Maps an-/abwählen, Overlay-Deckkraft, Focus-Schwelle und ggf. Viewport-Höhe einstellen
 3. **Maps erstellen** — Ergebnis landet in einem neuen Wrapper-Frame
-   `[FigMaps] {Frame-Name} — {Zeitstempel}` rechts daneben
+   `[Figmaps] {Frame-Name} — {Zeitstempel}` rechts daneben
 4. Befunde unter dem Ergebnis lesen; **Im Canvas zeigen** springt auf die
    betroffene Ebene und wählt sie aus
 
 Wiederholte Läufe erzeugen immer einen **neuen** Wrapper und überschreiben nichts.
 Frames mit einer Kante unter 200 px werden abgelehnt.
+
+Das Panel öffnet 320 × 680 und lässt sich am **Griff unten rechts** ziehen —
+320–720 px breit, 420–2400 px hoch. Doppelklick auf den Griff stellt die
+Ausgangsgröße wieder her, Pfeiltasten verstellen sie bei Tastaturfokus in
+24-px-Schritten. Die zuletzt eingestellte Größe wird in `clientStorage`
+gemerkt und beim nächsten Öffnen wiederhergestellt.
+
+Die **Export-Skalierung ist fest auf 2×** — die Engine ist bei dieser
+Abtastdichte gemessen, und 1× verliert genau die Kanten- und Textdetails, aus
+denen die Merkmale bestehen. Nur die technischen Grenzen unten schalten
+automatisch herunter.
 
 ### Lange Frames (Epic B)
 
@@ -178,7 +189,7 @@ src/
 │  └─ legend.ts            Legende + zweizeilige Fußzeile (Prior, Dauer, CC BY)
 └─ ui/
    ├─ pipeline.ts          iframe-Pipeline: PNG rein, Map-PNGs raus
-   ├─ logo.tsx             FigMaps-Wortmarke als Inline-SVG
+   ├─ logo.tsx             Figmaps-Wortmarke als Inline-SVG
    └─ styles.css
 
 eval/                      Epic A — läuft offline in Node
@@ -276,7 +287,7 @@ Laufen immer mit:
    exakt AUC 0,5 / CC 0 / NSS 0 liefern. Tut sie das auf echten Daten nicht,
    bricht `npm run eval` ab und schreibt keinen Report — dann stimmt der
    Import, nicht die Engine.
-4. **FigMaps 1.0** — die ausgelieferte Konfiguration, eingefroren.
+4. **Figmaps 1.0** — die ausgelieferte Konfiguration, eingefroren.
 
 Der Report vergleicht gegen die **stärkste** dieser Baselines je Metrik und
 weist zusätzlich aus, in wie vielen Einzelbildern die Engine die Mean Map
@@ -340,7 +351,7 @@ Je 27 Bilder (Test-Split des Datensatzes), Betrachtungsdauer 3 s:
 | Engine | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
 |---|---:|---:|---:|---:|
 | **Mean Map** (Ø GT, 468 Tuning-Bilder) | **0,787** | **0,450** | **1,116** | **1,111** |
-| FigMaps 1.0 | 0,718 | 0,298 | 0,760 | 1,401 |
+| Figmaps 1.0 | 0,718 | 0,298 | 0,760 | 1,401 |
 | Center-Bias (bester σ je Metrik) | 0,592 | 0,119 | 0,324 | 1,624 |
 | Uniform | 0,500 | 0,000 | 0,000 | 1,673 |
 
@@ -349,7 +360,7 @@ Je 27 Bilder (Test-Split des Datensatzes), Betrachtungsdauer 3 s:
 | Engine | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
 |---|---:|---:|---:|---:|
 | **Mean Map** (Ø GT, 468 Tuning-Bilder) | **0,782** | **0,518** | **1,096** | **0,833** |
-| FigMaps 1.0 | 0,746 | 0,404 | 0,900 | 1,059 |
+| Figmaps 1.0 | 0,746 | 0,404 | 0,900 | 1,059 |
 | Center-Bias (bester σ je Metrik) | 0,545 | 0,090 | 0,157 | 1,456 |
 | Uniform | 0,500 | 0,000 | 0,000 | 1,349 |
 
@@ -534,13 +545,13 @@ Einmalig gemessen, nachdem alles auf dem Tuning-Split entwickelt war:
 |---|---:|---:|---:|---:|
 | **hybrid-v1** | **0,801** | **0,472** | **1,175** | 1,124 |
 | Mean Map | 0,787 | 0,450 | 1,116 | **1,111** |
-| FigMaps 1.0 | 0,718 | 0,298 | 0,760 | 1,401 |
+| Figmaps 1.0 | 0,718 | 0,298 | 0,760 | 1,401 |
 
 | Mobile UI | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ |
 |---|---:|---:|---:|---:|
 | **hybrid-v1** | **0,794** | **0,547** | **1,171** | 0,834 |
 | Mean Map | 0,782 | 0,518 | 1,096 | **0,833** |
-| FigMaps 1.0 | 0,746 | 0,404 | 0,900 | 1,059 |
+| Figmaps 1.0 | 0,746 | 0,404 | 0,900 | 1,059 |
 
 Auf diesen 27 Bildern schlägt `hybrid-v1` die Mean Map in AUC, CC und NSS
 deutlich, bei KL liegt es gleichauf bzw. minimal darunter. **27 Bilder tragen
@@ -585,7 +596,7 @@ Jedes Bild wird damit out-of-sample bewertet.
 |---|---|---|---|---|
 | **hybrid-v1** | **0,781** ± 0,064 | **0,444** ± 0,134 | **1,054** ± 0,326 | **1,080** ± 0,253 |
 | Mean Map | 0,768 ± 0,069 | 0,422 ± 0,146 | 0,997 ± 0,347 | 1,093 ± 0,310 |
-| FigMaps 1.0 | 0,688 ± 0,114 | 0,276 ± 0,173 | 0,668 ± 0,428 | 1,355 ± 0,297 |
+| Figmaps 1.0 | 0,688 ± 0,114 | 0,276 ± 0,173 | 0,668 ± 0,428 | 1,355 ± 0,297 |
 | Center-Bias | 0,604 ± 0,095 | 0,133 ± 0,154 | 0,343 ± 0,357 | 1,562 ± 0,344 |
 | Uniform | 0,500 ± 0,000 | 0,000 ± 0,000 | 0,000 ± 0,000 | 1,583 ± 0,275 |
 
@@ -595,7 +606,7 @@ Jedes Bild wird damit out-of-sample bewertet.
 |---|---|---|---|---|
 | **hybrid-v1** | **0,780** ± 0,070 | **0,546** ± 0,171 | **1,082** ± 0,374 | **0,777** ± 0,220 |
 | Mean Map | 0,765 ± 0,076 | 0,508 ± 0,189 | 1,001 ± 0,391 | 0,798 ± 0,279 |
-| FigMaps 1.0 | 0,743 ± 0,075 | 0,439 ± 0,130 | 0,885 ± 0,317 | 0,969 ± 0,223 |
+| Figmaps 1.0 | 0,743 ± 0,075 | 0,439 ± 0,130 | 0,885 ± 0,317 | 0,969 ± 0,223 |
 | Center-Bias | 0,557 ± 0,135 | 0,103 ± 0,263 | 0,192 ± 0,499 | 1,348 ± 0,491 |
 | Uniform | 0,500 ± 0,000 | 0,000 ± 0,000 | 0,000 ± 0,000 | 1,264 ± 0,287 |
 
@@ -669,9 +680,9 @@ Bemerkenswert bleibt die Form: auf Webpage ist **mittlere** Abweichung am
 nützlichsten. Sehr hohe Abweichung heißt meist, dass die Bildanalyse schlicht
 danebenliegt. Das ist eine Hypothese für später, kein Feature.
 
-### Befund zu FigMaps 1.0: S-2 ist nicht erfüllt
+### Befund zu Figmaps 1.0: S-2 ist nicht erfüllt
 
-FigMaps 1.0 schlägt den Center-Bias **deutlich** — in beiden Kategorien, in
+Figmaps 1.0 schlägt den Center-Bias **deutlich** — in beiden Kategorien, in
 allen vier Metriken, auch gegen dessen beste Breite. Gegen die **Mean Map**
 verliert die Engine jedoch ebenso deutlich, ebenfalls in beiden Kategorien und
 allen vier Metriken.
@@ -782,14 +793,14 @@ normiert). α = 0 ist exakt die Mean Map:
 | α | 0 | 0,1 | 0,2 | 0,3 | 0,4 | **0,5** | 0,75 | 1,5 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | + Pixel-Features | 0,421 | 0,431 | 0,439 | 0,444 | 0,447 | **0,448** | 0,445 | 0,420 |
-| + FigMaps 1.0 | 0,421 | 0,429 | 0,434 | 0,438 | 0,440 | 0,441 | 0,441 | 0,431 |
+| + Figmaps 1.0 | 0,421 | 0,429 | 0,434 | 0,438 | 0,440 | 0,441 | 0,441 | 0,431 |
 
 **Mobile UI** (CC)
 
 | α | 0 | 0,1 | 0,2 | 0,3 | 0,4 | **0,5** | 0,75 | 1,5 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | + Pixel-Features | 0,507 | 0,524 | 0,537 | 0,545 | 0,550 | **0,551** | 0,546 | 0,506 |
-| + FigMaps 1.0 | 0,507 | 0,519 | 0,529 | 0,535 | 0,540 | 0,543 | 0,545 | 0,535 |
+| + Figmaps 1.0 | 0,507 | 0,519 | 0,529 | 0,535 | 0,540 | 0,543 | 0,545 | 0,535 |
 
 Der Hybrid ist in **allen vier Metriken** besser als die Mean Map allein, in
 beiden Kategorien, über den gesamten Bereich. Bestwerte bei α ≈ 0,5:
@@ -809,7 +820,7 @@ komplette 1.0-Vorhersage beizumischen.** Deren eigener Positions-Prior ist neben
 der Mean Map redundant und, wie Versuch 1 zeigt, schlechter — er verwässert den
 Beitrag der Bildanalyse.
 
-### Wo FigMaps die Mean Map schlägt
+### Wo Figmaps die Mean Map schlägt
 
 115 von 468 Bildern (25 %) bei Webpage, 166 von 468 (35 %) bei Mobile UI. Der
 Unterschied zwischen Gewinnern und Verlierern ist eindeutig und in beiden
@@ -1394,7 +1405,7 @@ Ortsprior: ein exportiertes PNG verlässt Figma ohne das Panel, und die Lizenz
 hängt am abgeleiteten Asset, nicht an der Oberfläche, die es erzeugt hat.
 
 Die Fußzeile ist dafür **zweizeilig**. Bis 1.1 stand der Disclaimer
-linksbündig und „FigMaps · 1.1.0 · Ortsprior: …" rechtsbündig auf derselben
+linksbündig und „Figmaps · 1.1.0 · Ortsprior: …" rechtsbündig auf derselben
 Zeile; auf einem Telefon-Frame (390 × 844 bei 2×, also 780 px breit) braucht
 allein der Disclaimer rund 620 px, und der rechte String wurde darüber gemalt.
 Deshalb las sich die Ortsprior-Angabe als „fehlt". Jetzt trägt Zeile 1
@@ -1465,6 +1476,9 @@ mit `npm run eval` vergleichbar.
 
 Konsequenz in `src/figma/export.ts` und `src/ui/pipeline.ts`:
 
+Der Export läuft immer mit 2×; die Tabelle beschreibt, wann die API-Grenze das
+erzwungenermaßen unterläuft.
+
 | Frame | Export-Constraint | Hinweis im UI |
 |---|---|---|
 | längere Kante × 2 ≤ 4096 | `SCALE 2` | — |
@@ -1532,7 +1546,7 @@ App durchzugehen:
 | 2 | Frame auswählen | Name + Dimensionen erscheinen, Button aktiv |
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |
-| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[FigMaps] … — …` rechts daneben, Viewport springt darauf, `3 Maps erstellt` |
+| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps] … — …` rechts daneben, Viewport springt darauf, `3 Maps erstellt` |
 | 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt, Legende + Fußzeile mit `hybrid-v1` vorhanden |
 | 7 | Clickmap begutachten | Ranking im Panel; primärer CTA auf Platz 1 (mind. 2 von 3 Referenz-Screens) |
 | 8 | Focus-Schwelle 60 → 95, neu erzeugen | Sichtbare klare Fläche wird monoton kleiner |
@@ -1540,9 +1554,10 @@ App durchzugehen:
 | 10 | Frame ohne benannte Buttons/Reactions | Hinweis „Keine interaktiven Elemente erkannt…", Heat- und Focusmap entstehen trotzdem |
 | 11 | 5 Frames auswählen, erzeugen | „Frame 2 von 5", je Frame ein eigener Wrapper |
 | 12 | Während des Batches **Abbrechen** | Lauf stoppt, bereits erzeugte Wrapper bleiben, Notify „Abgebrochen" |
-| 13 | Plugin schließen und neu öffnen | Slider- und Checkbox-Einstellungen sind erhalten |
+| 13 | Plugin schließen und neu öffnen | Slider- und Checkbox-Einstellungen sowie die Panelgröße sind erhalten |
 | 14 | Frame mit 6000 px Höhe | Hinweis auf Downscale, Maps entstehen, kein Absturz |
 | 15 | Zweiter Lauf auf demselben Frame | Neuer Wrapper, der erste bleibt unverändert |
+| 15a | Griff unten rechts über den ganzen Bildschirm ziehen | Panel folgt dem Cursor ohne Sprung, stoppt bei 720 × 2400, Layout bleibt intakt; Doppelklick stellt 320 × 680 her |
 
 Zusätzlich für 1.1 (M4, M5):
 
@@ -1561,7 +1576,7 @@ Zusätzlich für 1.1 (M4, M5):
 
 ## Offene Entscheidungen (PRD §11)
 
-1. ~~**Plugin-Name**~~ — entschieden: `FigMaps`. Das Logo liegt als
+1. ~~**Plugin-Name**~~ — entschieden: `Figmaps`. Das Logo liegt als
    `assets/logo.svg` und wird beim Community-Publishing als Plugin-Icon
    hochgeladen (die `manifest.json` hat kein Icon-Feld).
 2. **`positionPrior` für RTL** — implementiert als Schalter
@@ -1627,7 +1642,7 @@ Zusätzlich für 1.1 (M4, M5):
 5. **Textabnahme der Findings (M5)** — C-1 verlangt ausdrücklich, dass keine
    Regel feuert, deren Text nicht von einem Menschen bestätigt wurde.
 6. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
-   für FigMaps nicht die relevanten UI-Typen.
+   für Figmaps nicht die relevanten UI-Typen.
 
 ## Nicht in 1.1
 

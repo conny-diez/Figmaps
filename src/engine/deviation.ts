@@ -6,7 +6,7 @@
  * üblicherweise liegt) und der Bildanalyse-Map (was auf diesem Screen
  * auffällt). **Keine Ground Truth nötig.**
  *
- * Der Hintergrund ist ein Befund der Diagnose: FigMaps schlägt den reinen
+ * Der Hintergrund ist ein Befund der Diagnose: Figmaps schlägt den reinen
  * Ortsdurchschnitt fast ausschließlich auf Screens, deren Aufmerksamkeit
  * *nicht* dort liegt, wo sie üblicherweise liegt — Hero-dominierte Seiten mit
  * dem Blickfang in der Bildmitte statt in der Kopfzeile. Wenn sich das an der

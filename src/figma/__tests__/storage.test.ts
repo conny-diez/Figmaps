@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { ENGINE_CONFIG } from '../../engine/config'
 import { DEFAULT_PROFILE, PROFILE_IDS, shippedProfiles } from '../../engine/params'
-import { DEFAULT_SETTINGS } from '../../messages'
-import { normaliseSettings } from '../storage'
+import { DEFAULT_PANEL_SIZE, DEFAULT_SETTINGS, PANEL_SIZE } from '../../messages'
+import { normalisePanelSize, normaliseSettings } from '../storage'
 
 describe('normaliseSettings', () => {
   it('falls back to the defaults for junk input', () => {
@@ -18,9 +18,8 @@ describe('normaliseSettings', () => {
     expect(normaliseSettings({ focusThreshold: 99 }).focusThreshold).toBe(ENGINE_CONFIG.focus.maxPercentile)
   })
 
-  it('only accepts 1x and 2x export scales', () => {
-    expect(normaliseSettings({ exportScale: 1 }).exportScale).toBe(1)
-    expect(normaliseSettings({ exportScale: 4 as unknown as 2 }).exportScale).toBe(2)
+  it('drops a stored export scale — the export is fixed at 2x', () => {
+    expect(normaliseSettings({ exportScale: 1 })).toEqual(DEFAULT_SETTINGS)
   })
 
   it('keeps individually toggled maps', () => {
@@ -56,5 +55,36 @@ describe('normaliseSettings', () => {
       expect(normaliseSettings({ viewportHeight: 10 }).viewportHeight).toBe(200)
       expect(normaliseSettings({ viewportHeight: 99_999 }).viewportHeight).toBe(4000)
     })
+  })
+})
+
+describe('normalisePanelSize', () => {
+  it('falls back to the default panel for junk input', () => {
+    expect(normalisePanelSize(undefined)).toEqual(DEFAULT_PANEL_SIZE)
+    expect(normalisePanelSize('nope')).toEqual(DEFAULT_PANEL_SIZE)
+    expect(normalisePanelSize({ width: Number.NaN, height: 'x' })).toEqual(DEFAULT_PANEL_SIZE)
+  })
+
+  it('keeps a size inside the limits', () => {
+    expect(normalisePanelSize({ width: 480, height: 900 })).toEqual({ width: 480, height: 900 })
+  })
+
+  it('clamps to the limits — figma.ui.resize throws on nonsense', () => {
+    expect(normalisePanelSize({ width: 10, height: 10 })).toEqual({
+      width: PANEL_SIZE.minWidth,
+      height: PANEL_SIZE.minHeight,
+    })
+    expect(normalisePanelSize({ width: -400, height: -1 })).toEqual({
+      width: PANEL_SIZE.minWidth,
+      height: PANEL_SIZE.minHeight,
+    })
+    expect(normalisePanelSize({ width: 99_999, height: 99_999 })).toEqual({
+      width: PANEL_SIZE.maxWidth,
+      height: PANEL_SIZE.maxHeight,
+    })
+  })
+
+  it('rounds — a fractional size from a pointer event is not a valid window size', () => {
+    expect(normalisePanelSize({ width: 480.6, height: 700.4 })).toEqual({ width: 481, height: 700 })
   })
 })

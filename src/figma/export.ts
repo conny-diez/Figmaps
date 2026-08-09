@@ -16,7 +16,15 @@ export type ExportResult = {
   notices: string[]
 }
 
-export async function exportFrame(node: AnalysableNode, requestedScale: 1 | 2): Promise<ExportResult> {
+/**
+ * Fixed at 2x — the engine is measured at this sampling density, and a 1x
+ * export loses edge and text detail the features depend on. The fallbacks below
+ * are technical limits, not a choice.
+ */
+const EXPORT_SCALE = 2
+
+export async function exportFrame(node: AnalysableNode): Promise<ExportResult> {
+  const requestedScale = EXPORT_SCALE
   const maxEdge = ENGINE_CONFIG.render.maxImageEdge
   const longerEdge = Math.max(node.width, node.height)
   const notices: string[] = []

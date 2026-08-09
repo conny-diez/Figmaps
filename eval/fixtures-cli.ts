@@ -246,7 +246,7 @@ function generateSynthetic(counts: { tuning: number; test: number; quick: number
   process.stdout.write('\r              \r')
 
   writeSet(name, {
-    name: 'FigMaps synthetic',
+    name: 'Figmaps synthetic',
     source: 'generiert von npm run eval:fixtures -- --synthetic',
     license: 'keine — vollständig generiert',
     durations: [3],

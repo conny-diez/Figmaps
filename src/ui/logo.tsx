@@ -1,5 +1,5 @@
 /**
- * FigMaps product mark — inline SVG so the panel needs no network access and no
+ * Figmaps product mark — inline SVG so the panel needs no network access and no
  * separate asset in the bundle. Source of truth: `assets/logo.svg` (the dark
  * variant; `assets/logo-light.svg` is the same mark for light backgrounds).
  */
@@ -15,7 +15,7 @@ export function Logo({ size = 20 }: { size?: number }): preact.JSX.Element {
       height={size}
       viewBox="0 0 128 128"
       role="img"
-      aria-label="FigMaps"
+      aria-label="Figmaps"
     >
       <defs>
         <clipPath id={CLIP_ID}>
