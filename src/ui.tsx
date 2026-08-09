@@ -58,8 +58,116 @@ const PRIOR_ATTRIBUTION = shipsPriorAsset()
  */
 const AVAILABLE_UI_TYPES = availablePriorCategories()
 
+/** Titlebar state chip — purely a readout of `Phase`. */
+const STATUS_CHIP: Record<Phase, { label: string; tone: string }> = {
+  empty: { label: 'IDLE', tone: 'idle' },
+  ready: { label: 'READY', tone: 'ready' },
+  working: { label: 'BUSY', tone: 'busy' },
+  done: { label: 'DONE', tone: 'done' },
+  error: { label: 'ERROR', tone: 'error' },
+}
+
+/**
+ * Splits a label of the form `Blick (1 s)` so the parenthetical can be set in
+ * the mono face, as the design does. Purely typographic — the words are the
+ * ones from `PROFILE_LABELS`.
+ */
+function splitLabel(label: string): { main: string; sub: string | null } {
+  const match = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(label)
+  return match ? { main: match[1], sub: match[2] } : { main: label, sub: null }
+}
+
+/** Position of a range value on its track, in percent — drives `--fill`. */
+function fillPercent(value: number, min: number, max: number): string {
+  if (max <= min) return '0%'
+  const clamped = Math.min(Math.max(value, min), max)
+  return `${((clamped - min) / (max - min)) * 100}%`
+}
+
 function send(message: UiToMain): void {
   parent.postMessage({ pluginMessage: message }, '*')
+}
+
+type DropdownOption = { value: string; label: string }
+
+/**
+ * The design specifies a custom listbox (amber dot, rotating caret, floating
+ * panel) that a native `<select>` cannot express. Same options and the same
+ * change callback as the `<select>` it replaces.
+ */
+function Dropdown({
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  value: string
+  options: DropdownOption[]
+  disabled: boolean
+  onChange: (value: string) => void
+}): preact.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (disabled) setOpen(false)
+  }, [disabled])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const current = options.find((option) => option.value === value)
+
+  return (
+    <div class="select" ref={rootRef}>
+      <button
+        type="button"
+        class="select__trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span class="select__dot" aria-hidden="true" />
+        <span class="select__value">{current?.label ?? ''}</span>
+        <span class="select__caret" aria-hidden="true">
+          ▼
+        </span>
+      </button>
+      {open && (
+        <div class="select__menu" role="listbox">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              class="select__option"
+              onClick={() => {
+                onChange(option.value)
+                setOpen(false)
+              }}
+            >
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function App(): preact.JSX.Element {
@@ -187,6 +295,7 @@ function App(): preact.JSX.Element {
     [],
   )
 
+  const activeMapCount = SELECTABLE_MAP_KINDS.filter((kind) => settings.maps[kind]).length
   const anyMapSelected = settings.maps.heat || settings.maps.click || settings.maps.focus
   const canGenerate = phase !== 'working' && usableFrames.length > 0 && anyMapSelected
 
@@ -221,38 +330,61 @@ function App(): preact.JSX.Element {
     outcome.warnings.map((warning) => (outcomes.length > 1 ? `${outcome.frameName}: ${warning}` : warning)),
   )
 
+  const status = STATUS_CHIP[phase]
+  const profileIndex = Math.max(0, AVAILABLE_PROFILES.indexOf(settings.profile))
+  const percentDone = Math.round(progress.fraction * 100)
+
   return (
     <div class="app">
+      <div class="app__glow" aria-hidden="true" />
+
       <header class="app__header">
-        <Logo />
-        <div>
+        <Logo size={26} />
+        <div class="app__titles">
           <h1 class="app__title">FigMaps</h1>
           <p class="app__subtitle">Engine {ENGINE_VERSION}</p>
+        </div>
+        <div class={`statuspill statuspill--${status.tone}`}>
+          <span class="statuspill__dot" aria-hidden="true" />
+          <span class="statuspill__label">{status.label}</span>
         </div>
       </header>
 
       <div class="app__body">
         <section class="section">
-          <p class="section__label">Selection</p>
+          <div class="section__head">
+            <p class="section__label">Selection</p>
+            <span class={`section__count${usableFrames.length === 0 ? ' section__count--empty' : ''}`}>
+              {usableFrames.length} {usableFrames.length === 1 ? 'FRAME' : 'FRAMES'}
+            </span>
+          </div>
           {frames.length === 0 ? (
-            <div class="selection selection--empty">Wähle einen Frame aus.</div>
+            <div class="selection selection--empty">
+              <span class="selection__icon" aria-hidden="true" />
+              <div class="selection__text">
+                <div class="selection__name">Wähle einen Frame aus.</div>
+              </div>
+            </div>
           ) : (
-            <div class="selection">
-              {usableFrames.length === 1 ? (
-                <>
-                  <div class="selection__name">{usableFrames[0].name}</div>
-                  <div class="selection__meta">
-                    {usableFrames[0].width} × {usableFrames[0].height}
-                  </div>
-                </>
-              ) : usableFrames.length > 1 ? (
-                <>
-                  <div class="selection__name">{usableFrames.length} Frames ausgewählt</div>
-                  <div class="selection__meta">Werden nacheinander verarbeitet</div>
-                </>
-              ) : (
-                <div class="selection--empty">Kein verwendbarer Frame ausgewählt.</div>
-              )}
+            <div class={`selection${usableFrames.length === 0 ? ' selection--empty' : ''}`}>
+              <span class="selection__icon" aria-hidden="true" />
+              <div class="selection__text">
+                {usableFrames.length === 1 ? (
+                  <>
+                    <div class="selection__name">{usableFrames[0].name}</div>
+                    <div class="selection__meta">
+                      {usableFrames[0].width} × {usableFrames[0].height}
+                    </div>
+                  </>
+                ) : usableFrames.length > 1 ? (
+                  <>
+                    <div class="selection__name">{usableFrames.length} Frames ausgewählt</div>
+                    <div class="selection__meta">Werden nacheinander verarbeitet</div>
+                  </>
+                ) : (
+                  <div class="selection__name">Kein verwendbarer Frame ausgewählt.</div>
+                )}
+              </div>
             </div>
           )}
           {tooSmallFrames.length > 0 && (
@@ -267,18 +399,29 @@ function App(): preact.JSX.Element {
         {AVAILABLE_PROFILES.length > 1 && (
           <section class="section">
             <p class="section__label">Betrachtungsdauer</p>
-            <div class="segmented">
-              {AVAILABLE_PROFILES.map((profile) => (
-                <button
-                  key={profile}
-                  type="button"
-                  aria-pressed={settings.profile === profile}
-                  disabled={phase === 'working'}
-                  onClick={() => patchSettings({ profile })}
-                >
-                  {PROFILE_LABELS[profile]}
-                </button>
-              ))}
+            <div
+              class="segmented"
+              style={{
+                '--seg-count': String(AVAILABLE_PROFILES.length),
+                '--seg-index': String(profileIndex),
+              }}
+            >
+              <span class="segmented__thumb" aria-hidden="true" />
+              {AVAILABLE_PROFILES.map((profile) => {
+                const { main, sub } = splitLabel(PROFILE_LABELS[profile])
+                return (
+                  <button
+                    key={profile}
+                    type="button"
+                    aria-pressed={settings.profile === profile}
+                    disabled={phase === 'working'}
+                    onClick={() => patchSettings({ profile })}
+                  >
+                    {main}
+                    {sub && <span class="segmented__sub"> {sub}</span>}
+                  </button>
+                )
+              })}
             </div>
           </section>
         )}
@@ -286,19 +429,15 @@ function App(): preact.JSX.Element {
         {PRIOR_ATTRIBUTION && AVAILABLE_UI_TYPES.length > 0 && (
           <section class="section">
             <p class="section__label">Art des Screens</p>
-            <select
-              class="select"
+            <Dropdown
               value={settings.uiType}
               disabled={phase === 'working'}
-              onChange={(event) => patchSettings({ uiType: event.currentTarget.value as Settings['uiType'] })}
-            >
-              <option value="auto">Automatisch erkennen</option>
-              {AVAILABLE_UI_TYPES.map((id) => (
-                <option key={id} value={id}>
-                  {PRIOR_ASSET_LABELS[id]}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: 'auto', label: 'Automatisch erkennen' },
+                ...AVAILABLE_UI_TYPES.map((id) => ({ value: id, label: PRIOR_ASSET_LABELS[id] })),
+              ]}
+              onChange={(uiType) => patchSettings({ uiType: uiType as Settings['uiType'] })}
+            />
             <p class="hint">
               {settings.uiType === 'auto'
                 ? 'Aus der Frame-Geometrie abgeleitet — unterscheidet Webseite und Mobile App zuverlässig, Desktop-Anwendung und Poster nicht.'
@@ -309,24 +448,30 @@ function App(): preact.JSX.Element {
 
         <section class="section">
           <p class="section__label">Maps</p>
-          {SELECTABLE_MAP_KINDS.map((kind) => (
-            <label class="checkbox" key={kind}>
-              <input
-                type="checkbox"
-                checked={settings.maps[kind]}
-                disabled={phase === 'working'}
-                onChange={(event) => toggleMap(kind, event.currentTarget.checked)}
-              />
-              <span>{MAP_LABELS[kind]}</span>
-            </label>
-          ))}
+          <div class="maplist">
+            {SELECTABLE_MAP_KINDS.map((kind) => (
+              <label class={`maptoggle${settings.maps[kind] ? ' is-on' : ''}`} key={kind}>
+                <input
+                  type="checkbox"
+                  checked={settings.maps[kind]}
+                  disabled={phase === 'working'}
+                  onChange={(event) => toggleMap(kind, event.currentTarget.checked)}
+                />
+                <span class="maptoggle__track" aria-hidden="true">
+                  <span class="maptoggle__knob" />
+                </span>
+                <span class="maptoggle__label">{MAP_LABELS[kind]}</span>
+                <span class={`maptoggle__swatch maptoggle__swatch--${kind}`} aria-hidden="true" />
+              </label>
+            ))}
+          </div>
           {!anyMapSelected && <div class="notice notice--warning">Wähle mindestens eine Map aus.</div>}
         </section>
 
-        <section class="section">
+        <section class="section section--sliders">
           <div class="slider">
             <div class="slider__head">
-              <span>Overlay-Deckkraft</span>
+              <span class="slider__name">Overlay-Deckkraft</span>
               <span class="slider__value">{settings.overlayOpacity} %</span>
             </div>
             <input
@@ -336,6 +481,7 @@ function App(): preact.JSX.Element {
               step={1}
               value={settings.overlayOpacity}
               disabled={phase === 'working'}
+              style={{ '--fill': fillPercent(settings.overlayOpacity, 0, 100) }}
               onInput={(event) =>
                 patchSettings({ overlayOpacity: Number(event.currentTarget.value) })
               }
@@ -344,7 +490,7 @@ function App(): preact.JSX.Element {
 
           <div class="slider">
             <div class="slider__head">
-              <span>Focus-Schwelle</span>
+              <span class="slider__name">Focus-Schwelle</span>
               <span class="slider__value">{settings.focusThreshold}. Perzentil</span>
             </div>
             <input
@@ -354,6 +500,13 @@ function App(): preact.JSX.Element {
               step={1}
               value={settings.focusThreshold}
               disabled={phase === 'working'}
+              style={{
+                '--fill': fillPercent(
+                  settings.focusThreshold,
+                  ENGINE_CONFIG.focus.minPercentile,
+                  ENGINE_CONFIG.focus.maxPercentile,
+                ),
+              }}
               onInput={(event) =>
                 patchSettings({ focusThreshold: Number(event.currentTarget.value) })
               }
@@ -362,7 +515,7 @@ function App(): preact.JSX.Element {
 
           <div class="slider">
             <div class="slider__head">
-              <span>Viewport-Höhe</span>
+              <span class="slider__name">Viewport-Höhe</span>
               <span class="slider__value">
                 {settings.viewportHeight === null ? 'automatisch' : `${settings.viewportHeight} px`}
               </span>
@@ -374,6 +527,13 @@ function App(): preact.JSX.Element {
               step={50}
               value={settings.viewportHeight ?? ENGINE_CONFIG.viewport.desktopHeight}
               disabled={phase === 'working'}
+              style={{
+                '--fill': fillPercent(
+                  settings.viewportHeight ?? ENGINE_CONFIG.viewport.desktopHeight,
+                  ENGINE_CONFIG.viewport.desktopHeight - 500,
+                  ENGINE_CONFIG.viewport.desktopHeight + 700,
+                ),
+              }}
               onInput={(event) => patchSettings({ viewportHeight: Number(event.currentTarget.value) })}
             />
             <p class="hint">
@@ -387,11 +547,13 @@ function App(): preact.JSX.Element {
             </p>
           </div>
 
-          <div class="slider">
-            <div class="slider__head">
-              <span>Export-Skalierung</span>
-            </div>
-            <div class="segmented">
+          <div class="control-row">
+            <span class="slider__name">Export-Skalierung</span>
+            <div
+              class="segmented segmented--sm"
+              style={{ '--seg-count': '2', '--seg-index': settings.exportScale === 1 ? '0' : '1' }}
+            >
+              <span class="segmented__thumb" aria-hidden="true" />
               {([1, 2] as const).map((scale) => (
                 <button
                   key={scale}
@@ -407,7 +569,7 @@ function App(): preact.JSX.Element {
           </div>
         </section>
 
-        <section class="section">
+        <section class="section section--cta">
           {phase === 'working' ? (
             <>
               <div class="status">
@@ -416,84 +578,22 @@ function App(): preact.JSX.Element {
                     ? `Frame ${progress.current} von ${progress.total}`
                     : 'Wird berechnet'}
                 </span>
-                <span>{Math.round(progress.fraction * 100)} %</span>
+                <span class="status__value">{percentDone} %</span>
               </div>
               <div class="progress">
-                <div class="progress__bar" style={{ width: `${Math.round(progress.fraction * 100)}%` }} />
+                <div class="progress__bar" style={{ width: `${percentDone}%` }} />
               </div>
-              <div class="status">
-                <span class="ranking__name">{progress.label}</span>
-              </div>
-              <button type="button" class="button button--secondary" onClick={cancel} style={{ marginTop: 8 }}>
-                Abbrechen
+              <div class="status__detail">{progress.label}</div>
+              <button type="button" class="button button--secondary" onClick={cancel}>
+                <span class="button__label">Abbrechen</span>
               </button>
             </>
           ) : (
             <button type="button" class="button" disabled={!canGenerate} onClick={start}>
-              Maps erstellen
+              <span class="button__sheen" aria-hidden="true" />
+              <span class="button__label">Maps erstellen</span>
+              {canGenerate && <span class="button__hint">{activeMapCount}×</span>}
             </button>
-          )}
-
-          {isFinished && (
-            <div style={{ marginTop: 10 }}>
-              <p class="section__label" style={{ marginBottom: 4 }}>
-                Ergebnis
-              </p>
-              <ul class="summary">
-                <li>
-                  {createdCount} {createdCount === 1 ? 'Map' : 'Maps'} für{' '}
-                  {outcomes.length === 1 ? '1 Frame' : `${outcomes.length} Frames`} erstellt
-                </li>
-                {segments?.segmented && (
-                  <li>
-                    In {segments.sectionCount} Abschnitten à {segments.viewportHeight} px analysiert, mit
-                    Above-the-fold-Map
-                  </li>
-                )}
-                {errors.length > 0 && <li>{errors.length} Frame(s) mit Fehlern</li>}
-              </ul>
-
-              {findings.length > 0 && (
-                <>
-                  <p class="section__label" style={{ margin: '10px 0 0' }}>
-                    Befunde
-                  </p>
-                  <ul class="findings">
-                    {findings.map((finding) => (
-                      <li key={finding.id} class={`findings__item findings__item--${finding.severity}`}>
-                        <span class="findings__severity">{SEVERITY_LABELS[finding.severity]}</span>
-                        <span class="findings__text">{finding.text}</span>
-                        {finding.nodeIds && finding.nodeIds.length > 0 && (
-                          <button
-                            type="button"
-                            class="linkbutton"
-                            onClick={() => reveal(finding.nodeIds ?? [])}
-                          >
-                            Im Canvas zeigen
-                          </button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-
-              {ranking.length > 0 && (
-                <>
-                  <p class="section__label" style={{ margin: '10px 0 0' }}>
-                    Klick-Ranking (vorhergesagt)
-                  </p>
-                  <ol class="ranking">
-                    {ranking.map((entry) => (
-                      <li key={entry.id}>
-                        <span class="ranking__name">{entry.name}</span>
-                        <span class="ranking__score">{Math.round(entry.score * 100)} %</span>
-                      </li>
-                    ))}
-                  </ol>
-                </>
-              )}
-            </div>
           )}
 
           {allWarnings.map((warning) => (
@@ -509,25 +609,96 @@ function App(): preact.JSX.Element {
           ))}
 
           {isFinished && errors.length > 0 && (
-            <button
-              type="button"
-              class="button button--secondary"
-              style={{ marginTop: 8 }}
-              disabled={!canGenerate}
-              onClick={start}
-            >
-              Erneut versuchen
+            <button type="button" class="button button--secondary" disabled={!canGenerate} onClick={start}>
+              <span class="button__label">Erneut versuchen</span>
             </button>
           )}
         </section>
+
+        {isFinished && (
+          <>
+            <section class="section">
+              <p class="section__label">Ergebnis</p>
+              <div class="result">
+                <span class="result__count">{createdCount}</span>
+                <div class="result__text">
+                  <span class="result__title">{createdCount === 1 ? 'Map erstellt' : 'Maps erstellt'}</span>
+                  <span class="result__meta">
+                    für {outcomes.length === 1 ? '1 Frame' : `${outcomes.length} Frames`} · {ENGINE_VERSION}
+                  </span>
+                </div>
+              </div>
+              {(segments?.segmented || errors.length > 0) && (
+                <ul class="summary">
+                  {segments?.segmented && (
+                    <li>
+                      In {segments.sectionCount} Abschnitten à {segments.viewportHeight} px analysiert, mit
+                      Above-the-fold-Map
+                    </li>
+                  )}
+                  {errors.length > 0 && <li>{errors.length} Frame(s) mit Fehlern</li>}
+                </ul>
+              )}
+            </section>
+
+            {findings.length > 0 && (
+              <section class="section section--tight">
+                <p class="section__label">Befunde</p>
+                <ul class="findings">
+                  {findings.map((finding) => (
+                    <li key={finding.id} class={`findings__item findings__item--${finding.severity}`}>
+                      <span class="findings__bar" aria-hidden="true" />
+                      <div class="findings__body">
+                        <span class="findings__severity">{SEVERITY_LABELS[finding.severity]}</span>
+                        <span class="findings__text">{finding.text}</span>
+                        {finding.nodeIds && finding.nodeIds.length > 0 && (
+                          <button
+                            type="button"
+                            class="linkbutton findings__link"
+                            onClick={() => reveal(finding.nodeIds ?? [])}
+                          >
+                            Im Canvas zeigen →
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {ranking.length > 0 && (
+              <section class="section section--tight">
+                <div class="section__head">
+                  <p class="section__label">Klick-Ranking</p>
+                  <span class="section__note">vorhergesagt</span>
+                </div>
+                <ol class="ranking">
+                  {ranking.map((entry, index) => (
+                    <li key={entry.id}>
+                      <span
+                        class="ranking__fill"
+                        aria-hidden="true"
+                        style={{ '--pct': `${Math.round(entry.score * 100)}%` }}
+                      />
+                      <span class="ranking__rank">{String(index + 1).padStart(2, '0')}</span>
+                      <span class="ranking__name">{entry.name}</span>
+                      <span class="ranking__score">{Math.round(entry.score * 100)} %</span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
+          </>
+        )}
       </div>
 
       <footer class="app__footer">
         <span class="disclaimer__icon" aria-hidden="true">
-          ⓘ
+          i
         </span>
         <div>
-          <span>
+          <span class="disclaimer__text">
             Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
             Nutzerverhalten.
           </span>

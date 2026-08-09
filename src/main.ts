@@ -23,8 +23,9 @@ import {
   type UiToMain,
 } from './messages'
 
-const UI_WIDTH = 320
-const UI_HEIGHT = 480
+// Panel size from the redesign.
+const UI_WIDTH = 400
+const UI_HEIGHT = 780
 
 /** Safety net so a crashed iframe cannot wedge the batch forever. */
 const PLACE_RESULT_TIMEOUT_MS = 180_000
