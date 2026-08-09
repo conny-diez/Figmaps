@@ -1528,7 +1528,7 @@ App durchzugehen:
 
 | # | Schritt | Erwartung |
 |---|---|---|
-| 1 | Plugin importieren, öffnen | Panel 400 × 780 erscheint, Empty State „Wähle einen Frame aus.", Button disabled |
+| 1 | Plugin importieren, öffnen | Panel 320 × 680 erscheint, Empty State „Wähle einen Frame aus.", Button disabled |
 | 2 | Frame auswählen | Name + Dimensionen erscheinen, Button aktiv |
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |

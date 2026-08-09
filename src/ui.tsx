@@ -58,15 +58,6 @@ const PRIOR_ATTRIBUTION = shipsPriorAsset()
  */
 const AVAILABLE_UI_TYPES = availablePriorCategories()
 
-/** Titlebar state chip — purely a readout of `Phase`. */
-const STATUS_CHIP: Record<Phase, { label: string; tone: string }> = {
-  empty: { label: 'IDLE', tone: 'idle' },
-  ready: { label: 'READY', tone: 'ready' },
-  working: { label: 'BUSY', tone: 'busy' },
-  done: { label: 'DONE', tone: 'done' },
-  error: { label: 'ERROR', tone: 'error' },
-}
-
 /**
  * Splits a label of the form `Blick (1 s)` so the parenthetical can be set in
  * the mono face, as the design does. Purely typographic — the words are the
@@ -141,7 +132,6 @@ function Dropdown({
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span class="select__dot" aria-hidden="true" />
         <span class="select__value">{current?.label ?? ''}</span>
         <span class="select__caret" aria-hidden="true">
           ▼
@@ -330,61 +320,42 @@ function App(): preact.JSX.Element {
     outcome.warnings.map((warning) => (outcomes.length > 1 ? `${outcome.frameName}: ${warning}` : warning)),
   )
 
-  const status = STATUS_CHIP[phase]
   const profileIndex = Math.max(0, AVAILABLE_PROFILES.indexOf(settings.profile))
   const percentDone = Math.round(progress.fraction * 100)
 
   return (
     <div class="app">
-      <div class="app__glow" aria-hidden="true" />
-
       <header class="app__header">
-        <Logo size={26} />
-        <div class="app__titles">
-          <h1 class="app__title">FigMaps</h1>
-          <p class="app__subtitle">Engine {ENGINE_VERSION}</p>
-        </div>
-        <div class={`statuspill statuspill--${status.tone}`}>
-          <span class="statuspill__dot" aria-hidden="true" />
-          <span class="statuspill__label">{status.label}</span>
-        </div>
+        <Logo size={18} />
+        <h1 class="app__title">FigMaps</h1>
+        <p class="app__subtitle">{ENGINE_VERSION}</p>
       </header>
 
       <div class="app__body">
         <section class="section">
-          <div class="section__head">
-            <p class="section__label">Selection</p>
-            <span class={`section__count${usableFrames.length === 0 ? ' section__count--empty' : ''}`}>
-              {usableFrames.length} {usableFrames.length === 1 ? 'FRAME' : 'FRAMES'}
-            </span>
-          </div>
           {frames.length === 0 ? (
             <div class="selection selection--empty">
               <span class="selection__icon" aria-hidden="true" />
-              <div class="selection__text">
-                <div class="selection__name">Wähle einen Frame aus.</div>
-              </div>
+              <span class="selection__name">Wähle einen Frame aus.</span>
             </div>
           ) : (
             <div class={`selection${usableFrames.length === 0 ? ' selection--empty' : ''}`}>
               <span class="selection__icon" aria-hidden="true" />
-              <div class="selection__text">
-                {usableFrames.length === 1 ? (
-                  <>
-                    <div class="selection__name">{usableFrames[0].name}</div>
-                    <div class="selection__meta">
-                      {usableFrames[0].width} × {usableFrames[0].height}
-                    </div>
-                  </>
-                ) : usableFrames.length > 1 ? (
-                  <>
-                    <div class="selection__name">{usableFrames.length} Frames ausgewählt</div>
-                    <div class="selection__meta">Werden nacheinander verarbeitet</div>
-                  </>
-                ) : (
-                  <div class="selection__name">Kein verwendbarer Frame ausgewählt.</div>
-                )}
-              </div>
+              {usableFrames.length === 1 ? (
+                <>
+                  <span class="selection__name">{usableFrames[0].name}</span>
+                  <span class="selection__meta">
+                    {usableFrames[0].width}×{usableFrames[0].height}
+                  </span>
+                </>
+              ) : usableFrames.length > 1 ? (
+                <>
+                  <span class="selection__name">{usableFrames.length} Frames ausgewählt</span>
+                  <span class="selection__meta">Werden nacheinander verarbeitet</span>
+                </>
+              ) : (
+                <span class="selection__name">Kein verwendbarer Frame ausgewählt.</span>
+              )}
             </div>
           )}
           {tooSmallFrames.length > 0 && (
@@ -446,7 +417,7 @@ function App(): preact.JSX.Element {
           </section>
         )}
 
-        <section class="section">
+        <section class="section section--maps">
           <p class="section__label">Maps</p>
           <div class="maplist">
             {SELECTABLE_MAP_KINDS.map((kind) => (
@@ -585,13 +556,12 @@ function App(): preact.JSX.Element {
               </div>
               <div class="status__detail">{progress.label}</div>
               <button type="button" class="button button--secondary" onClick={cancel}>
-                <span class="button__label">Abbrechen</span>
+                Abbrechen
               </button>
             </>
           ) : (
             <button type="button" class="button" disabled={!canGenerate} onClick={start}>
-              <span class="button__sheen" aria-hidden="true" />
-              <span class="button__label">Maps erstellen</span>
+              <span>Maps erstellen</span>
               {canGenerate && <span class="button__hint">{activeMapCount}×</span>}
             </button>
           )}
@@ -610,23 +580,21 @@ function App(): preact.JSX.Element {
 
           {isFinished && errors.length > 0 && (
             <button type="button" class="button button--secondary" disabled={!canGenerate} onClick={start}>
-              <span class="button__label">Erneut versuchen</span>
+              Erneut versuchen
             </button>
           )}
         </section>
 
         {isFinished && (
           <>
-            <section class="section">
+            <section class="section section--result">
               <p class="section__label">Ergebnis</p>
               <div class="result">
                 <span class="result__count">{createdCount}</span>
-                <div class="result__text">
-                  <span class="result__title">{createdCount === 1 ? 'Map erstellt' : 'Maps erstellt'}</span>
-                  <span class="result__meta">
-                    für {outcomes.length === 1 ? '1 Frame' : `${outcomes.length} Frames`} · {ENGINE_VERSION}
-                  </span>
-                </div>
+                <span class="result__text">
+                  {createdCount === 1 ? 'Map' : 'Maps'} für{' '}
+                  {outcomes.length === 1 ? '1 Frame' : `${outcomes.length} Frames`} erstellt
+                </span>
               </div>
               {(segments?.segmented || errors.length > 0) && (
                 <ul class="summary">
@@ -642,7 +610,7 @@ function App(): preact.JSX.Element {
             </section>
 
             {findings.length > 0 && (
-              <section class="section section--tight">
+              <section class="section">
                 <p class="section__label">Befunde</p>
                 <ul class="findings">
                   {findings.map((finding) => (
@@ -657,7 +625,7 @@ function App(): preact.JSX.Element {
                             class="linkbutton findings__link"
                             onClick={() => reveal(finding.nodeIds ?? [])}
                           >
-                            Im Canvas zeigen →
+                            Im Canvas zeigen
                           </button>
                         )}
                       </div>
@@ -668,7 +636,7 @@ function App(): preact.JSX.Element {
             )}
 
             {ranking.length > 0 && (
-              <section class="section section--tight">
+              <section class="section">
                 <div class="section__head">
                   <p class="section__label">Klick-Ranking</p>
                   <span class="section__note">vorhergesagt</span>
