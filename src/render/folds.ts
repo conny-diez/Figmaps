@@ -6,7 +6,12 @@
  * sections and where the cuts are.
  */
 import { ENGINE_CONFIG } from '../engine/config'
-import { FONT_STACK } from './legend'
+
+/**
+ * Label typeface. The fold markers are data — where the viewport cuts the frame
+ * — not the chrome that was taken off the images, so they stay on the map.
+ */
+const FONT_STACK = 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif'
 
 export type FoldOptions = {
   /** Fold positions in frame pixels. */

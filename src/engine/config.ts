@@ -238,16 +238,10 @@ export const ENGINE_CONFIG = {
     transparencyCutoff: 0.08,
     /** Width of the fade-in ramp above the cutoff. */
     transparencyRamp: 0.12,
-    /** Reference edge used to scale legend/footer typography. */
-    uiScaleReferenceEdge: 1200,
-    legend: {
-      barWidthRatio: 0.22,
-      barHeightRatio: 0.018,
-      fontSizeRatio: 0.016,
-      paddingRatio: 0.02,
-      minFontSize: 11,
-      maxFontSize: 40,
-    },
+    // The legend box and the disclaimer footer used to be drawn into every map
+    // and had their own typography block here. They are Figma text nodes beside
+    // the image now (`figma/place.ts`) — nothing but the prediction is painted
+    // onto the screenshot.
     /** Epic B — dashed fold markers drawn into every segmented output. */
     fold: {
       lineWidthRatio: 0.0016,
@@ -277,8 +271,9 @@ export const ENGINE_CONFIG = {
     /** Feather of the mask edge as a fraction of the longer output edge. */
     maskFeatherRatio: 0.02,
     /**
-     * Where the sharp area is cut: the top 100−P percent of the map's pixels
-     * stay in focus. Fixed, not a setting.
+     * Anchor of the falloff curve, **not an edge**: at the value of this
+     * percentile the screen is fully sharp, below it visibility falls off
+     * smoothly instead of dropping to nothing.
      *
      * 80 is the value the panel slider defaulted to. The alternative — deriving
      * it per screen from the concentration of the image term (the quantity
@@ -290,6 +285,22 @@ export const ENGINE_CONFIG = {
      * commit that removed the slider.
      */
     percentile: 80,
+    /**
+     * Exponent of the falloff below the anchor: `alpha = (v / anchor)^gamma`.
+     *
+     * The hard cut this replaces made the focusmap contradict the heatmap it is
+     * computed from — a region the heatmap draws distinctly warm was either
+     * fully sharp or fully dark, and on an onboarding screen a visibly warm CTA
+     * fell into the dark side of the cut. Both maps are the same numbers, so
+     * they have to say the same thing.
+     *
+     * 1.6 was chosen on the constructed frames: 1.0 is so flat that the whole
+     * screen stays half-visible and the map stops pointing anywhere, 2.4 is
+     * close enough to the old cut to reproduce the complaint. At 1.6 a region
+     * at 70 % of the anchor still shows at 57 % visibility, one at 40 % of it
+     * at 22 % — visible as "less", not as "not seen".
+     */
+    falloffGamma: 1.6,
   },
 
   /** Main-thread traversal limits (FR-1, FR-3). */

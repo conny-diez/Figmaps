@@ -1,8 +1,22 @@
 /**
  * FR-8 — writing results back onto the canvas. Main thread only.
+ *
+ * NOTHING IS PAINTED ONTO THE SCREENSHOTS. Title, disclaimer, the parameters
+ * the prediction depends on and the CC BY notice used to be drawn into every
+ * PNG; they are Figma text nodes in the white space around the images now. Two
+ * reasons, and they pull in opposite directions:
+ *
+ *   - The frame name does not travel. Someone who exports a single map out of
+ *     Figma gets the pixels and nothing else, so the disclaimer has to stay
+ *     inside the *image area* — hence text nodes next to the picture rather
+ *     than only a layer name.
+ *   - The map is a screenshot of someone's design. Burning a black bar into it
+ *     makes it useless as a screenshot.
+ *
+ * The CC BY notice sits once at the bottom of the wrapper, not on every map.
  */
 import { ENGINE_CONFIG, ENGINE_VERSION } from '../engine/config'
-import { MAP_LABELS, type FindingPayload, type RenderedMap, type SegmentInfo } from '../messages'
+import { MAP_LABELS, type FindingPayload, type MapMeta, type RenderedMap, type SegmentInfo } from '../messages'
 import type { AnalysableNode } from './selection'
 
 /** Preferred title fonts, tried in order — the first that loads wins. */
@@ -25,6 +39,11 @@ const SEVERITY_MARKERS: Record<FindingPayload['severity'], string> = {
   attention: 'Beachten',
   info: 'Hinweis',
 }
+
+/** The one sentence that must never be separable from a map. */
+const DISCLAIMER = 'Algorithmische Vorhersage, keine Messdaten'
+
+const INK = { title: { r: 0.1, g: 0.1, b: 0.12 }, body: { r: 0.16, g: 0.16, b: 0.2 }, quiet: { r: 0.45, g: 0.45, b: 0.5 } }
 
 let cachedFont: FontName | null = null
 let cachedBodyFont: FontName | null = null
@@ -73,14 +92,90 @@ function timestamp(now: Date): string {
 }
 
 /**
- * Creates one wrapper frame per run, holding one child frame per map.
- * Repeated runs never overwrite an earlier wrapper.
+ * The line under every map title.
+ *
+ * One line, in the panel's words: what the map is, which reference population
+ * it was compared against, which viewing duration, which engine. „Ortsprior" is
+ * gone — it named the mechanism, not the thing.
  */
+export function metaLine(meta: MapMeta | undefined): string {
+  const parts = [DISCLAIMER]
+  if (meta) {
+    parts.push(`Blickverhalten: ${meta.screenBehaviour}`, `Betrachtungsdauer: ${meta.duration}`)
+  }
+  parts.push(ENGINE_VERSION)
+  return parts.join(' · ')
+}
+
+/**
+ * Appends a text node and lets it fill the width of its auto-layout parent.
+ *
+ * The order is the whole reason this helper exists and it is *three* rules, all
+ * of which have cost this module a bug:
+ *
+ *   1. `layoutSizingHorizontal` may only be set once the node **is** a child of
+ *      an auto-layout frame. Setting it first throws "node must be an
+ *      auto-layout frame or a child of an auto-layout frame".
+ *   2. A text node is created with `textAutoResize = 'WIDTH_AND_HEIGHT'`: it
+ *      grows sideways and never wraps. Without `'HEIGHT'` a long finding is one
+ *      endless line that the frame either clips or is stretched by.
+ *   3. `characters` may only be written after the font is loaded.
+ */
+function paragraph(
+  parent: FrameNode,
+  options: { font: FontName; size: number; text: string; colour: RGB; lineHeightFactor?: number },
+): TextNode {
+  const node = figma.createText()
+  node.fontName = options.font
+  node.fontSize = options.size
+  node.characters = options.text
+  node.fills = [{ type: 'SOLID', color: options.colour }]
+  if (options.lineHeightFactor) {
+    node.lineHeight = { unit: 'PIXELS', value: Math.round(options.size * options.lineHeightFactor) }
+  }
+  parent.appendChild(node)
+  // Wrap instead of growing sideways, then fill the column.
+  node.textAutoResize = 'HEIGHT'
+  node.layoutSizingHorizontal = 'FILL'
+  return node
+}
+
+/**
+ * Vertical auto-layout column of fixed width whose height hugs its content.
+ *
+ * `resize()` is what makes this delicate: on an auto-layout frame it sets *both*
+ * sizing modes to FIXED. Setting `primaryAxisSizingMode = 'AUTO'` before the
+ * resize therefore does nothing — the frame keeps the height passed in, and the
+ * content is clipped at that height. That is exactly how the findings frame
+ * shipped at 520 × 90 px with the second finding cut in half. The width is set
+ * first, the sizing modes after.
+ */
+function column(width: number, spacing: number, padding: number): FrameNode {
+  const frame = figma.createFrame()
+  frame.layoutMode = 'VERTICAL'
+  frame.resize(width, 1)
+  frame.counterAxisSizingMode = 'FIXED'
+  frame.primaryAxisSizingMode = 'AUTO'
+  frame.itemSpacing = spacing
+  frame.paddingLeft = frame.paddingRight = frame.paddingTop = frame.paddingBottom = padding
+  // Safety net: if a future change ever pins the height again, the content is
+  // still readable instead of silently cut.
+  frame.clipsContent = false
+  frame.fills = []
+  return frame
+}
+
 export type PlaceExtras = {
   findings?: readonly FindingPayload[]
   segments?: SegmentInfo
+  /** Parameters of the prediction, written next to every map. */
+  mapMeta?: MapMeta
 }
 
+/**
+ * Creates one wrapper frame per run, holding one column per map.
+ * Repeated runs never overwrite an earlier wrapper.
+ */
 export async function placeMaps(
   node: AnalysableNode,
   maps: readonly RenderedMap[],
@@ -88,50 +183,66 @@ export async function placeMaps(
 ): Promise<FrameNode> {
   const cfg = ENGINE_CONFIG.placement
   const font = await loadTitleFont()
+  const bodyFont = await loadBodyFont()
+  const meta = extras.mapMeta
 
+  // Vertical, because the CC BY line runs the full width under all maps —
+  // once per run instead of once per image.
   const wrapper = figma.createFrame()
-  wrapper.name = `[Figmaps] ${node.name} — ${timestamp(new Date())}`
-  wrapper.layoutMode = 'HORIZONTAL'
+  wrapper.name = `[Figmaps] ${node.name}${meta ? ` — ${meta.duration}` : ''} — ${timestamp(new Date())}`
+  wrapper.layoutMode = 'VERTICAL'
   wrapper.primaryAxisSizingMode = 'AUTO'
   wrapper.counterAxisSizingMode = 'AUTO'
   wrapper.counterAxisAlignItems = 'MIN'
-  wrapper.itemSpacing = cfg.gap
-  wrapper.paddingLeft = cfg.padding
-  wrapper.paddingRight = cfg.padding
-  wrapper.paddingTop = cfg.padding
-  wrapper.paddingBottom = cfg.padding
+  wrapper.itemSpacing = Math.round(cfg.padding * 0.5)
+  wrapper.paddingLeft = wrapper.paddingRight = wrapper.paddingTop = wrapper.paddingBottom = cfg.padding
   wrapper.clipsContent = false
   wrapper.fills = [{ type: 'SOLID', color: { r: 0.96, g: 0.96, b: 0.97 } }]
+
+  const row = figma.createFrame()
+  row.name = 'Maps'
+  row.layoutMode = 'HORIZONTAL'
+  row.primaryAxisSizingMode = 'AUTO'
+  row.counterAxisSizingMode = 'AUTO'
+  row.counterAxisAlignItems = 'MIN'
+  row.itemSpacing = cfg.gap
+  row.clipsContent = false
+  row.fills = []
+  wrapper.appendChild(row)
 
   figma.currentPage.appendChild(wrapper)
 
   for (const map of maps) {
-    const child = figma.createFrame()
-    child.name = `${MAP_LABELS[map.kind]} · ${ENGINE_VERSION}`
-    child.layoutMode = 'VERTICAL'
-    child.primaryAxisSizingMode = 'AUTO'
-    child.counterAxisSizingMode = 'AUTO'
-    child.itemSpacing = Math.round(cfg.titleFontSize * 0.75)
-    child.fills = []
-    child.clipsContent = false
-    wrapper.appendChild(child)
-
-    const title = figma.createText()
-    title.fontName = font
-    title.fontSize = cfg.titleFontSize
-    title.characters = `${MAP_LABELS[map.kind]} — vorhergesagt (${ENGINE_VERSION})`
-    title.fills = [{ type: 'SOLID', color: { r: 0.1, g: 0.1, b: 0.12 } }]
-    child.appendChild(title)
-
-    const image = figma.createImage(map.png)
-    const rect = figma.createRectangle()
-    rect.name = `${MAP_LABELS[map.kind]} — ${node.name}`
     // B-2 — the above-the-fold map covers only the first section, so it must
     // not be stretched to the full frame height.
     const height =
       map.kind === 'fold' && extras.segments
         ? Math.min(node.height, extras.segments.viewportHeight)
         : node.height
+
+    const child = column(node.width, Math.round(cfg.titleFontSize * 0.5), 0)
+    child.name = `${MAP_LABELS[map.kind]}${meta ? ` · ${meta.duration}` : ''} · ${ENGINE_VERSION}`
+    row.appendChild(child)
+
+    paragraph(child, {
+      font,
+      size: cfg.titleFontSize,
+      text: `${MAP_LABELS[map.kind]} — vorhergesagt`,
+      colour: INK.title,
+    })
+    // The disclaimer lives in the image area, not only in the layer name: a
+    // frame name does not travel with an exported PNG, this line does.
+    paragraph(child, {
+      font: bodyFont,
+      size: Math.round(cfg.titleFontSize * 0.58),
+      text: metaLine(meta),
+      colour: INK.quiet,
+      lineHeightFactor: 1.5,
+    })
+
+    const image = figma.createImage(map.png)
+    const rect = figma.createRectangle()
+    rect.name = `${MAP_LABELS[map.kind]} — ${node.name}`
     rect.resize(node.width, height)
     rect.fills = [{ type: 'IMAGE', scaleMode: 'FILL', imageHash: image.hash }]
     child.appendChild(rect)
@@ -146,10 +257,29 @@ export async function placeMaps(
   // `layoutSizingHorizontal` calls in the wrong order.
   if (extras.findings && extras.findings.length > 0) {
     try {
-      await appendFindingsFrame(wrapper, extras.findings, extras.segments)
+      await appendFindingsFrame(row, extras.findings, extras.segments)
     } catch (error) {
       figma.notify(`Befunde konnten nicht als Textframe abgelegt werden (${describe(error)}). Maps sind erstellt.`)
     }
+  }
+
+  // CC BY 4.0 requires naming the source wherever the derived asset travels —
+  // once per run is enough, and three identical lines next to each other read
+  // as noise. See NOTICE.md.
+  if (meta?.attribution) {
+    const footer = figma.createFrame()
+    footer.layoutMode = 'HORIZONTAL'
+    footer.primaryAxisSizingMode = 'AUTO'
+    footer.counterAxisSizingMode = 'AUTO'
+    footer.name = 'Datengrundlage'
+    footer.fills = []
+    wrapper.appendChild(footer)
+    const line = figma.createText()
+    line.fontName = bodyFont
+    line.fontSize = Math.round(cfg.titleFontSize * 0.55)
+    line.characters = `Datengrundlage: ${meta.attribution}`
+    line.fills = [{ type: 'SOLID', color: INK.quiet }]
+    footer.appendChild(line)
   }
 
   // Place to the right of the source frame, in absolute page coordinates.
@@ -164,7 +294,7 @@ export async function placeMaps(
 
 /** C-3 — the findings as a text frame next to the maps. */
 async function appendFindingsFrame(
-  wrapper: FrameNode,
+  row: FrameNode,
   findings: readonly FindingPayload[],
   segments?: SegmentInfo,
 ): Promise<void> {
@@ -172,65 +302,43 @@ async function appendFindingsFrame(
   const titleFont = await loadTitleFont()
   const bodyFont = await loadBodyFont()
 
-  const frame = figma.createFrame()
+  const frame = column(cfg.findingsWidth, Math.round(cfg.findingsFontSize * 0.9), cfg.findingsFontSize * 2)
   frame.name = `Befunde · ${ENGINE_VERSION}`
-  frame.layoutMode = 'VERTICAL'
-  frame.primaryAxisSizingMode = 'AUTO'
-  frame.counterAxisSizingMode = 'FIXED'
-  frame.resize(cfg.findingsWidth, 1)
-  frame.itemSpacing = Math.round(cfg.findingsFontSize * 0.9)
-  frame.paddingLeft = frame.paddingRight = frame.paddingTop = frame.paddingBottom = cfg.findingsFontSize * 2
   frame.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }]
   frame.cornerRadius = 12
-  wrapper.appendChild(frame)
-
-  /**
-   * Appends a paragraph and lets it fill the frame's width.
-   *
-   * The order matters and is the whole reason this helper exists:
-   * `layoutSizingHorizontal` may only be set once the node **is** a child of an
-   * auto-layout frame. Setting it first throws
-   * "node must be an auto-layout frame or a child of an auto-layout frame",
-   * which is how this shipped broken.
-   */
-  const paragraph = (options: { font: FontName; size: number; text: string; colour: RGB }): void => {
-    const node = figma.createText()
-    node.fontName = options.font
-    node.fontSize = options.size
-    node.characters = options.text
-    node.fills = [{ type: 'SOLID', color: options.colour }]
-    frame.appendChild(node)
-    node.layoutSizingHorizontal = 'FILL'
-  }
+  row.appendChild(frame)
 
   // If any paragraph fails, the half-built frame must not stay behind: an empty
   // white box next to the maps looks like a result, and is worse than nothing.
   try {
-    paragraph({ font: titleFont, size: cfg.titleFontSize, text: 'Befunde — vorhergesagt', colour: { r: 0.1, g: 0.1, b: 0.12 } })
+    paragraph(frame, { font: titleFont, size: cfg.titleFontSize, text: 'Befunde — vorhergesagt', colour: INK.title })
 
     if (segments?.segmented) {
-      paragraph({
+      paragraph(frame, {
         font: bodyFont,
         size: cfg.findingsFontSize * 0.85,
         text: `Abschnittsweise analysiert: ${segments.sectionCount} Abschnitte à ${segments.viewportHeight} px`,
-        colour: { r: 0.45, g: 0.45, b: 0.5 },
+        colour: INK.quiet,
+        lineHeightFactor: 1.45,
       })
     }
 
     for (const finding of findings) {
-      paragraph({
+      paragraph(frame, {
         font: bodyFont,
         size: cfg.findingsFontSize,
         text: `${SEVERITY_MARKERS[finding.severity]} · ${finding.text}`,
-        colour: { r: 0.16, g: 0.16, b: 0.2 },
+        colour: INK.body,
+        lineHeightFactor: 1.45,
       })
     }
 
-    paragraph({
+    paragraph(frame, {
       font: bodyFont,
       size: cfg.findingsFontSize * 0.8,
-      text: 'Algorithmische Vorhersage, keine Messdaten.',
-      colour: { r: 0.55, g: 0.55, b: 0.6 },
+      text: `${DISCLAIMER}.`,
+      colour: INK.quiet,
+      lineHeightFactor: 1.45,
     })
   } catch (error) {
     frame.remove()

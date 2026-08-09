@@ -14,9 +14,10 @@ import {
   DEFAULT_SETTINGS,
   isMainToUi,
   MAP_DESCRIPTIONS,
+  CLICKMAP_IN_PANEL,
   MAP_LABELS,
+  PANEL_MAP_KINDS,
   PANEL_SIZE,
-  SELECTABLE_MAP_KINDS,
   type ClickRanking,
   type FindingPayload,
   type FrameSummary,
@@ -284,6 +285,7 @@ function App(): preact.JSX.Element {
         warnings: result.warnings,
         findings: result.findings,
         segments: result.segments,
+        mapMeta: result.mapMeta,
       })
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error)
@@ -366,8 +368,8 @@ function App(): preact.JSX.Element {
     [],
   )
 
-  const activeMapCount = SELECTABLE_MAP_KINDS.filter((kind) => settings.maps[kind]).length
-  const anyMapSelected = settings.maps.heat || settings.maps.click || settings.maps.focus
+  const activeMapCount = PANEL_MAP_KINDS.filter((kind) => settings.maps[kind]).length
+  const anyMapSelected = activeMapCount > 0
   const canGenerate = phase !== 'working' && usableFrames.length > 0 && anyMapSelected
 
   const start = useCallback(() => {
@@ -409,8 +411,8 @@ function App(): preact.JSX.Element {
       <header class="app__header">
         <Logo size={27} />
         <h1 class="app__title">Figmaps</h1>
-        {/* The engine version stays on the maps themselves (legend footer);
-            the header names the version of the plugin. */}
+        {/* The engine version stays with the maps (the line under each map
+            title); the header names the version of the plugin. */}
         <p class="app__subtitle">{PLUGIN_VERSION}</p>
       </header>
 
@@ -503,7 +505,7 @@ function App(): preact.JSX.Element {
         <section class="section section--maps">
           <p class="section__label">Maps</p>
           <div class="maplist">
-            {SELECTABLE_MAP_KINDS.map((kind) => (
+            {PANEL_MAP_KINDS.map((kind) => (
               <label class={`maptoggle${settings.maps[kind] ? ' is-on' : ''}`} key={kind}>
                 <input
                   type="checkbox"
@@ -675,7 +677,10 @@ function App(): preact.JSX.Element {
               </section>
             )}
 
-            {ranking.length > 0 && (
+            {/* The ranking is the clickmap's numbers in list form and goes
+                with it: percentages over a candidate set that is not proven
+                complete read as a measurement. See `CLICKMAP_IN_PANEL`. */}
+            {CLICKMAP_IN_PANEL && ranking.length > 0 && (
               <section class="section">
                 <div class="section__head">
                   <p class="section__label">Klick-Ranking</p>
@@ -705,18 +710,21 @@ function App(): preact.JSX.Element {
         <span class="disclaimer__icon" aria-hidden="true">
           i
         </span>
+        {/* One type style for all three paragraphs: the graded, dimmer
+            secondary style made the provenance unreadable, and it is not
+            secondary — it is what the disclaimer above it rests on. */}
         <div>
-          <span class="disclaimer__text">
+          <p class="disclaimer__text">
             Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
             Nutzerverhalten.
-          </span>
+          </p>
           {PRIOR_ATTRIBUTION && (
-            <p class="attribution">
-              Der Ortsprior basiert auf echten Blickdaten von 62 Testpersonen, gemessen auf 1.980 UI-Screens
-              (UEyes-Datensatz, Jiang et al., CHI 2023, CC BY 4.0), gemittelt und verkleinert.
+            <p class="disclaimer__text">
+              Die Vorhersage nutzt echte Blickdaten von 62 Testpersonen, gemessen auf 1.980 UI-Screens
+              (UEyes-Datensatz, Jiang et al., CHI 2023, CC BY 4.0).
             </p>
           )}
-          <p class="attribution attribution--author">Figmaps — entwickelt von Constantin Diessenbacher</p>
+          <p class="disclaimer__text">Figmaps — entwickelt von Constantin Diessenbacher</p>
         </div>
       </footer>
 

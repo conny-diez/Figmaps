@@ -31,6 +31,24 @@ export const SELECTABLE_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = ['heat'
 
 export const MAP_KINDS: readonly MapKind[] = ['heat', 'focus', 'click', 'fold']
 
+/**
+ * Whether the clickmap is offered in the panel. **Display only** — candidate
+ * detection keeps running either way, because `cta-rank` and `cta-below-fold`
+ * are derived from it (see `ui/pipeline.ts`).
+ *
+ * Off since the onboarding-screen review: exactly one candidate was found on a
+ * screen that has at least six tappable things, and it was labelled „100 %".
+ * A distribution over one element is not a prediction, it is an artefact of
+ * normalising a single number. The conditions for switching this back on are in
+ * the README („Clickmap — warum sie nicht im Panel steht").
+ */
+export const CLICKMAP_IN_PANEL = false
+
+/** The maps the panel currently offers — `SELECTABLE_MAP_KINDS` minus the flag. */
+export const PANEL_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = SELECTABLE_MAP_KINDS.filter(
+  (kind) => kind !== 'click' || CLICKMAP_IN_PANEL,
+)
+
 export const MAP_LABELS: Record<MapKind, string> = {
   heat: 'Heatmap',
   click: 'Clickmap',
@@ -174,6 +192,26 @@ export type RenderedMap = {
 }
 
 /**
+ * What a map depends on, in the words the panel uses.
+ *
+ * Nothing of this is painted onto the screenshot any more — it is written as
+ * Figma text nodes next to the image (`figma/place.ts`). It still has to travel
+ * with the result, because the iframe is the only realm that knows which prior
+ * and which profile were actually used.
+ *
+ * „Ortsprior" is gone from all of it on purpose: the term named the mechanism,
+ * not the thing, and the panel now says „Blickverhalten" above the same choice.
+ */
+export type MapMeta = {
+  /** Which reference population, e.g. „Mobile App" or „Webseite (automatisch)". */
+  screenBehaviour: string
+  /** Viewing duration the prediction is calibrated for, e.g. „Blick (1 s)". */
+  duration: string
+  /** CC BY 4.0 notice for the bundled data, or absent when none ships. */
+  attribution?: string
+}
+
+/**
  * Epic C — one finding as it travels to the main thread. Mirrors
  * `src/findings/types.ts`; declared here so `main.ts` does not have to import
  * the rule engine just to render a text frame.
@@ -234,6 +272,8 @@ export type UiToMain =
       warnings: string[]
       findings: FindingPayload[]
       segments?: SegmentInfo
+      /** Absent only when the frame failed before anything was rendered. */
+      mapMeta?: MapMeta
     }
   | { type: 'SAVE_SETTINGS'; settings: Settings }
   /** C-3 — "Im Canvas zeigen": select the nodes and scroll them into view. */

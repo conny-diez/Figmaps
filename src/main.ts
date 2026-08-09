@@ -18,6 +18,7 @@ import {
   type ErrorCode,
   type FindingPayload,
   type MainToUi,
+  type MapMeta,
   type PanelSize,
   type RenderedMap,
   type SegmentInfo,
@@ -32,6 +33,8 @@ type FrameResult = {
   warnings: string[]
   findings: FindingPayload[]
   segments?: SegmentInfo
+  /** Parameters of the prediction — written next to the maps, not onto them. */
+  mapMeta?: MapMeta
 }
 
 type PendingResult = {
@@ -196,6 +199,7 @@ async function generate(frameIds: string[]): Promise<void> {
         const wrapper = await placeMaps(node, result.maps, {
           findings: result.findings,
           segments: result.segments,
+          mapMeta: result.mapMeta,
         })
         wrappers.push(wrapper)
         created += result.maps.length
@@ -281,6 +285,7 @@ figma.ui.onmessage = (message: UiToMain): void => {
               warnings: message.warnings,
               findings: message.findings,
               segments: message.segments,
+              mapMeta: message.mapMeta,
             })
           }
           break

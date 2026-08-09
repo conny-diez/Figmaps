@@ -8,14 +8,17 @@ Erzeugt für einen ausgewählten Frame Visualisierungen und legt sie als Bild
 rechts neben dem Original auf dem Canvas ab:
 
 - **Heatmap** — vorhergesagte Verteilung visueller Aufmerksamkeit (Turbo-Colormap)
-- **Clickmap** — vorhergesagte Klickwahrscheinlichkeit je interaktivem Element, inkl. Ranking
-- **Focusmap** — Screen abgedunkelt und unscharf, nur die Top-Regionen bleiben klar
+- **Focusmap** — der Screen bleibt dort scharf, wo Aufmerksamkeit vorhergesagt
+  wird, und wird zum ruhigen Rand hin **stufenlos** abgedunkelt und unscharf
 - **Above the Fold** — bei langen Frames zusätzlich der erste Abschnitt allein
 - **Befunde** — 3–6 Sätze in Deutsch, im Panel und als Textframe neben den Maps
+- **Clickmap** — implementiert, aber derzeit nicht im Panel angeboten, siehe
+  „Clickmap — warum sie nicht im Panel steht"
 
 > Die Ausgabe ist eine **algorithmische Vorhersage**, keine Messung. Es fließen
-> keine Daten echten Nutzerverhaltens ein. Jede Map trägt ein Label mit
-> Engine-Version und Disclaimer.
+> keine Daten echten Nutzerverhaltens ein. Auf die Screenshots wird **nichts**
+> gemalt außer der Vorhersage selbst; Titel, Disclaimer, Parameter und die
+> CC-BY-Nennung stehen als Figma-Textebenen daneben (`figma/place.ts`).
 
 Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 `["none"]`, das Design verlässt die Maschine nicht.
@@ -81,9 +84,32 @@ Community vergibt Figma eine echte ID, die dann eingetragen wird.
 1. Frame, Component, Instance, Section oder Group auswählen (Mehrfachauswahl = Batch)
 2. Maps an-/abwählen, Overlay-Deckkraft und ggf. Viewport-Höhe einstellen
 3. **Maps erstellen** — Ergebnis landet in einem neuen Wrapper-Frame
-   `[Figmaps] {Frame-Name} — {Zeitstempel}` rechts daneben
+   `[Figmaps] {Frame-Name} — {Betrachtungsdauer} — {Zeitstempel}` rechts daneben
 4. Befunde unter dem Ergebnis lesen; **Im Canvas zeigen** springt auf die
    betroffene Ebene und wählt sie aus
+
+### Was neben den Maps steht — und warum nicht darauf
+
+Auf dem Screenshot steht nur die Vorhersage. Alles andere sind Textebenen im
+Weißraum des Wrapper-Frames:
+
+| wo | was |
+|---|---|
+| Frame-Name der Map | `Heatmap · Blick (1 s) · hybrid-v1` |
+| unter dem Titel jeder Map | `Algorithmische Vorhersage, keine Messdaten · Blickverhalten: Mobile App · Betrachtungsdauer: Blick (1 s) · hybrid-v1` |
+| einmal unten am Wrapper | `Datengrundlage: UEyes (Jiang et al. 2023), CC BY 4.0` |
+
+Die beiden Anforderungen ziehen gegeneinander, und die Aufteilung ist der
+Kompromiss: der **Frame-Name reist nicht mit**, wenn jemand eine einzelne Map
+als PNG exportiert — deshalb steht der Disclaimer als Text im *Bildbereich*,
+nicht nur in der Ebenenbenennung. Und die Map ist ein Screenshot fremder
+Arbeit — deshalb liegt der Text *neben* dem Bild statt als Balken darin. Die
+CC-BY-Nennung steht einmal pro Lauf statt dreimal nebeneinander.
+
+Der Begriff **„Ortsprior" kommt im UI nicht mehr vor**. Er benannte den
+Mechanismus, nicht die Sache; im Panel heißt dieselbe Auswahl „Art des
+Screens", auf den Maps steht „Blickverhalten", bei der Herkunft
+„Datengrundlage".
 
 Wiederholte Läufe erzeugen immer einen **neuen** Wrapper und überschreiben nichts.
 Frames mit einer Kante unter 200 px werden abgelehnt.
@@ -185,8 +211,7 @@ src/
 │  ├─ heatmap.ts           FR-7
 │  ├─ clickmap.ts          FR-5 Rendering
 │  ├─ focusmap.ts          FR-6
-│  ├─ folds.ts             B-2  gestrichelte Fold-Marker
-│  └─ legend.ts            Legende + zweizeilige Fußzeile (Prior, Dauer, CC BY)
+│  └─ folds.ts             B-2  gestrichelte Fold-Marker
 └─ ui/
    ├─ pipeline.ts          iframe-Pipeline: PNG rein, Map-PNGs raus
    ├─ logo.tsx             Figmaps-Wortmarke als Inline-SVG
@@ -884,6 +909,62 @@ Messlatte und eine Erklärung.
 
 ---
 
+## Clickmap — warum sie nicht im Panel steht
+
+Die Clickmap ist implementiert, getestet und wird **nicht angeboten**:
+`CLICKMAP_IN_PANEL` in `messages.ts` steht auf `false`. Die
+Kandidatenerkennung läuft unverändert weiter — `cta-rank` und
+`cta-below-fold` leiten sich daraus ab, das Ausblenden darf keine zwei Regeln
+still abschalten. Es ist ausschließlich die Anzeige (Checkbox, Map,
+Klick-Ranking).
+
+**Anlass.** Auf einem Onboarding-Screen wurde genau **ein** Kandidat erkannt
+und mit **100 %** ausgewiesen. „Hier anmelden" und vier offensichtlich
+tappbare Kategorie-Karten fehlten. Eine Verteilung über einen einzigen
+Kandidaten ist keine Vorhersage, sondern ein Artefakt der Normierung: die
+Prozentwerte summieren sich auf 1, egal wie unvollständig die Menge ist.
+
+**Warum die Elemente fehlten.** Der Erkenner (`engine/clickmap.ts`) nimmt einen
+Knoten auf, wenn er eine Prototype-Reaktion trägt, wenn sein *Name* ein
+Stichwort aus `INTERACTIVE_KEYWORDS` enthält, oder wenn er ein kurzer **Text**
+ist, dessen **direkter** Elternteil eine Füllung hat. Nachgestellt an den
+Ebenenformen, die solche Screens haben:
+
+| Aufbau | erkannt? |
+|---|---|
+| Frame „Primary Button" + Text | ja, über den Namen |
+| Frame „Anmelden" (kein Stichwort), Text direkt darin | ja, über den Text im gefüllten Container |
+| Frame „Anmelden" → Auto-Layout ohne Füllung → Text | **nein** |
+| Outline-Button ohne Füllung, Text direkt darin | **nein** |
+| Karte „Kategorie/Sport" mit Füllung + Text | ja |
+| Karte „Kachel" mit Bild + Text in einem Auto-Layout | **nein** |
+| Karte „Category Card" (englisch benannt) | ja, über „card" |
+| Karte „Kachel" mit Prototype-Interaktion | ja |
+
+Drei Ursachen, alle systematisch:
+
+1. **Nur der direkte Elternteil** wird auf eine Füllung geprüft. Eine einzige
+   Auto-Layout-Zwischenebene — der Normalfall in Komponentenbibliotheken —
+   lässt die Erkennung ausfallen.
+2. **Rahmen ohne Text** werden nie über die Label-Regel erfasst; die verlangt
+   `isText`. Eine Bildkachel ohne Beschriftung ist nur über Namen oder
+   Reaktion erreichbar.
+3. Die Stichwortliste ist **englisch**. „Kachel", „Karte", „Kategorie",
+   „Anmelden" treffen nichts, „Category Card" trifft.
+
+**Bedingungen für die Rückkehr ins Panel.** Beide, nicht eine davon:
+
+- **(a) Die Kandidatenerkennung ist gegen Enrico belegt vollständig.** Nicht
+  „findet viel", sondern: auf einer gezogenen Stichprobe echter Screens mit
+  Layer-Baum ist ausgewiesen, welcher Anteil der tatsächlich bedienbaren
+  Elemente gefunden wird, aufgeschlüsselt nach den drei Ursachen oben.
+- **(b) Die Rückkehr erfolgt ohne Prozentwerte** — als Liste oder als
+  Hervorhebung der Kandidaten, nicht als Verteilung. Enrico validiert die
+  **Erkennung**, nicht die Rangfolge; eine Zahl, die Rangfolge behauptet,
+  wäre durch nichts gedeckt.
+
+---
+
 ## Befunde (Epic C)
 
 Nach der Berechnung läuft ein Satz deterministischer Regeln über Heatmap,
@@ -1546,18 +1627,20 @@ App durchzugehen:
 | 2 | Frame auswählen | Name + Dimensionen erscheinen, Button aktiv |
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |
-| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps] … — …` rechts daneben, Viewport springt darauf, `3 Maps erstellt` |
-| 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt, Legende + Fußzeile mit `hybrid-v1` vorhanden |
-| 7 | Clickmap begutachten | Ranking im Panel; primärer CTA auf Platz 1 (mind. 2 von 3 Referenz-Screens) |
-| 8 | Focusmap begutachten | Scharf bleiben die stärksten 20 % der Karte — Kopfbereich und primärer CTA, der Rest abgedunkelt und unscharf |
+| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps] … — {Dauer} — …` rechts daneben, Viewport springt darauf, `2 Maps erstellt` |
+| 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt; **nichts** ins Bild gemalt außer Overlay und Fold-Marken |
+| 7 | Beschriftung neben den Maps | Unter jedem Titel eine Zeile „Algorithmische Vorhersage, keine Messdaten · Blickverhalten: … · Betrachtungsdauer: … · hybrid-v1"; CC-BY-Zeile genau **einmal** unten am Wrapper; nirgends „Ortsprior" |
+| 8 | Focusmap gegen die Heatmap halten | Kein harter Rand: ein in der Heatmap deutlich warmer Bereich ist auch in der Focusmap sichtbar, nur schwächer; völlig dunkel ist nur, was in der Heatmap kalt ist |
 | 9 | Overlay-Deckkraft ändern, neu erzeugen | Heatmap-Overlay entsprechend transparenter/kräftiger |
-| 10 | Frame ohne benannte Buttons/Reactions | Hinweis „Keine interaktiven Elemente erkannt…", Heat- und Focusmap entstehen trotzdem |
+| 10 | Frame ohne benannte Buttons/Reactions | Heat- und Focusmap entstehen; Befunde, die Kandidaten brauchen, entfallen still |
 | 11 | 5 Frames auswählen, erzeugen | „Frame 2 von 5", je Frame ein eigener Wrapper |
 | 12 | Während des Batches **Abbrechen** | Lauf stoppt, bereits erzeugte Wrapper bleiben, Notify „Abgebrochen" |
 | 13 | Plugin schließen und neu öffnen | Slider- und Checkbox-Einstellungen sowie die Panelgröße sind erhalten |
 | 14 | Frame mit 6000 px Höhe | Hinweis auf Downscale, Maps entstehen, kein Absturz |
 | 15 | Zweiter Lauf auf demselben Frame | Neuer Wrapper, der erste bleibt unverändert |
 | 15a | Griff unten rechts über den ganzen Bildschirm ziehen | Panel folgt dem Cursor ohne Sprung, stoppt bei 720 × 2400, Layout bleibt intakt; Doppelklick stellt 320 × 680 her |
+| 15b | Panel auf 420 px Höhe ziehen | Fußtext bleibt vollständig sichtbar, der Bereich darüber scrollt |
+| 15c | Frame mit vielen Befunden erzeugen | Der Befunde-Frame ist so hoch wie sein Inhalt, kein Text angeschnitten |
 
 Zusätzlich für 1.1 (M4, M5):
 

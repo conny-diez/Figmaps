@@ -14,7 +14,17 @@ import { yieldToUi } from '../engine/imageops'
 import { analysisSourceSize } from '../engine/ops-pure'
 import type { ScalarMap } from '../engine/types'
 import { deriveFindings } from '../findings/derive'
-import type { ClickRanking, FindingPayload, MainToUi, NodeSignal, RenderedMap, SegmentInfo, Settings } from '../messages'
+import { CLICKMAP_IN_PANEL } from '../messages'
+import type {
+  ClickRanking,
+  FindingPayload,
+  MainToUi,
+  MapMeta,
+  NodeSignal,
+  RenderedMap,
+  SegmentInfo,
+  Settings,
+} from '../messages'
 import { elementCaption } from '../findings/label'
 import { priorAssetIdFor, PRIOR_ASSET_LABELS, PRIOR_ATTRIBUTION_SHORT, shipsPriorAsset } from '../engine/priors'
 import { PROFILE_LABELS } from '../engine/params'
@@ -34,6 +44,8 @@ export type PipelineResult = {
   /** Epic C. */
   findings: FindingPayload[]
   segments: SegmentInfo
+  /** Absent when the frame was cancelled before anything was rendered. */
+  mapMeta?: MapMeta
 }
 
 export type PipelineHooks = {
@@ -129,16 +141,13 @@ export async function generateMaps(
     const opacity = settings.overlayOpacity / 100
     const foldOptions = segments.segmented ? { folds: segments.folds, frameHeight: data.height } : {}
 
-    // Two maps of the same screen can differ only in which prior was used, so
-    // the choice belongs on the image, not just in the panel.
+    // Two maps of the same screen can differ only in which reference population
+    // and which viewing duration produced them, so both travel with the result
+    // and are written next to the image (`figma/place.ts`).
     const resolvedPrior = settings.uiType === 'auto' ? priorAssetIdFor(data.width, data.height) : settings.uiType
-    const priorLabel = `Ortsprior: ${PRIOR_ASSET_LABELS[resolvedPrior]}${settings.uiType === 'auto' ? ' (automatisch)' : ''}`
-    // The other half of what decides the result: the profile selects the
-    // viewing duration the prior was estimated from (Epic D).
-    const durationLabel = `Betrachtungsdauer: ${PROFILE_LABELS[settings.profile]}`
-    const footerLabels = {
-      priorLabel,
-      durationLabel,
+    const mapMeta: MapMeta = {
+      screenBehaviour: `${PRIOR_ASSET_LABELS[resolvedPrior]}${settings.uiType === 'auto' ? ' (automatisch)' : ''}`,
+      duration: PROFILE_LABELS[settings.profile],
       ...(shipsPriorAsset() ? { attribution: PRIOR_ATTRIBUTION_SHORT } : {}),
     }
 
@@ -149,7 +158,7 @@ export async function generateMaps(
       if (cancelled()) return { ...empty(), ranking, segments }
       hooks.onStep?.('Heatmap wird gezeichnet', 0.5)
       await yieldToUi()
-      const canvas = renderHeatmap(bitmap, attention, output.width, output.height, { opacity, ...footerLabels, ...foldOptions })
+      const canvas = renderHeatmap(bitmap, attention, output.width, output.height, { opacity, ...foldOptions })
       maps.push({ kind: 'heat', png: await canvasToPngBytes(canvas) })
 
       // B-2 — the first section on its own: the part practically every user sees.
@@ -161,8 +170,6 @@ export async function generateMaps(
         const foldHeight = Math.max(1, Math.round(foldShare * output.height))
         const foldCanvas = renderHeatmap(bitmap, analysis.aboveFold, output.width, foldHeight, {
           opacity,
-          ...footerLabels,
-          title: 'Above the Fold — vorhergesagte Aufmerksamkeit',
           // Crop the screenshot to the first section instead of squashing the
           // whole page into a shorter canvas.
           sourceRect: {
@@ -182,18 +189,19 @@ export async function generateMaps(
       if (cancelled()) return { ...empty(), ranking, segments }
       hooks.onStep?.('Focusmap wird gezeichnet', 0.7)
       await yieldToUi()
-      const canvas = renderFocusmap(bitmap, attention, output.width, output.height, {
-        ...footerLabels,
-        ...foldOptions,
-      })
+      const canvas = renderFocusmap(bitmap, attention, output.width, output.height, foldOptions)
       maps.push({ kind: 'focus', png: await canvasToPngBytes(canvas) })
     }
 
-    if (settings.maps.click) {
+    // Candidate detection runs unconditionally: `cta-rank` and `cta-below-fold`
+    // are derived from it, so hiding the clickmap must not silently disable two
+    // findings rules. Only the drawing is behind the flag.
+    candidates = scoreCandidates(data.signals, attention, data.width, data.height)
+
+    if (CLICKMAP_IN_PANEL && settings.maps.click) {
       if (cancelled()) return { ...empty(), ranking, segments }
       hooks.onStep?.('Clickmap wird gezeichnet', 0.85)
       await yieldToUi()
-      candidates = scoreCandidates(data.signals, attention, data.width, data.height)
       if (candidates.length === 0) {
         warnings.push(
           'Keine interaktiven Elemente erkannt — benenne Buttons oder setze Prototype-Interaktionen. Clickmap übersprungen.',
@@ -202,16 +210,12 @@ export async function generateMaps(
         ranking = toRanking(candidates, data.signals, data.height)
         const canvas = renderClickmap(bitmap, candidates, output.width, output.height, {
           opacity,
-          ...footerLabels,
           frameWidth: data.width,
           frameHeight: data.height,
           ...foldOptions,
         })
         maps.push({ kind: 'click', png: await canvasToPngBytes(canvas), meta: ranking })
       }
-    } else {
-      // The findings rules need candidates even when the clickmap is off.
-      candidates = scoreCandidates(data.signals, attention, data.width, data.height)
     }
 
     hooks.onStep?.('Befunde werden abgeleitet', 0.95)
@@ -226,7 +230,7 @@ export async function generateMaps(
     })
 
     hooks.onStep?.('Fertig', 1)
-    return { maps, warnings, ranking, findings, segments }
+    return { maps, warnings, ranking, findings, segments, mapMeta }
   } finally {
     bitmap.close()
   }
