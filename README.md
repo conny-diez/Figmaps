@@ -3285,6 +3285,51 @@ Was für beide gilt: nach dem Umbau ist neu zu kalibrieren, und dafür fehlt
 weiterhin das Set mit echten Layer-Bäumen (PRD Set 2). An UEyes ist keine der
 beiden messbar — ein Screenshot hat keine Ebenen.
 
+#### Für 1.3 vorgemerkt: der Rückfall auf die analytische Glocke ist unsichtbar
+
+`check-release.mjs` bewacht die Nutzdaten des Ortspriors, weil sein Fehlen
+**still** bleibt. Der Prüfer steht aber im Build, nicht im Plugin. Zur Laufzeit
+sagt nichts, welcher Prior tatsächlich gerechnet hat.
+
+**Der Rückfall selbst** (`engine/heuristic.ts`): `priorMap(…) ?? positionPrior(…)`
+— ein `??` ohne Protokoll, ohne Rückgabewert, ohne Warnung.
+
+**Was die Fußzeile sagt.** `metaLine` schreibt „Blickverhalten: Mobile App
+(automatisch)". Die Kategorie kommt aus `priorAssetIdFor(…)`, also aus der
+Geometrie des Frames. Sie ist eine Aussage darüber, welcher Prior **gewählt**
+wurde, nicht darüber, welcher **geladen** ist — `hasPriorAsset()` existiert und
+wird an dieser Stelle nicht gefragt. Fehlt das Asset, steht dieselbe Zeile mit
+denselben Worten unter einer Karte, die die 1.0-Glocke gezeichnet hat.
+
+Zwei Fälle, beide heute unsichtbar:
+
+| Fall | was fehlt | was der Nutzer sieht |
+|---|---|---|
+| **Kategorie fehlt** | z. B. `mobile@3s` | „Blickverhalten: Mobile App (automatisch)", unverändert. Im Panel verschwindet „Mobile App" aus dem Dropdown (`availablePriorCategories`) — aber „Automatisch erkennen" ist die Voreinstellung und leitet weiter dorthin |
+| **Betrachtungsdauer fehlt** | z. B. `web@7s` | `priorMap` weicht stumm auf `web@3s` aus, die Kopfzeile behauptet weiter „Betrachtungsdauer: 7 s". Nach Epic D ist das ein **gemessener** Unterschied (+0,012 bis +0,021 CC) — die Zeile behauptet also genau die Eigenschaft, die gerade nicht gilt |
+
+Sichtbar ist nur ein Grenzfall: fallen **alle zwölf** Assets weg, wird
+`shipsPriorAsset()` falsch und die Zeile „Datengrundlage: UEyes …" fehlt. Das
+ist das Verschwinden einer Zeile, keine Meldung — und der Alles-oder-nichts-Fall
+ist der unwahrscheinlichste.
+
+**Warum es hierher gehört.** Das ist dieselbe Klasse wie die Textfarbe, die
+Kantenglättung, die Deckkraft, `dead-cta` und B4: eine Größe ist falsch oder
+fehlt, und die Ausgabe sieht unverändert aus. Fünf Anläufe, fünfmal dasselbe
+Muster.
+
+**Mögliche Richtung** — der Kanal existiert schon: `pipeline.ts` führt
+`warnings: string[]`, dort steht bereits der Bänder-Hinweis. Vor dem Lauf
+`hasPriorAsset(resolvedPrior, PROFILE_DURATIONS[profile])` fragen; ist die
+Antwort nein, eine Warnung setzen und die Kopfzeile qualifizieren, statt eine
+Kategorie zu nennen, die nicht gerechnet hat. Der Test dazu ist billig und
+fehlt heute ganz: eine leere Asset-Tabelle darf keine Kopfzeile erzeugen, die
+von der intakten nicht zu unterscheiden ist.
+
+Nicht gemessen, nicht gebaut — und anders als der Rest dieser Liste braucht es
+kein Set mit echten Layer-Bäumen, sondern nur die Entscheidung, dass ein
+Werkzeug seine eigene Ersatzrechnung ansagt.
+
 Sprachregeln (C-2), von den Tests erzwungen:
 
 - Beschreiben, was gemessen wurde — nicht vorschreiben, was zu tun ist
