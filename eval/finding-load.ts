@@ -231,7 +231,18 @@ export type CtaRankAnalysis = {
   rate: number
 }
 
-export async function analyseCtaRank(variants = 24): Promise<CtaRankAnalysis[]> {
+/**
+ * Dieselbe Kreuztabelle für eine beliebige Regel.
+ *
+ * **Warum das verallgemeinert wurde.** `cta-below-fold` misst nach dem Umbau
+ * auf `localMean` dieselbe Sache wie `cta-rank` — wo der wichtigste Knopf
+ * sitzt — und der Generator kennt die Antwort. Eine Quote allein sagt bei
+ * dieser Regel nichts: eine hohe Rate kann heißen, dass sie den Aufbau trifft,
+ * oder dass sie jeden tieferen Abschnitt meldet. Nur die Kreuztabelle
+ * unterscheidet das, und genau diese Unterscheidung hat bei `cta-rank`
+ * verhindert, dass 66,7 % als Eigenschaft der Regel gelesen wird.
+ */
+export async function analyseAgainstConstruction(ruleId: string, variants = 24): Promise<CtaRankAnalysis[]> {
   const out: CtaRankAnalysis[] = []
 
   for (const shape of SHAPES) {
@@ -258,7 +269,7 @@ export async function analyseCtaRank(variants = 24): Promise<CtaRankAnalysis[]> 
         frameWidth: shape.frameWidth,
         frameHeight: shape.frameHeight,
         priorCategory: shape.category,
-      }).some((finding) => finding.id === 'cta-rank')
+      }).some((finding) => finding.id === ruleId)
 
       if (ctaAtBottom && fired) matrix.bottomFired++
       else if (ctaAtBottom) matrix.bottomSilent++
@@ -278,6 +289,11 @@ export async function analyseCtaRank(variants = 24): Promise<CtaRankAnalysis[]> 
   }
 
   return out
+}
+
+/** Der ursprüngliche Aufruf, unverändert im Verhalten. */
+export function analyseCtaRank(variants = 24): Promise<CtaRankAnalysis[]> {
+  return analyseAgainstConstruction('cta-rank', variants)
 }
 
 /**

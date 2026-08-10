@@ -49,7 +49,7 @@ import { buildGateFixtures } from './gate-fixtures'
 import { measureBandGate, type ThresholdCandidate } from './band-gate'
 import { measureColdFold } from './cold-fold'
 import {
-  analyseCtaRank,
+  analyseAgainstConstruction,
   LOAD_POPULATIONS,
   LOAD_POPULATIONS_WITH_LAYERS,
   measureFindingLoad,
@@ -1230,7 +1230,17 @@ async function runFindingLoad(args: Args): Promise<number> {
   console.log('')
   console.log('cta-rank: was macht die Regel so häufig?')
   console.log('Der Verdacht ist der Generator — `layoutFor` stellt den CTA in 2 von 3 Varianten nach unten.')
-  for (const analysis of await analyseCtaRank()) {
+  await printAgainstConstruction('cta-rank')
+
+  console.log('')
+  console.log('cta-below-fold nach dem Umbau auf localMean — dieselbe bekannte Antwort.')
+  console.log('Die Regel meldet jetzt den Kandidaten, der SEINEN Ausschnitt anführt.')
+  await printAgainstConstruction('cta-below-fold')
+  return 0
+}
+
+async function printAgainstConstruction(ruleId: string): Promise<void> {
+  for (const analysis of await analyseAgainstConstruction(ruleId)) {
     const m = analysis.matrix
     console.log('')
     console.log(`  ${analysis.shapeLabel} — Rate ${(analysis.rate * 100).toFixed(1)} %`)
@@ -1240,7 +1250,6 @@ async function runFindingLoad(args: Args): Promise<number> {
     console.log(`    CTA oben,   Regel schweigt ${String(m.topSilent).padStart(3)}`)
     console.log(`    Übereinstimmung mit dem Aufbau: ${(analysis.agreement * 100).toFixed(1)} %`)
   }
-  return 0
 }
 
 function printLoad(results: Awaited<ReturnType<typeof measureFindingLoad>>): void {

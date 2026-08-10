@@ -2966,20 +2966,63 @@ Hero — die richtige Antwort ist also bekannt:
 23 von 24 Urteilen stimmen. Die Quote von rund 79 % ist hoch, aber sie ist die
 Quote, die der Aufbau vorgibt — kein Zeichen einer Regel, die immer feuert.
 
-**`cta-below-fold` steht auf `shipped: false`, und der Grund ist strukturell.**
-Nicht „die Schwelle ist falsch", sondern: die Regel liest `candidates[0]` auf der
-komponierten Karte, und diese Karte ist zweifach oben-lastig — der Ortsprior ist
-aus Einzel-Viewports geschätzt, und jeder Abschnitt wird zusätzlich mit
-`sectionAttenuation^i` gedämpft. Ein Element unter dem Fold startet bei der
-Hälfte. **0 von 24** konstruierten Frames, in allen drei Formen. Der
-Erreichbarkeitstest zeigt, dass es geht — aber nur mit Prototype-Interaktion
-*und* einem starken Block dahinter *und* einem Gegenspieler ohne beides.
+**`cta-below-fold` steht auf `shipped: false`** — bis 1.2 aus einem
+strukturellen Grund, seit 1.2 B4 aus einem gemessenen. Der Unterschied ist der
+eigentliche Ertrag dieser Runde, auch wenn der Schalter auf derselben Stellung
+bleibt.
+
+*Vorher:* die Regel las `candidates[0]` auf der komponierten Karte, und diese
+Karte ist zweifach oben-lastig — der Ortsprior ist aus Einzel-Viewports
+geschätzt, und jeder Abschnitt wird zusätzlich mit `sectionAttenuation^i`
+gedämpft. Ein Element unter dem Fold startet bei der Hälfte. **0 von 24**
+konstruierten Frames, in allen drei Formen. Über die eigene
+Entscheidungsgröße war damit nichts zu erfahren: die Regel kam nie zu Wort.
 
 Die Dämpfung wird dafür **nicht** angefasst. Sie ist selbst eine Annahme ohne
 Messung; sie zu verstellen, damit eine Regel feuert, hieße die Vorhersage an die
-Regel anzupassen. Was die Regel bräuchte, ist eine Größe, die den Kandidaten
-**innerhalb seines Abschnitts** bewertet statt auf der gedämpften Gesamtkarte —
-eine Neuentwicklung, kein Schwellenwert.
+Regel anzupassen.
+
+*Der Umbau (1.2 B4):* die Rangfolge läuft jetzt über `localMean`, also über die
+ungedämpfte Karte des eigenen Abschnitts — derselbe Weg, den `dead-cta` schon
+geht. Der Befundsatz ist neu geschrieben, weil sich die Aussage ändert: aus
+„der stärkste Kandidat des Screens liegt unter dem Fold" wird „der Kandidat,
+der seinen eigenen Viewport anführt, sitzt nicht im ersten".
+
+*Das Ergebnis, gegen die bekannte Antwort des Generators, je 24 Frames
+(`npm run finding-load`):*
+
+| Frame-Form | Rate | CTA unten → feuert | CTA **oben** → feuert | Übereinstimmung |
+|---|---:|---:|---:|---:|
+| Desktop, scrollend | 4,2 % | 0/16 | 1/8 | 29,2 % |
+| Telefon, scrollend | 100,0 % | 16/16 | 8/8 | 66,7 % |
+| Telefon, ein Viewport | — | keine Folds, also keine Frage | | |
+
+**Der Umbau behebt den Defekt nicht, und beide Zeilen sind aus
+entgegengesetzten Richtungen wertlos.** Auf Desktop meldet die Regel genau
+einmal, und dieser eine Fall ist einer mit CTA oben — die einzige Aussage, die
+sie macht, ist falsch. Auf Telefon meldet sie ausnahmslos, auch auf allen acht
+Frames mit CTA oben; die 66,7 % Übereinstimmung sind der Sockel des Generators,
+den eine Regel, die immer „ja" sagt, gratis bekommt.
+
+**Die Ursache ist verwertbar.** Der Umbau nimmt die Dämpfung *zwischen* den
+Abschnitten heraus, lässt den oben-lastigen Prior aber *innerhalb* jedes
+Abschnitts stehen. Der Vergleich über Abschnitte hinweg wird damit zu „wer
+sitzt am dichtesten am oberen Rand seines eigenen Viewports" — eine Frage ohne
+Bezug zum Fold. Und weil ein 390 × 3000-Frame vier Ausschnitte hat, von denen
+drei unter dem Fold liegen, gewinnt dort fast zwangsläufig einer von den
+dreien.
+
+Was die Regel bräuchte, ist keine dritte Karte, sondern eine **relative**
+Größe: nicht „dieser Kandidat führt seinen Ausschnitt an", sondern „er führt
+ihn deutlicher an, als der Anführer des ersten Ausschnitts den seinen" — ein
+Verhältnis zweier Dominanzen und damit unabhängig von der Zahl der Ausschnitte.
+Nicht gemessen, und ohne das Set mit echten Layer-Bäumen (PRD Set 2) auch nicht
+kalibrierbar.
+
+Der Messcode bleibt trotzdem stehen. Die alte Fassung schwieg; diese feuert,
+und man *sieht*, dass sie das Falsche trifft. Ein Rückbau würde diese
+Beobachtung wegwerfen und den nächsten Anlauf wieder bei der Dämpfung anfangen
+lassen.
 
 Damit sind **drei von sechs** Regeln ausgeliefert: `cta-rank`, `competition`,
 `cold-fold`.
@@ -3126,23 +3169,31 @@ hätte: sie sagt auf jedem Screen etwas, und was sie sagt, ist nachrechenbar.
 Alle drei brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle.
 In allen Fällen ist der Umbau benannt und die Messung fehlt noch:
 
-**Zwei der drei teilen sich eine Änderung.** `cta-below-fold` und `dead-cta`
-scheitern am selben Mechanismus — die komponierte Karte ist um
-`sectionAttenuation^i` gedämpft, also ist alles weiter unten rechnerisch leise,
-unabhängig vom Entwurf. Die Größe, die das behebt, **ist bereits gebaut**:
-`localMean` in `rules.ts` liest die mittlere Aufmerksamkeit eines Kandidaten auf
-der *ungedämpften* Karte seines eigenen Viewports und wird von `dead-cta` schon
-benutzt. `cta-below-fold` müsste seine Rangfolge nur ebenfalls darauf stellen.
-Das ist in 1.2 **eine Änderung für zwei Regeln**, nicht zwei Aufgaben.
+**Zwei der drei teilten sich eine vermutete Änderung — und die Vermutung war
+falsch.** `cta-below-fold` und `dead-cta` scheitern am selben Mechanismus: die
+komponierte Karte ist um `sectionAttenuation^i` gedämpft, also ist alles weiter
+unten rechnerisch leise, unabhängig vom Entwurf. Die Größe dagegen war schon
+gebaut — `localMean` liest die mittlere Aufmerksamkeit eines Kandidaten auf der
+*ungedämpften* Karte seines eigenen Viewports. Der Plan war, `cta-below-fold`
+seine Rangfolge ebenfalls darauf zu stellen: eine Änderung für zwei Regeln.
 
-Mitentschieden werden muss dabei, dass sich die *Aussage* ändert: „der stärkste
-Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
-eigenen Viewport dominiert, sitzt nicht im ersten". Der Satz ist neu zu
-schreiben, nicht nur die Zahl.
+**In 1.2 B4 umgesetzt und gemessen: die Änderung reicht nicht.** Die Regel
+feuert danach zwar, aber unkorreliert mit dem Aufbau — auf Desktop einmal, und
+zwar falsch; auf Telefon scrollend auf 24 von 24 Frames. Der Grund steht oben
+im Abschnitt zu `cta-below-fold`: der Umbau entfernt die Dämpfung *zwischen*
+den Abschnitten und lässt den oben-lastigen Prior *innerhalb* jedes Abschnitts
+stehen, womit der Vergleich zu „wer sitzt am dichtesten am oberen Rand seines
+eigenen Viewports" wird. Der Befundsatz ist neu geschrieben, die Regel bleibt
+`shipped: false`, der Messcode bleibt stehen.
 
-| Regel | neue Größe | warum sie das Problem löst |
+**Was daraus zu lernen ist, gilt über diese Regel hinaus:** „die Größe existiert
+schon und muss nur angeschlossen werden" ist eine Vermutung wie jede andere und
+gehört gemessen, bevor sie in einer Tabelle als Lösung steht. Diese Tabelle
+sagte genau das, drei Runden lang.
+
+| Regel | neue Größe | Stand |
 |---|---|---|
-| `cta-below-fold` | Rangfolge über `localMean` statt über die komponierte Karte — **derselbe Umbau wie bei `dead-cta`** | Die Regel ist nicht falsch kalibriert, sie ist blockiert: oben-lastiger Prior plus `sectionAttenuation^i`. Auf der ungedämpften Abschnittskarte ist „stärkster Kandidat dieses Viewports" wieder eine beantwortbare Frage. |
+| `cta-below-fold` | **Verhältnis zweier Dominanzen**: um wieviel deutlicher führt dieser Kandidat seinen Ausschnitt an als der Anführer des ersten Ausschnitts den seinen | Die naheliegende Größe (`localMean`) ist in 1.2 B4 gebaut, gemessen und als unzureichend belegt. Ein Verhältnis ist unabhängig von der Zahl der Ausschnitte — genau die Abhängigkeit, an der `localMean` scheitert. Nicht gemessen. |
 | `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
 | `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden — auf `localMean`, das dafür schon existiert | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
 
