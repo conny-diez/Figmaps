@@ -49,13 +49,16 @@ import { buildGateFixtures } from './gate-fixtures'
 import { measureBandGate, type ThresholdCandidate } from './band-gate'
 import { measureColdFold } from './cold-fold'
 import {
-  analyseCtaRank,
+  analyseAgainstConstruction,
   LOAD_POPULATIONS,
   LOAD_POPULATIONS_WITH_LAYERS,
   measureFindingLoad,
   onboardingFindings,
 } from './finding-load'
 import { sweepCompetition } from './competition'
+import { runContrastCheck } from './contrast-check'
+import { judgeOrder, measureKnownCases, HEADER_BAND } from './header-weight'
+import { formatRatio } from '../src/contrast/wcag'
 import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
@@ -1227,7 +1230,17 @@ async function runFindingLoad(args: Args): Promise<number> {
   console.log('')
   console.log('cta-rank: was macht die Regel so häufig?')
   console.log('Der Verdacht ist der Generator — `layoutFor` stellt den CTA in 2 von 3 Varianten nach unten.')
-  for (const analysis of await analyseCtaRank()) {
+  await printAgainstConstruction('cta-rank')
+
+  console.log('')
+  console.log('cta-below-fold nach dem Umbau auf localMean — dieselbe bekannte Antwort.')
+  console.log('Die Regel meldet jetzt den Kandidaten, der SEINEN Ausschnitt anführt.')
+  await printAgainstConstruction('cta-below-fold')
+  return 0
+}
+
+async function printAgainstConstruction(ruleId: string): Promise<void> {
+  for (const analysis of await analyseAgainstConstruction(ruleId)) {
     const m = analysis.matrix
     console.log('')
     console.log(`  ${analysis.shapeLabel} — Rate ${(analysis.rate * 100).toFixed(1)} %`)
@@ -1237,7 +1250,6 @@ async function runFindingLoad(args: Args): Promise<number> {
     console.log(`    CTA oben,   Regel schweigt ${String(m.topSilent).padStart(3)}`)
     console.log(`    Übereinstimmung mit dem Aufbau: ${(analysis.agreement * 100).toFixed(1)} %`)
   }
-  return 0
 }
 
 function printLoad(results: Awaited<ReturnType<typeof measureFindingLoad>>): void {
@@ -1299,6 +1311,105 @@ async function runCompetition(args: Args): Promise<number> {
   console.log('')
   console.log('„Schwelle" ist die Stelle, an der competitionValleyRatio in der Talverteilung sitzt.')
   console.log('Liegt sie bei p0 oder p100, kann die Regel nur nie oder immer feuern.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// contrast-check — 1.2 C: die Contrastmap auf zwei Frames
+//
+//   npm run contrast-check
+// ---------------------------------------------------------------------------
+
+function runContrastCheckCommand(args: Args): number {
+  console.log('Contrastmap auf zwei Frames. Diese Werte sind nachmessbar — keine Vorhersage.')
+  for (const result of runContrastCheck()) {
+    console.log('')
+    console.log(`${result.label} — ${result.results.length} Textelemente gemessen, ${result.skipped.length} übersprungen`)
+    // Angezeigt **und** roh: die angezeigte Zahl ist das, was der Nutzer sieht
+    // und wonach er das Urteil beurteilt; der Rohwert ist das, was er beim
+    // Nachrechnen bekommt. Beide zu zeigen ist der Sinn dieses Werkzeugs.
+    console.log(
+      `  ${'Status'.padEnd(15)}${'angezeigt'.padStart(11)}${'roh'.padStart(11)}${'gefordert'.padStart(11)}` +
+        `${'Grund ~'.padStart(10)}${'Näherung'.padStart(10)}   Text`,
+    )
+    for (const entry of result.results) {
+      // Die gemessene Hintergrundfarbe steht dabei: ohne sie ist „dieser Wert
+      // kann nicht stimmen" nicht entscheidbar.
+      const grey = Math.round(Math.pow(entry.backgroundLuminance, 1 / 2.2) * 255)
+      console.log(
+        `  ${entry.status.padEnd(15)}${formatRatio(entry.ratio).padStart(11)}${entry.ratio.toFixed(4).padStart(11)}` +
+          `${entry.required.toFixed(1).padStart(11)}${`~${grey.toString(16).padStart(2, '0').repeat(3)}`.padStart(10)}` +
+          `${(entry.approximate ? 'ja' : '—').padStart(10)}   ${entry.text.slice(0, 36)}`,
+      )
+    }
+    for (const entry of result.skipped) console.log(`  übersprungen: ${entry.nodeId} — ${entry.reason}`)
+    if (result.nonText.length > 0) {
+      console.log('')
+      console.log(`  WCAG 1.4.11 — ${result.nonText.length} Elemente im Prüfumfang, ${result.nonTextReported.length} gemeldet`)
+      console.log(`  ${'Grund'.padEnd(14)}${'ausgeliefert'.padStart(13)}${'Wert'.padStart(8)}${'Label?'.padStart(8)}   Element`)
+      for (const entry of result.nonText) {
+        console.log(
+          `  ${entry.reason.padEnd(14)}${(entry.shipped ? 'ja' : 'nein').padStart(13)}` +
+            `${entry.ratio.toFixed(2).padStart(8)}${(entry.identifiableByText ? 'ja' : '—').padStart(8)}   ${entry.name.slice(0, 32)}`,
+        )
+      }
+    }
+
+    const target = `${str(args, 'out', 'out/contrast')}-${result.id}.png`
+    writeFile(target, result.png)
+    console.log(`  Bild: ${target}`)
+    const failed = result.results.filter((entry) => entry.status === 'durchgefallen')
+    if (failed.length > 0) {
+      console.log('  Befunde, wie sie im Panel stehen:')
+      for (const entry of failed) console.log(`    ${contrastText(result, entry.nodeId)}`)
+    }
+  }
+  return 0
+}
+
+function contrastText(result: ReturnType<typeof runContrastCheck>[number], nodeId: string): string {
+  const index = result.results.findIndex((entry) => entry.nodeId === nodeId)
+  return index >= 0 ? result.findings[index] : ''
+}
+
+// ---------------------------------------------------------------------------
+// header-weight — 1.2 B2, Schritt 1: taugt die Größe überhaupt?
+//
+//   npm run header-weight
+//
+// Prüft VOR jeder Kalibrierung an Fällen mit bekannter Antwort. Stimmt die
+// Ordnung nicht, wird die Regel nicht gebaut.
+// ---------------------------------------------------------------------------
+
+async function runHeaderWeight(): Promise<number> {
+  console.log(`B2, Schritt 1 — „Kopfbereich stärker als Inhalt", Band = obere ${(HEADER_BAND * 100).toFixed(0)} %.`)
+  console.log('Gemessen auf dem BILDANTEIL, nicht auf der fertigen Karte und nicht auf sectionSalience.')
+  console.log('Diese Messung entscheidet, ob die Regel gebaut wird — vor jeder Schwelle.')
+  console.log('')
+
+  const measurements = await measureKnownCases()
+  console.log(`  ${'Fall'.padEnd(38)}${'erwartet'.padStart(13)}${'Bildanteil'.padStart(12)}${'fertige Karte'.padStart(15)}`)
+  for (const entry of measurements) {
+    const format = (value: number | null): string => (value === null ? '—' : value.toFixed(3))
+    console.log(
+      `  ${entry.case.label.padEnd(38)}${entry.case.expect.padStart(13)}` +
+        `${format(entry.onImageTerm).padStart(12)}${format(entry.onAttention).padStart(15)}`,
+    )
+  }
+
+  const verdict = judgeOrder(measurements)
+  console.log('')
+  console.log(`  Trennung hoch/niedrig:        ${verdict.separated ? 'ja' : 'NEIN'}`)
+  console.log(`  neutrale Fälle dazwischen:    ${verdict.neutralBetween ? 'ja' : 'NEIN'}`)
+  console.log(`  Klassenabstand:               ${verdict.classGap.toFixed(3)}`)
+  console.log(`  Drift durch reine Inhaltsmenge: ${verdict.contentDrift.toFixed(3)}`)
+  console.log(`  Drift kleiner als Abstand:    ${verdict.driftSmallerThanGap ? 'ja' : 'NEIN'}`)
+  console.log('')
+  console.log(
+    verdict.usable
+      ? 'BEFUND: die Größe bringt die bekannten Fälle in die richtige Ordnung. Kalibrierung ist zulässig.'
+      : 'BEFUND: die Größe bringt die bekannten Fälle NICHT in die richtige Ordnung. Die Regel wird nicht gebaut.',
+  )
   return 0
 }
 
@@ -1665,6 +1776,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args['cold-fold']) return await runColdFold()
     if (args['finding-load']) return await runFindingLoad(args)
     if (args.competition) return await runCompetition(args)
+    if (args['contrast-check']) return runContrastCheckCommand(args)
+    if (args['header-weight']) return await runHeaderWeight()
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)

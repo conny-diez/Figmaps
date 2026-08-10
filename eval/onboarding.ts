@@ -23,6 +23,20 @@
  */
 import type { Bitmap } from '../src/engine/ops'
 import type { NodeSignal } from '../src/messages'
+import { pixelLuminance } from '../src/contrast/measure'
+
+/**
+ * Relative Luminanz einer gezeichneten Farbe — dasselbe, was `collectSignals`
+ * in Figma aus dem Fill des Textknotens liest.
+ *
+ * Ohne dieses Feld kann die Contrastmap einen Textknoten nicht messen, und ein
+ * konstruierter Frame ohne es prüft die Kontrastmessung überhaupt nicht. Bis
+ * 1.2 C fehlte es hier, und die erste Messung übersprang folgerichtig **alle**
+ * Elemente.
+ */
+function inkLuminance(colour: Rgb): number {
+  return pixelLuminance(colour[0], colour[1], colour[2])
+}
 
 export const ONBOARDING_WIDTH = 393
 export const ONBOARDING_HEIGHT = 852
@@ -133,7 +147,23 @@ export function buildOnboardingFrame(): OnboardingFrame {
   fill({ x: 0, y: 0, width: ONBOARDING_WIDTH, height: 47 }, [255, 255, 255])
   text({ x: 24, y: 16, width: 38, height: 13 }, INK)
   text({ x: ONBOARDING_WIDTH - 84, y: 16, width: 60, height: 13 }, INK)
-  signal({ name: 'Statusleiste', x: 0, y: 0, width: ONBOARDING_WIDTH, height: 47, hasFill: true })
+  // Heißt wie in jedem UI-Kit — die Contrastmap überspringt sie deshalb samt
+  // ihrem Inhalt (siehe `contrast/system-chrome.ts`).
+  const statusBar = signal({ name: 'Statusleiste', x: 0, y: 0, width: ONBOARDING_WIDTH, height: 47, hasFill: true })
+  signal({
+    name: '15:30',
+    parentId: statusBar.id,
+    x: 24,
+    y: 16,
+    width: 38,
+    height: 13,
+    isText: true,
+    charCount: 5,
+    fontSize: 13,
+    fontWeight: 600,
+    text: '15:30',
+    fillLuminance: inkLuminance(INK),
+  })
 
   // --- Kopfbereich ---------------------------------------------------------
   const headline = 'Willkommen zurück'
@@ -149,6 +179,7 @@ export function buildOnboardingFrame(): OnboardingFrame {
     fontSize: 28,
     fontWeight: 700,
     text: headline,
+    fillLuminance: inkLuminance(INK),
   })
   const subline = 'Wählen Sie, was Sie interessiert.'
   text({ x: 24, y: 126, width: 250, height: 16 }, [110, 114, 122])
@@ -161,6 +192,8 @@ export function buildOnboardingFrame(): OnboardingFrame {
     isText: true,
     charCount: subline.length,
     fontSize: 15,
+    // Absichtlich helles Grau: der Fall, den die Contrastmap finden soll.
+    fillLuminance: inkLuminance([110, 114, 122]),
     text: subline,
   })
 
@@ -197,6 +230,7 @@ export function buildOnboardingFrame(): OnboardingFrame {
       fontSize: 16,
       fontWeight: 600,
       text: tile.name,
+      fillLuminance: inkLuminance(tile.ink),
     })
 
     if (tile.name === 'Nachrichten') {
@@ -213,12 +247,28 @@ export function buildOnboardingFrame(): OnboardingFrame {
   const ctaRect = { x: 24, y: 700, width: ONBOARDING_WIDTH - 48, height: 56 }
   fill(ctaRect, CTA_YELLOW)
   text({ x: ctaRect.x + 108, y: ctaRect.y + 20, width: 130, height: 17 }, INK)
-  signal({
+  const cta = signal({
     name: 'Jetzt loslegen Button',
     ...ctaRect,
     hasFill: true,
     hasReactions: true,
     nameHints: ['button', 'jetzt'],
+  })
+  // Die Beschriftung als eigener Textknoten — so steht sie auch in einer echten
+  // Datei, und nur so kann die Contrastmap sie messen.
+  signal({
+    name: 'Jetzt loslegen',
+    parentId: cta.id,
+    x: ctaRect.x + 108,
+    y: ctaRect.y + 20,
+    width: 130,
+    height: 17,
+    isText: true,
+    charCount: 14,
+    fontSize: 17,
+    fontWeight: 600,
+    text: 'Jetzt loslegen',
+    fillLuminance: inkLuminance(INK),
   })
   regions.push({
     id: 'cta-gelb',
@@ -230,7 +280,20 @@ export function buildOnboardingFrame(): OnboardingFrame {
   const secondaryRect = { x: 24, y: 772, width: ONBOARDING_WIDTH - 48, height: 44 }
   fill(secondaryRect, [255, 255, 255])
   text({ x: secondaryRect.x + 128, y: secondaryRect.y + 15, width: 90, height: 14 }, [110, 114, 122])
-  signal({ name: 'Später auswählen Button', ...secondaryRect, hasFill: true, nameHints: ['button'] })
+  const secondary = signal({ name: 'Später auswählen Button', ...secondaryRect, hasFill: true, nameHints: ['button'] })
+  signal({
+    name: 'Später auswählen',
+    parentId: secondary.id,
+    x: secondaryRect.x + 128,
+    y: secondaryRect.y + 15,
+    width: 90,
+    height: 14,
+    isText: true,
+    charCount: 16,
+    fontSize: 14,
+    text: 'Später auswählen',
+    fillLuminance: inkLuminance([110, 114, 122]),
+  })
 
   return {
     image: { width: canvasWidth, height: canvasHeight, data: pixels },

@@ -46,6 +46,7 @@ C Contrastmap). **Fertig ist A.**
 |---|---|
 | **`blendAlpha` 0,3 → 0,5** | Kreuzvalidiert und out-of-sample nachgemessen statt in-sample abgelesen. AUC, CC und NSS haben ihr Optimum einstimmig bei 0,5, in beiden Kategorien. Siehe [Alpha-Kurve](#alpha-kurve-12-a). |
 | **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
+| **Contrastmap — die Hauptausgabe, nicht die dritte Karte** | Auf dem Onboarding-Screen stehen **8 gemessene Kontrastaussagen gegen 1 Vorhersagebefund**, auf einem Desktop-Frame **10 durchgefallene Elemente gegen Ø 1,67 Vorhersagebefunde**. Sie braucht weder Folds noch Abschnitte noch Kandidaten noch Kalibrierung und sagt auf **jeder** Frame-Form etwas — als einzige Ausgabe des Plugins. Siehe [Contrastmap](#contrastmap-12-c). |
 | **Schärfe: Blur 0,035 + `blendGamma` 1,6** | Der A1-Befund ist zu gut einem Drittel behoben, bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Nicht 2,0, obwohl der Mittelwert dafür spräche: dieser Wert lässt die Gruppe stehen, für die das Plugin existiert. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis) und [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften). |
 | **Transparenzschwelle nachgezogen** | 0,08 → 0,02. Dieselbe Schwelle hätte auf der neuen Karte 37,5 % statt 18,0 % verdeckt — ein Gutteil von „das Overlay ist leerer" war der Renderer, nicht die Vorhersage. |
 | **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. Die Zahlen des Gates sind **kein Qualitätsbeleg** — siehe unten. |
@@ -1812,6 +1813,350 @@ Code, der Rest ist das Set.
 
 ---
 
+## Contrastmap (1.2 C)
+
+```bash
+npm run contrast-check      # die Karte auf zwei Frames, Bild und Befunde
+```
+
+**Die dritte Karte, und die einzige, die keine Vorhersage ist.** Sie hat keinen
+Datensatz, keine Kalibrierung und keine Schwelle, die veralten kann — sie
+rechnet eine Norm aus. Sie kann nicht in dem Sinne falsch sein, in dem eine
+Heatmap falsch sein kann; sie kann nur ungenau sein, und wo sie das ist, sagt
+sie es.
+
+**Nach den Befundzahlen ist sie die Hauptausgabe des Plugins, nicht die dritte
+Karte.** Gemessen auf denselben zwei Frames:
+
+| Frame | Contrastmap | Vorhersage-Befunde |
+|---|---:|---:|
+| Onboarding 393 × 852 | **8** gemessene Aussagen (davon 2 zu beachten) | **1** |
+| Desktop 1440 × 3200 | **21** gemessene Aussagen, **10 durchgefallen** | Ø **1,67** |
+
+Von den drei Vorhersage-Regeln bedient jede genau eine Frame-Form
+([siehe oben](#die-aufteilung-ist-keine-einschränkung-sondern-die-struktur)); auf
+einem Ein-Viewport-Telefon bekommt ein Drittel der Screens gar nichts, und der
+Rest genau einen Befund. Die Contrastmap braucht weder Folds noch Abschnitte
+noch Kandidaten noch Kalibrierung — sie sagt auf **jeder** Frame-Form etwas, und
+was sie sagt, kann man nachrechnen.
+
+Das gehört auch in die Beschreibung fürs Publishing: wer das Plugin installiert,
+bekommt zuerst eine Kontrastprüfung nach WCAG und **zusätzlich** eine
+Aufmerksamkeitsvorhersage — nicht umgekehrt.
+
+### Wie gemessen wird (C1)
+
+Hybrid, und beide Hälften aus dem Grund, aus dem sie dort herkommen müssen:
+
+| aus dem Layer-Baum | aus den gerenderten Pixeln |
+|---|---|
+| Position, Größe, Schriftgröße, Schriftschnitt, Textfarbe | die tatsächliche Hintergrundfarbe |
+
+Den Hintergrund aus dem Baum zu rekonstruieren hieße, den Renderer nachzubauen —
+gestapelte Fills, Verläufe, Fotos, Deckkraft, Masken —, und jede Abweichung wäre
+ein falscher Befund über etwas, das man ansehen kann. Umgekehrt wäre „alles aus
+den Pixeln" ebenso falsch: aus einem Screenshot ist nicht zu erkennen, was ein
+Textknoten ist und wie groß seine Schrift wirklich ist — und genau davon hängt
+die Schwelle ab.
+
+Abgetastet wird **innerhalb** des Textrahmens, ohne die Glyphen: Pixel nahe der
+Textfarbe fallen weg, samt Antialiasing-Saum. Füllt der Text seinen Rahmen, wird
+auf einen Ring außerhalb ausgewichen. Gemessen wird auf der **vollen**
+Auflösung (`ENGINE_CONFIG.contrastSource`), nicht auf dem 1024 px breiten
+Analysebild — zwischen den Glyphen wäre dort kein reiner Hintergrund mehr übrig,
+und der Wert wäre eine Interpolation statt einer Messung.
+
+### Die Schwellen sind zitiert, nicht kalibriert (C2)
+
+WCAG 2.1, Erfolgskriterium 1.4.3, Level AA: **4,5:1** für normalen Text, **3:1**
+für großen — groß heißt ab 24 px, oder ab 18,66 px bei fett. Diese Zahlen stehen
+in einem Standard und veralten nicht mit unserer Engine.
+
+Was **nicht** übernommen ist, weil es ohne Auslegung nicht geht: die Ausnahmen
+des Kriteriums für rein dekorativen Text, für Logotypen und für inaktive
+Bedienelemente. Ein Layer-Baum sagt nicht, ob ein Text dekorativ ist. Gemessen
+werden deshalb alle Textknoten, und die Ausnahme bleibt beim Menschen — ein
+falsch gemeldeter Logotyp ist ein Ärgernis, ein verschwiegener Fließtext ein
+Fehler.
+
+Eine Stufe kommt von uns und ist als unsere gekennzeichnet: **grenzwertig** für
+Werte knapp über der Norm. 4,52:1 trägt dieselbe Aussage wie 4,48:1, und die
+Abtastung hat in der zweiten Nachkommastelle ohnehin keinen Halt.
+
+### Darstellung (C3)
+
+![Contrastmap auf dem Onboarding-Screen](assets/messungen/c-contrastmap-onboarding.png)
+![Contrastmap auf einem Desktop-Frame](assets/messungen/c-contrastmap-desktop.png)
+
+**Kein Overlay über dem Inhalt** — dieselbe Regel, aus der 1.1 die Legende und
+der Disclaimer aus den Bildern verschwunden sind. Bei einer Karte, die von
+Lesbarkeit handelt, wäre es besonders absurd, den Text zu verdecken. Stattdessen:
+ein Rahmen **um** jedes Textelement, der Wert in einer Fahne daneben, und der
+Rest des Bildes leicht abgedunkelt, damit die Markierungen hervortreten.
+
+Die drei Farben sind Status, keine Skala. Und sie sind nicht die einzige
+Kodierung: die Zahl steht an jedem Element, und die Rahmen unterscheiden sich in
+der Strichstärke — eine Barrierefreiheits-Ansicht, die selbst auf
+Rot-Grün-Unterscheidung angewiesen ist, wäre schwer zu verteidigen.
+
+Gemessen auf den beiden Prüffällen:
+
+| Frame | gemessen | durchgefallen | grenzwertig |
+|---|---:|---:|---:|
+| Onboarding-Screen 393 × 852 | 8 | 0 | 2 |
+| Desktop, scrollend 1440 × 3200 | 21 | 10 | 0 |
+
+Auf dem Desktop-Frame fallen die Firmennamen (4,1:1) und die Kartenknöpfe
+(4,4:1) durch, die Stellentitel bestehen mit 18,0:1. Auf dem Onboarding-Screen
+besteht alles; die Unterzeile liegt mit 4,5:1 knapp darüber und wird als
+grenzwertig markiert.
+
+#### Die angezeigte Zahl darf dem Urteil nicht widersprechen
+
+Die Kartenknöpfe standen in der ersten Fassung mit **„4,50:1"** neben „WCAG AA
+verlangt 4,5:1" und dem Urteil „durchgefallen". Beide Erklärungen waren zu
+prüfen:
+
+| | |
+|---|---|
+| Vergleichsoperator `>` statt `>=` | **Nein.** `statusOf` schneidet bei `ratio < required`; genau 4,5 besteht, wie WCAG 1.4.3 es verlangt („mindestens"). Ein Test hält das jetzt fest. |
+| Anzeige-Rundung | **Ja.** Der Rohwert war **4,499204**, das Urteil also richtig — kaufmännisch gerundet wurde daraus „4,50". |
+
+Rechnerisch stimmte alles, im Bild war es unhaltbar. Behoben durch **Abrunden**
+statt Runden, und zwar nicht als Notlösung: weil beide Schwellen bei einer
+Nachkommastelle exakt darstellbar sind (4,5 und 3,0), ist die angezeigte Zahl
+damit **beweisbar** widerspruchsfrei zum Urteil —
+
+```
+Verhältnis <  Schwelle  ⇒  Anzeige ≤ Verhältnis <  Schwelle
+Verhältnis ≥  Schwelle  ⇒  Anzeige ≥ Schwelle
+```
+
+Der Test prüft das als Eigenschaft über den ganzen Wertebereich beider
+Schwellen, nicht an Beispielen. Abrunden ist zusätzlich die sichere Richtung:
+wir behaupten nie mehr Kontrast, als gemessen wurde.
+
+### Die Befunde stehen getrennt (C4)
+
+> „Digital Works AG" hat 4,2:1 gegen seinen Hintergrund — WCAG AA verlangt
+> 4,5:1 (normaler Text).
+
+Eigene Sektion im Panel, eigene Bezeichnung („Kontrast (gemessen)"), und **der
+Vorhersage-Disclaimer gilt für sie nicht**. Die Trennung steht im Typ, nicht nur
+im Layout: `ContrastFinding` ist ein anderer Typ als `FindingPayload`, damit die
+beiden nicht versehentlich in einer Liste landen. In einer Liste vermischt würde
+das eine das andere abwerten — und zwar in die falsche Richtung, denn die
+belastbarere Aussage verlöre.
+
+### Bedienelemente: WCAG 1.4.11 (Non-text Contrast)
+
+**Was gemessen wird, und was ausdrücklich nicht.** 1.4.11 fordert 3:1 für
+visuelle Information, die nötig ist, um eine Komponente oder ihren **Zustand**
+zu *identifizieren*. Das ist nicht „jede Fläche gegen irgendetwas": gemessen
+wird die **Begrenzung gegen die unmittelbar angrenzende Farbe** — die Kante, an
+der man erkennt, dass hier eine Komponente anfängt.
+
+**Die Ausnahme, die die meisten Fehlmeldungen verhindert:** ist eine Komponente
+durch ihren **eigenen sichtbaren Text** identifizierbar, ist ihre Begrenzung
+nicht erforderlich. Der gelbe Knopf „Los geht's" hat gegen den cremefarbenen
+Grund **1,45:1** und wäre ohne diese Ausnahme ein Durchfaller — nach der Norm
+ist er keiner, weil die Beschriftung ihn identifiziert. Genau diese Fehlmeldung
+produzieren rasterbasierte Werkzeuge, die nur Pixel sehen. **Wir können es
+besser, weil wir wissen, was ein Element ist.** Icon-Knöpfe ohne Text bleiben
+drin, denn dort trägt nur die Form die Information.
+
+#### Umfang: sortiert nach „wie sicher verlangt die Norm hier 3:1"
+
+| Grund | ausgeliefert | warum |
+|---|---|---|
+| Prototype-Interaktion (`hasReactions`) | **ja** | per Definition bedienbar |
+| Name trifft ein Stichwort (Button, Kachel, Feld …) | **ja** | von einem Menschen so benannt |
+| wiederholtes Element (≥ 3 gleichartige Geschwister) | nein | klassischer Dekorationsfall |
+| Trennlinie (dünn, lang) | nein | eine Linie zwischen ohnehin unterscheidbaren Karten ist zum Verständnis nicht nötig |
+
+Die unteren beiden werden **gemessen, aber nicht gemeldet** — dieselbe
+Konstruktion wie `shipped: false` bei den Vorhersageregeln: Code und Grund
+bleiben beieinander, und die Rate ist da, wenn jemand entscheiden will. Auf dem
+konstruierten Desktop-Frame fallen 7 von 9 Elementen in diese Kategorie
+(Ergebniskarten), alle mit eigener Beschriftung — sie würden also selbst bei
+Auslieferung nichts melden.
+
+Gemessen auf den beiden Prüffällen:
+
+| Frame | im Prüfumfang | davon gemeldet |
+|---|---:|---:|
+| Onboarding 393 × 852 | 6 | **0** (alle tragen eine Beschriftung) |
+| Desktop 1440 × 3200 | 9 | **2** (Suchfeld, CTA — beide ohne Textkind) |
+
+**Fotos sind ausgenommen — aus einem Messgrund, nicht aus einem Normgrund.** Die
+Ausnahmen der Norm sind inaktive Komponenten, browserbestimmte Darstellung und
+Grafiken, bei denen eine bestimmte Darstellung wesentlich ist; Fotos stehen
+nicht darunter. Sie fallen hier trotzdem raus, weil es über einem Foto keinen
+definierbaren Vordergrund gegen Hintergrund gibt, gegen den sich eine Begrenzung
+berechnen ließe. Der Unterschied ist wichtig: eine falsche Normbehauptung im
+Werkzeug kostet die ganze Sektion ihre Glaubwürdigkeit.
+
+#### Zwei Grenzen, die prinzipiell bleiben
+
+1. **Zustände sind in einem statischen Frame nicht prüfbar.** Man sieht einen
+   Zustand. 1.4.11 verlangt Kontrast auch für die *Unterscheidung* der Zustände
+   untereinander — ob der aktive Reiter sich vom inaktiven abhebt, ist aus einem
+   Frame nicht zu beantworten.
+2. **Inaktive Komponenten sind ausgenommen, und „inaktiv" ist aus dem Layer-Baum
+   nicht zuverlässig zu erkennen.** Ein ausgegrauter Knopf sieht aus wie ein
+   Knopf mit wenig Kontrast. Wir melden ihn; die Entscheidung bleibt beim
+   Menschen.
+
+Beide stehen im Panel, nicht nur hier. Und 1.4.11 bekommt eine **eigene
+Sektion**: in 1.4.3 steckt keine Einschätzung, hier schon — ob ein Element eine
+Komponente ist, schätzt eine Heuristik.
+
+### Was die Generatoren nicht erzeugen — und was davon eine Messung kippt
+
+**Zweimal hintereinander haben die Testframes eine kaputte Methode bestätigt,
+weil ihnen eine Eigenschaft echter Renders fehlte.** Erst die Textfarbe (jeder
+Knoten wurde übersprungen), dann die Kantenglättung (jeder Wert war falsch).
+Beide Male war die Messung falsch und alle Tests grün. Das ist kein Zufall
+mehr, sondern ein Muster — also einmal systematisch durchgegangen, was
+`constructed.ts`, `onboarding.ts` und `fixtures-cli.ts` **nicht** erzeugen.
+
+| Fehlt in den Fixtures | Kippt es eine Messung? | Stand |
+|---|---|---|
+| **Kantenglättung** an Glyphen | **Ja, tat es.** Minimum über Pixel traf immer ein Mischpixel | **behoben**, eigener Test mit bekannten Farbpaaren |
+| **Textfarbe** (`fillLuminance`) | **Ja, tat es.** Ohne sie misst die Contrastmap gar nicht | **behoben**, beide Generatoren setzen sie |
+| **Deckkraft < 1** an Fill oder Knoten | **Ja.** Die Farbe aus dem Layer-Baum ist dann nicht die, die man sieht — der gemeldete Kontrast wäre **besser** als die Wirklichkeit | **behoben ohne Testfall**: `traverse.ts` setzt `fillLuminance` nur noch, wenn Paint und Knoten voll deckend sind. Lieber „nicht messbar" als eine geschönte Zahl |
+| **Überlappende Elemente / Verdeckung** | **Ja, offen.** Ein Knoten, der von einem späteren Element überdeckt wird, wird gegen Pixel gemessen, die gar nicht zu ihm gehören. Die Generatoren zeichnen überschneidungsfrei | **offen** — braucht einen Frame mit bewusster Verdeckung |
+| **Verläufe als Hintergrund** | **Vermutlich nein.** Der `varies`-Pfad ist getestet, aber nur mit einem synthetischen Verlauf, nicht aus einem Generator | **offen**, geringes Risiko |
+| **Text auf Fotos** | **Vermutlich nein**, gleicher Pfad wie Verläufe. Die Onboarding-Kacheln haben Bildflächen, aber der Text liegt darunter, nie darauf | **offen**, geringes Risiko |
+| **Subpixel-Positionen** | **Möglich.** Alle Rechtecke der Generatoren liegen auf ganzen Pixeln; Figma liefert Bruchteile. `luminancesIn` rundet, kann also eine Pixelreihe daneben greifen — bei kleinem Text anteilig viel | **offen** |
+| **Rotation** | **Ja, vermutlich.** Ein gedrehter Textknoten hat eine achsenparallele Bounding-Box voller Hintergrund; die dominante Fläche wäre dann der Grund neben dem Text statt der dahinter | **offen** |
+| **Effekte (Schatten, Blur), Masken, Clipping** | **Möglich.** Ein Schatten unter Text verschiebt den gemessenen Hintergrund; eine Maske kann Pixel zeigen, die nicht zum Knoten gehören | **offen** |
+| **`figma.mixed`** (mehrere Schriftgrößen, mehrere Fills in einem Knoten) | Nein — der Übersprungpfad existiert und meldet den Grund | abgedeckt durch Konstruktion |
+
+**Was das über die Testframes sagt.** Sie sind gut für Geometrie und für die
+Befundregeln, und sie waren für die Kontrastmessung von Anfang an ungeeignet:
+ein Generator, der Text als hartkantige Balken in ganzzahligen Rechtecken
+zeichnet, kann eine pixelbasierte Messung nicht prüfen. Der Test mit **bekannten
+Farbpaaren** ist die Antwort darauf — er baut die eine Eigenschaft nach, die
+zählt, und prüft gegen Zahlen, die feststehen.
+
+**Die drei offenen Punkte mit echtem Risiko** (Verdeckung, Rotation, Subpixel)
+haben eines gemeinsam: bei allen dreien ist die **Bounding-Box nicht das, was
+man sieht**. Der naheliegende nächste Schritt ist deshalb keine weitere
+Fixture-Variante, sondern eine Plausibilitätsprüfung in der Messung selbst — ob
+die dominante Fläche überhaupt groß genug ist, um der Hintergrund *dieses*
+Elements zu sein. Nicht in diesem Schritt gebaut.
+
+### Der Kopf der Contrastmap läuft nicht durch die Vorhersage-Vorlage
+
+Über jeder Karte stehen ein Titel und eine Zeile mit dem Disclaimer, dem
+Blickverhalten, der Betrachtungsdauer und der Engine-Version; unter allen Karten
+die UEyes-Datengrundlage. Für die Contrastmap ist **jedes einzelne davon
+falsch**: sie sagt nichts vorher, benutzt keinen Ortsprior, und keine der drei
+Größen geht in ein Kontrastverhältnis ein.
+
+| | Vorhersage-Karten | Contrastmap |
+|---|---|---|
+| Titel | „Heatmap — vorhergesagt" | **„Contrastmap — gemessen"** |
+| Zeile | „Algorithmische Vorhersage, keine Messdaten · Blickverhalten … · Betrachtungsdauer … · hybrid-v1" | **„Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage"** |
+| Ebenenname | `Heatmap · Blick (1 s) · hybrid-v1` | `Contrastmap · gemessen` |
+| Datengrundlage darunter | ja | **nur, wenn auch eine Vorhersage-Karte erzeugt wurde** |
+
+Die Datengrundlage hängt am Wrapper, nicht an der einzelnen Karte — sie
+verschwindet jetzt, wenn **ausschließlich** gemessene Karten entstehen. Sie
+belegt eine Abhängigkeit, und eine Contrastmap hat keine. (Die CC-BY-Pflicht
+selbst bleibt davon unberührt: sie greift für den Ortsprior, und der steckt in
+keiner Contrastmap.)
+
+Abgesichert wie der Ortsprior-Test: **kein Textknoten und kein Ebenenname in der
+Karten-Spalte** darf „vorhergesagt", „Vorhersage", „Betrachtungsdauer",
+„Blickverhalten", „UEyes" oder die Engine-Version enthalten. Ausgenommen sind
+genau die beiden freigegebenen Zeichenketten — die Zeile enthält „Vorhersage" in
+ihrer Verneinung —, und deren Wortlaut steht in einem eigenen Test.
+
+### Die Wertfahnen verdecken keinen Text mehr
+
+Dritter Anlauf mit diesen Fahnen: zuletzt lag eine über dem Wort „Hier" eines
+**anderen** Elements — rechts neben Element A war Platz, aber genau dort begann
+Element B. Die Platzierung probiert jetzt sechs Positionen um das Element herum
+(rechts, links, oben, unten, jeweils auch bündig) und nimmt die erste, die
+weder ein markiertes Element noch eine bereits gesetzte Fahne trifft und ins
+Bild passt. Findet keine Platz, gewinnt die mit der **kleinsten überlappten
+Fläche** — im Zweifel der kleinste Schaden statt einer willkürlichen Wahl.
+
+Fünf Tests halten das fest, darunter der Fall aus dem Bericht (zwei
+nebeneinanderliegende Textelemente) und der Rand des Bildes. Das Prüfbild aus
+`npm run contrast-check` benutzt dieselbe Platzierungsfunktion wie das Plugin —
+sonst zeigte es etwas anderes als das, was ausgeliefert wird.
+
+### Die gemessene Hintergrundfarbe steht im Ergebnis
+
+`npm run contrast-check` weist zu jedem Element aus, **gegen welche Farbe**
+gerechnet wurde. Das macht einen Verdacht überprüfbar statt ihn Verdacht bleiben
+zu lassen: wer einen Wert für falsch hält, hält diese Farbe gegen den Fill in
+der Datei.
+
+Der Anlass: ein weißer Text auf einer dunklen Kachel wurde mit 15,9:1 gemeldet,
+und das sah zu hoch aus. Nachgerechnet entspricht 15,9:1 **exakt #222222** — die
+Messung ist also in sich stimmig. Ob die Kachel wirklich so dunkel ist oder ob
+etwas Dunkleres darunter liegt (Schatten, Scrim, Overlay), zeigt jetzt die
+ausgewiesene Farbe. Zusätzlich sind **weiß auf #222222** (15,91:1) und **weiß
+auf #4D4D4D** (8,45:1) in den Test mit bekannten Farbpaaren aufgenommen — mit
+Kantenglättung, auf 0,05 genau.
+
+### Betriebssystem-Chrome bleibt außen vor
+
+Auf einem Handy-Frame liegt oben die Statusleiste („15:30", WLAN, Akku) und
+unten der Home-Indicator. Das ist keine Gestaltung des Entwurfs, sondern das
+Betriebssystem; einen Kontrastbefund darüber kann niemand beheben.
+
+**Erkannt über den Namen, nicht über die Position** — und die Entscheidung fiel
+an der Fehlerrichtung:
+
+| | scheitert wie |
+|---|---|
+| Positionsregel („oberstes Band eines Mobile-Frames") | **stiller Ausfall.** Auf einem Screen ohne Statusleiste sitzt dort die Kopfzeile. Im eigenen Onboarding-Testframe steht „Willkommen zurück" bei 9,8 % der Höhe — jede Schwelle, die „15:30" bei 3 % erwischt, ist einen Handgriff davon entfernt, eine echte Überschrift zu verschlucken. Und niemand sieht, dass sie gefehlt hat. |
+| Namensmuster | **zu Rauschen hin.** Es übersieht eine anders benannte Statusleiste, und dann steht ein Befund zu viel im Report. Das sieht man. |
+
+Die Liste ist bewusst kurz: `status bar`, `statusleiste`, `statusbar`,
+`home indicator`. **`navigation bar` ist nicht dabei** — Androids Systemleiste
+heißt so, App-Navigationen aber auch, und ein Muster, das beides trifft, löscht
+die Hauptnavigation aus der Prüfung.
+
+**Auf Wortgrenzen, nicht als Teilstring.** Ein Teilstring-Vergleich verschluckt
+eine „Bewerbungsstatusleiste" — und zwar in genau der Fehlerrichtung, die mit
+der Entscheidung gegen die Positionsregel ausgeschlossen wurde. Der Test führt
+dieses Beispiel namentlich.
+
+Geprüft wird der Knoten **und seine Vorfahren**: die Uhrzeit in einer Komponente
+„iOS Status Bar" heißt meist schlicht „15:30". Und die Ausnahme gilt für
+**beide** Pfade — ohne das verschwände „15:30" aus 1.4.3 und die Symbole daneben
+blieben in 1.4.11 stehen. Übersprungenes wird gezählt und benannt, wie jedes
+andere nicht messbare Element auch.
+
+### Grenzen, ehrlich benannt (C5)
+
+Über einem Foto oder einem Verlauf gibt es kein „das" Kontrastverhältnis,
+sondern eine Verteilung. Gemeldet wird der **schlechteste** Wert im Textbereich
+— die Aussage, die nicht zu gut aussieht — und der Befund sagt dazu, dass der
+Hintergrund wechselt und der Wert eine Näherung nach unten ist. In der Karte
+trägt die Fahne dann ein `~`.
+
+Elemente, die gar nicht messbar sind, werden **gezählt und benannt** statt still
+ausgelassen: mehrfarbiger Text ohne einfarbigen Fill, fehlende Schriftgröße,
+Text, der seinen Rahmen vollständig füllt. Eine Messung, die Elemente
+verschweigt, sagt „in Ordnung", wo sie „ich weiß es nicht" meint.
+
+### Panel (C6)
+
+Dritter Schalter, Reihenfolge Heatmap, Focusmap, Contrastmap — dieselbe
+Reihenfolge, in der die Ergebnisframes auf dem Canvas landen. Beschreibung:
+„Prüft, ob Texte genug Kontrast zu ihrem Hintergrund haben". Eine gespeicherte
+Einstellung von vor 1.2 bekommt die Karte **eingeschaltet**: eine neue Ausgabe,
+die still ausgeschaltet ankommt, sieht aus wie eine, die es nicht gibt.
+
+---
+
 ## Befunde (Epic C)
 
 Nach der Berechnung läuft ein Satz deterministischer Regeln über Heatmap,
@@ -2621,20 +2966,63 @@ Hero — die richtige Antwort ist also bekannt:
 23 von 24 Urteilen stimmen. Die Quote von rund 79 % ist hoch, aber sie ist die
 Quote, die der Aufbau vorgibt — kein Zeichen einer Regel, die immer feuert.
 
-**`cta-below-fold` steht auf `shipped: false`, und der Grund ist strukturell.**
-Nicht „die Schwelle ist falsch", sondern: die Regel liest `candidates[0]` auf der
-komponierten Karte, und diese Karte ist zweifach oben-lastig — der Ortsprior ist
-aus Einzel-Viewports geschätzt, und jeder Abschnitt wird zusätzlich mit
-`sectionAttenuation^i` gedämpft. Ein Element unter dem Fold startet bei der
-Hälfte. **0 von 24** konstruierten Frames, in allen drei Formen. Der
-Erreichbarkeitstest zeigt, dass es geht — aber nur mit Prototype-Interaktion
-*und* einem starken Block dahinter *und* einem Gegenspieler ohne beides.
+**`cta-below-fold` steht auf `shipped: false`** — bis 1.2 aus einem
+strukturellen Grund, seit 1.2 B4 aus einem gemessenen. Der Unterschied ist der
+eigentliche Ertrag dieser Runde, auch wenn der Schalter auf derselben Stellung
+bleibt.
+
+*Vorher:* die Regel las `candidates[0]` auf der komponierten Karte, und diese
+Karte ist zweifach oben-lastig — der Ortsprior ist aus Einzel-Viewports
+geschätzt, und jeder Abschnitt wird zusätzlich mit `sectionAttenuation^i`
+gedämpft. Ein Element unter dem Fold startet bei der Hälfte. **0 von 24**
+konstruierten Frames, in allen drei Formen. Über die eigene
+Entscheidungsgröße war damit nichts zu erfahren: die Regel kam nie zu Wort.
 
 Die Dämpfung wird dafür **nicht** angefasst. Sie ist selbst eine Annahme ohne
 Messung; sie zu verstellen, damit eine Regel feuert, hieße die Vorhersage an die
-Regel anzupassen. Was die Regel bräuchte, ist eine Größe, die den Kandidaten
-**innerhalb seines Abschnitts** bewertet statt auf der gedämpften Gesamtkarte —
-eine Neuentwicklung, kein Schwellenwert.
+Regel anzupassen.
+
+*Der Umbau (1.2 B4):* die Rangfolge läuft jetzt über `localMean`, also über die
+ungedämpfte Karte des eigenen Abschnitts — derselbe Weg, den `dead-cta` schon
+geht. Der Befundsatz ist neu geschrieben, weil sich die Aussage ändert: aus
+„der stärkste Kandidat des Screens liegt unter dem Fold" wird „der Kandidat,
+der seinen eigenen Viewport anführt, sitzt nicht im ersten".
+
+*Das Ergebnis, gegen die bekannte Antwort des Generators, je 24 Frames
+(`npm run finding-load`):*
+
+| Frame-Form | Rate | CTA unten → feuert | CTA **oben** → feuert | Übereinstimmung |
+|---|---:|---:|---:|---:|
+| Desktop, scrollend | 4,2 % | 0/16 | 1/8 | 29,2 % |
+| Telefon, scrollend | 100,0 % | 16/16 | 8/8 | 66,7 % |
+| Telefon, ein Viewport | — | keine Folds, also keine Frage | | |
+
+**Der Umbau behebt den Defekt nicht, und beide Zeilen sind aus
+entgegengesetzten Richtungen wertlos.** Auf Desktop meldet die Regel genau
+einmal, und dieser eine Fall ist einer mit CTA oben — die einzige Aussage, die
+sie macht, ist falsch. Auf Telefon meldet sie ausnahmslos, auch auf allen acht
+Frames mit CTA oben; die 66,7 % Übereinstimmung sind der Sockel des Generators,
+den eine Regel, die immer „ja" sagt, gratis bekommt.
+
+**Die Ursache ist verwertbar.** Der Umbau nimmt die Dämpfung *zwischen* den
+Abschnitten heraus, lässt den oben-lastigen Prior aber *innerhalb* jedes
+Abschnitts stehen. Der Vergleich über Abschnitte hinweg wird damit zu „wer
+sitzt am dichtesten am oberen Rand seines eigenen Viewports" — eine Frage ohne
+Bezug zum Fold. Und weil ein 390 × 3000-Frame vier Ausschnitte hat, von denen
+drei unter dem Fold liegen, gewinnt dort fast zwangsläufig einer von den
+dreien.
+
+Was die Regel bräuchte, ist keine dritte Karte, sondern eine **relative**
+Größe: nicht „dieser Kandidat führt seinen Ausschnitt an", sondern „er führt
+ihn deutlicher an, als der Anführer des ersten Ausschnitts den seinen" — ein
+Verhältnis zweier Dominanzen und damit unabhängig von der Zahl der Ausschnitte.
+Nicht gemessen, und ohne das Set mit echten Layer-Bäumen (PRD Set 2) auch nicht
+kalibrierbar.
+
+Der Messcode bleibt trotzdem stehen. Die alte Fassung schwieg; diese feuert,
+und man *sieht*, dass sie das Falsche trifft. Ein Rückbau würde diese
+Beobachtung wegwerfen und den nächsten Anlauf wieder bei der Dämpfung anfangen
+lassen.
 
 Damit sind **drei von sechs** Regeln ausgeliefert: `cta-rank`, `competition`,
 `cold-fold`.
@@ -2719,28 +3107,93 @@ noch Abschnitte und funktioniert auf einem Ein-Viewport-Screen vollständig —
 damit deckt sie genau die Lücke ab, die die Befunde dort lassen. (In diesem
 Branch existiert sie noch nicht; hier steht sie als Vormerkung für 1.2.)
 
+### B2 — „Kopfbereich stärker als Inhalt" wird nicht gebaut
+
+```bash
+npm run header-weight
+```
+
+Die Regel wäre die zweite Vorhersage-Regel für Ein-Viewport-Screens gewesen. Die
+vorgeschlagene Größe — Bandaufteilung plus Verhältnismaß, mittlerer
+Bildanalyse-Anteil im oberen Viertel geteilt durch den im Rest — ist **vor**
+jeder Kalibrierung an Fällen mit bekannter Antwort geprüft worden. Sie besteht
+die Prüfung nicht.
+
+| Fall | erwartet | Bildanteil | fertige Karte |
+|---|---|---:|---:|
+| leer | undefiniert | — | 3,757 |
+| kräftiger Kopfbereich, ruhiger Inhalt | **hoch** | 1,246 | 2,637 |
+| ein kleiner Blickfang in der Mitte | niedrig | **—** | 2,437 |
+| ein großer Blickfang in der Mitte | niedrig | 0,000 | 1,572 |
+| ein kleiner Blickfang im Kopfbereich | **hoch** | **201,955** | 5,820 |
+| 3 gleich starke Blöcke | neutral | **1,280** | 2,410 |
+| 6 gleich starke Blöcke | neutral | 1,035 | 1,959 |
+| 12 gleich starke Blöcke | neutral | 0,953 | 1,870 |
+
+**Drei Gründe, jeder für sich hinreichend:**
+
+1. **Die Größe ist auf dem klarsten Fall undefiniert.** „Ein kleiner Blickfang
+   in der Mitte" hat im oberen Band gar keine Masse — der Bildanteil ist dort
+   nach der Perzentil-Normierung exakt null. Ein Verhältnis 0 ÷ x ist keine
+   kleine Zahl, sondern keine Zahl. Genau dort, wo die Antwort am eindeutigsten
+   ist, sagt die Größe nichts.
+2. **Der Wertebereich ist unbrauchbar.** Ein Verhältnis zweier Mittelwerte
+   explodiert, sobald der Nenner klein wird: 0,000 bis 201,955, mit Löchern
+   dazwischen. In einer solchen Verteilung liegt keine Schwelle sinnvoll.
+3. **Die Inhaltsmenge schiebt die Fälle über die Klassengrenze.** Drei gleich
+   starke Blöcke kommen auf **1,280** und liegen damit **über** dem Fall, der
+   „hoch" heißen soll (kräftiger Kopfbereich, 1,246). Das ist exakt die
+   `flat`-Falle: die Größe reagiert stärker auf die Menge an Inhalt als auf das,
+   was sie messen soll.
+
+Die Spalte „fertige Karte" steht daneben, weil sie die naheliegende Alternative
+erledigt: dort bekommt der **leere** Frame mit 3,757 den höchsten Wert von
+allen. Das ist der Ortsprior, der von sich aus oben-lastig ist — auf der
+fertigen Karte misst diese Größe die Positionsannahme, nicht den Entwurf.
+
+**Es gibt keinen zweiten Anlauf.** Weder ein anderes Band noch ein anderes
+Verhältnis: die Instabilität kommt aus der Konstruktion „Quotient zweier
+Mittelwerte" und nicht aus der Bandgröße, und `flat` hat fünf Anläufe gekostet,
+von denen vier nichts gefunden haben, was der erste nicht schon zeigte.
+
+**Was das kostet, und warum es tragbar ist.** Ein-Viewport-Screens behalten
+damit genau eine Vorhersage-Regel (`competition`, 15,2 %) plus `cta-rank`, wo
+ein Layer-Baum vorliegt. Die Lücke, die B2 hätte füllen sollen, füllt die
+[Contrastmap](#contrastmap-12-c) — und zwar besser, als diese Regel es gekonnt
+hätte: sie sagt auf jedem Screen etwas, und was sie sagt, ist nachrechenbar.
+
+---
+
 ### Offen für 1.2 — die abgeschalteten Regeln
 
 Alle drei brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle.
 In allen Fällen ist der Umbau benannt und die Messung fehlt noch:
 
-**Zwei der drei teilen sich eine Änderung.** `cta-below-fold` und `dead-cta`
-scheitern am selben Mechanismus — die komponierte Karte ist um
-`sectionAttenuation^i` gedämpft, also ist alles weiter unten rechnerisch leise,
-unabhängig vom Entwurf. Die Größe, die das behebt, **ist bereits gebaut**:
-`localMean` in `rules.ts` liest die mittlere Aufmerksamkeit eines Kandidaten auf
-der *ungedämpften* Karte seines eigenen Viewports und wird von `dead-cta` schon
-benutzt. `cta-below-fold` müsste seine Rangfolge nur ebenfalls darauf stellen.
-Das ist in 1.2 **eine Änderung für zwei Regeln**, nicht zwei Aufgaben.
+**Zwei der drei teilten sich eine vermutete Änderung — und die Vermutung war
+falsch.** `cta-below-fold` und `dead-cta` scheitern am selben Mechanismus: die
+komponierte Karte ist um `sectionAttenuation^i` gedämpft, also ist alles weiter
+unten rechnerisch leise, unabhängig vom Entwurf. Die Größe dagegen war schon
+gebaut — `localMean` liest die mittlere Aufmerksamkeit eines Kandidaten auf der
+*ungedämpften* Karte seines eigenen Viewports. Der Plan war, `cta-below-fold`
+seine Rangfolge ebenfalls darauf zu stellen: eine Änderung für zwei Regeln.
 
-Mitentschieden werden muss dabei, dass sich die *Aussage* ändert: „der stärkste
-Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
-eigenen Viewport dominiert, sitzt nicht im ersten". Der Satz ist neu zu
-schreiben, nicht nur die Zahl.
+**In 1.2 B4 umgesetzt und gemessen: die Änderung reicht nicht.** Die Regel
+feuert danach zwar, aber unkorreliert mit dem Aufbau — auf Desktop einmal, und
+zwar falsch; auf Telefon scrollend auf 24 von 24 Frames. Der Grund steht oben
+im Abschnitt zu `cta-below-fold`: der Umbau entfernt die Dämpfung *zwischen*
+den Abschnitten und lässt den oben-lastigen Prior *innerhalb* jedes Abschnitts
+stehen, womit der Vergleich zu „wer sitzt am dichtesten am oberen Rand seines
+eigenen Viewports" wird. Der Befundsatz ist neu geschrieben, die Regel bleibt
+`shipped: false`, der Messcode bleibt stehen.
 
-| Regel | neue Größe | warum sie das Problem löst |
+**Was daraus zu lernen ist, gilt über diese Regel hinaus:** „die Größe existiert
+schon und muss nur angeschlossen werden" ist eine Vermutung wie jede andere und
+gehört gemessen, bevor sie in einer Tabelle als Lösung steht. Diese Tabelle
+sagte genau das, drei Runden lang.
+
+| Regel | neue Größe | Stand |
 |---|---|---|
-| `cta-below-fold` | Rangfolge über `localMean` statt über die komponierte Karte — **derselbe Umbau wie bei `dead-cta`** | Die Regel ist nicht falsch kalibriert, sie ist blockiert: oben-lastiger Prior plus `sectionAttenuation^i`. Auf der ungedämpften Abschnittskarte ist „stärkster Kandidat dieses Viewports" wieder eine beantwortbare Frage. |
+| `cta-below-fold` | **Verhältnis zweier Dominanzen**: um wieviel deutlicher führt dieser Kandidat seinen Ausschnitt an als der Anführer des ersten Ausschnitts den seinen | Die naheliegende Größe (`localMean`) ist in 1.2 B4 gebaut, gemessen und als unzureichend belegt. Ein Verhältnis ist unabhängig von der Zahl der Ausschnitte — genau die Abhängigkeit, an der `localMean` scheitert. Nicht gemessen. |
 | `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
 | `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden — auf `localMean`, das dafür schon existiert | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
 

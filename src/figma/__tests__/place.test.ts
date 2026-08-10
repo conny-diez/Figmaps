@@ -20,6 +20,7 @@
  * emulator; it is a contract check.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
+import { ENGINE_VERSION } from '../../engine/config'
 import { RULES } from '../../findings/rules'
 import type { FindingPayload, MapMeta, RenderedMap, SegmentInfo } from '../../messages'
 
@@ -323,6 +324,69 @@ describe('placeMaps', () => {
       // The term the panel stopped using must not come back through here.
       expect(texts[1]).not.toContain('Ortsprior')
     }
+  })
+
+  describe('Contrastmap — die eine gemessene Karte', () => {
+    const contrastOnly: RenderedMap[] = [{ kind: 'contrast', png: new Uint8Array([7, 8, 9]) }]
+
+    it('trägt keinen einzigen Vorhersage-Begriff', async () => {
+      // Der Test, der die Vorlage von der Ausnahme trennt. Er prüft Begriffe
+      // statt Formulierungen: wer die Zeile umschreibt, darf keinen davon
+      // zurückholen.
+      const verboten = ['vorhergesagt', 'Vorhersage', 'Betrachtungsdauer', 'Blickverhalten', 'UEyes']
+      const wrapper = (await placeMaps(sourceNode, contrastOnly, { mapMeta })) as unknown as StubNode
+
+      // Geprüft wird die **Spalte der Karte**, nicht der ganze Wrapper: der
+      // Befunde-Rahmen daneben trägt Vorhersagen und heißt zu Recht so. Die
+      // Datengrundlage unter allen Karten hat einen eigenen Test.
+      const texte: string[] = []
+      const namen: string[] = []
+      const sammeln = (node: StubNode): void => {
+        namen.push(node.name)
+        if (node.type === 'TEXT') texte.push(node.characters as string)
+        for (const child of node.children) sammeln(child)
+      }
+      for (const column of mapColumns(wrapper)) sammeln(column)
+
+      // Die beiden freigegebenen Zeichenketten sind ausgenommen: die Zeile
+      // enthält das Wort „Vorhersage" in ihrer Verneinung („keine Vorhersage"),
+      // und genau ihr Wortlaut ist im Test darunter festgeschrieben. Ohne diese
+      // Ausnahme prüfte man Buchstaben statt Bedeutung.
+      const freigegeben = new Set([
+        'Contrastmap — gemessen',
+        'Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage',
+      ])
+      const zuPruefen = texte.filter((text) => !freigegeben.has(text))
+
+      for (const begriff of [...verboten, ENGINE_VERSION]) {
+        for (const text of zuPruefen) expect(text, `Textknoten: ${text}`).not.toContain(begriff)
+        for (const name of namen) expect(name, `Ebenenname: ${name}`).not.toContain(begriff)
+      }
+    })
+
+    it('sagt im Titel und in der Zeile, dass gemessen wurde', async () => {
+      const wrapper = (await placeMaps(sourceNode, contrastOnly, { mapMeta })) as unknown as StubNode
+      const column = mapColumns(wrapper)[0]
+      const texts = column.children.filter((child) => child.type === 'TEXT').map((child) => child.characters as string)
+      expect(texts[0]).toBe('Contrastmap — gemessen')
+      expect(texts[1]).toBe('Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage')
+    })
+
+    it('lässt die Datengrundlage weg, wenn nur gemessene Karten entstehen', async () => {
+      // Die UEyes-Zeile belegt eine Abhängigkeit. Eine Contrastmap benutzt
+      // keinen Wert daraus — dann wäre sie eine falsche Behauptung.
+      const nur = (await placeMaps(sourceNode, contrastOnly, { mapMeta })) as unknown as StubNode
+      expect(findNode(nur, (node) => node.name === 'Datengrundlage')).toBeNull()
+    })
+
+    it('behält die Datengrundlage, sobald eine Vorhersage dabei ist', async () => {
+      const gemischt = (await placeMaps(
+        sourceNode,
+        [...contrastOnly, { kind: 'heat', png: new Uint8Array([1]) }],
+        { mapMeta },
+      )) as unknown as StubNode
+      expect(findNode(gemischt, (node) => node.name === 'Datengrundlage')).not.toBeNull()
+    })
   })
 
   it('writes the findings frame even when nothing was found', async () => {

@@ -249,6 +249,16 @@ body {
   color: var(--text-dim);
 }
 
+/* Ein Satz unter der Sektionsüberschrift — trägt bei der Kontrast-Sektion die
+   Abgrenzung zur Vorhersage. Kontrast gegen den Panelgrund: `--text-dim` ist
+   in `ui/theme.ts` gegen 4,5:1 geprüft, wie jeder andere Wert dort. */
+.section__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
 .section__note {
   font-size: 10px;
   color: var(--text-quiet);

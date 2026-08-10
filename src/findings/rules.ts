@@ -241,11 +241,15 @@ const ctaRank: Rule = {
  * seltener, als der Name vermuten lässt.
  */
 /**
- * NICHT AUSGELIEFERT — strukturell blockiert, nicht falsch kalibriert.
+ * NICHT AUSGELIEFERT — und seit 1.2 B4 aus einem **gemessenen** Grund statt aus
+ * einem strukturellen. Das ist der eigentliche Fortschritt dieser Runde, auch
+ * wenn der Schalter am Ende auf derselben Stellung steht.
  *
- * Die Regel liest `candidates[0]`, also den stärksten Kandidaten der
- * komponierten Karte, und meldet, wenn der unterhalb des ersten Folds liegt.
- * Zwei Eigenschaften der Vorhersage arbeiten dagegen, und beide sind
+ * ── Der Zustand vor 1.2 ────────────────────────────────────────────────────
+ *
+ * Die Regel las `candidates[0]`, also den stärksten Kandidaten der
+ * komponierten Karte, und meldete, wenn der unterhalb des ersten Folds liegt.
+ * Zwei Eigenschaften der Vorhersage arbeiteten dagegen, und beide sind
  * beabsichtigt:
  *
  *   1. Der Ortsprior ist **oben-lastig** — er ist aus Einzel-Viewports
@@ -267,34 +271,89 @@ const ctaRank: Rule = {
  * Was die Regel stattdessen bräuchte: eine Größe, die den Kandidaten **innerhalb
  * seines eigenen Abschnitts** bewertet statt auf der gedämpften Gesamtkarte.
  *
- * **Die gibt es schon.** `localMean` liest genau das — die mittlere
+ * **Die gab es schon.** `localMean` liest genau das — die mittlere
  * Aufmerksamkeit eines Kandidaten auf der *ungedämpften* Karte seines eigenen
  * Viewports — und wurde für `dead-cta` gebaut, aus demselben Grund: dort machte
- * die Dämpfung jeden Fußzeilen-Knopf rechnerisch leise. In 1.2 ist das damit
- * **eine Änderung für zwei Regeln**, nicht zwei Aufgaben: beide steigen von der
- * komponierten Karte auf die Abschnittskarte um.
+ * die Dämpfung jeden Fußzeilen-Knopf rechnerisch leise.
  *
- * Was dabei mitentschieden werden muss: die Aussage ändert sich. „Der stärkste
- * Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
- * eigenen Viewport dominiert, sitzt nicht im ersten" — der Satz muss neu
- * geschrieben werden, nicht nur die Zahl. Siehe README, „Offen für 1.2".
+ * ── Der Umbau, und was er ergeben hat ──────────────────────────────────────
+ *
+ * Umgesetzt ist er: die Rangfolge läuft über `localMean`, und der Satz ist neu
+ * geschrieben, weil sich die Aussage ändert — aus „der stärkste Kandidat des
+ * Screens liegt unter dem Fold" wird „der Kandidat, der seinen eigenen
+ * Viewport anführt, sitzt nicht im ersten".
+ *
+ * **Er behebt den Defekt nicht.** Gemessen mit `npm run finding-load`, gegen
+ * die bekannte Antwort des Generators (`layoutFor` stellt den primären CTA in
+ * genau zwei Dritteln der Varianten nach unten), je 24 Frames:
+ *
+ * | Frame-Form | Rate | CTA unten → feuert | CTA **oben** → feuert | Übereinstimmung |
+ * |---|---:|---:|---:|---:|
+ * | Desktop, scrollend  |   4,2 % |  0/16 | 1/8 | 29,2 % |
+ * | Telefon, scrollend  | 100,0 % | 16/16 | 8/8 | 66,7 % |
+ * | Telefon, 1 Viewport |       — | keine Folds, also keine Frage | | |
+ *
+ * Beide Zeilen sind für sich genommen wertlos, und zwar aus entgegengesetzten
+ * Richtungen. Auf Desktop meldet die Regel genau **einmal**, und dieser eine
+ * Fall ist einer mit CTA oben — die einzige Aussage, die sie macht, ist
+ * falsch. Auf Telefon meldet sie **immer**, auch auf allen acht Frames mit CTA
+ * oben; die 66,7 % Übereinstimmung sind der Sockel des Generators, den eine
+ * Regel, die ausnahmslos „ja" sagt, gratis bekommt.
+ *
+ * **Warum, und das ist die verwertbare Erkenntnis.** Der Umbau nimmt die
+ * Dämpfung *zwischen* den Abschnitten heraus, lässt den oben-lastigen Prior
+ * aber *innerhalb* jedes Abschnitts stehen. Der Vergleich über die Abschnitte
+ * hinweg wird damit zu „wer sitzt am dichtesten am oberen Rand seines eigenen
+ * Viewports" — eine Frage, die mit dem Fold nichts zu tun hat. Und weil ein
+ * 390 × 3000-Frame vier Ausschnitte hat, von denen drei unter dem Fold liegen,
+ * gewinnt dort fast zwangsläufig einer von den dreien.
+ *
+ * Was die Regel bräuchte, ist keine dritte Karte, sondern eine **relative**
+ * Größe: nicht „dieser Kandidat führt seinen Ausschnitt an", sondern „er führt
+ * ihn deutlicher an, als der Anführer des ersten Ausschnitts den seinen". Das
+ * ist ein Verhältnis zweier Dominanzen und damit unabhängig davon, wie viele
+ * Ausschnitte es gibt. Gemessen ist es nicht, und ohne das Set mit echten
+ * Layer-Bäumen (PRD Set 2) auch nicht kalibrierbar.
+ *
+ * **Der Messcode bleibt trotzdem stehen.** Die alte Fassung war an
+ * `sectionAttenuation` blockiert und konnte deshalb über ihre eigene
+ * Entscheidungsgröße nichts aussagen. Diese hier kann es — sie feuert, und man
+ * sieht, dass sie das Falsche trifft. Ein Rückbau auf die komponierte Karte
+ * würde diese Beobachtung wegwerfen und den nächsten Anlauf wieder bei der
+ * Dämpfung anfangen lassen.
  */
 const ctaBelowFold: Rule = {
   id: 'cta-below-fold',
   shipped: false,
   evaluate(input) {
     if (input.plan.folds.length === 0) return null
-    const leader = input.candidates[0]
+    if (input.candidates.length === 0) return null
+
+    // Rangfolge auf den **ungedämpften** Abschnittskarten. Auf der komponierten
+    // Karte gewönne den Vergleich, wer weit oben steht — `sectionAttenuation^i`
+    // entscheidet ihn vor dem Entwurf.
+    let leader: { candidate: ClickCandidate; mean: number } | null = null
+    for (const candidate of input.candidates) {
+      const mean = localMean(candidate, input)
+      if (!leader || mean > leader.mean) leader = { candidate, mean }
+    }
     if (!leader) return null
 
     const firstFold = input.plan.folds[0]
-    if (leader.y < firstFold) return null
+    if (leader.candidate.y < firstFold) return null
 
+    // Der Satz muss beides tragen: **worin** das Element führt (im eigenen
+    // Ausschnitt) und **wo** es sitzt (nicht im ersten). Ohne den ersten Teil
+    // liest sich der Befund als „stärkstes Element des Screens", und das ist
+    // nach dem Umbau nicht mehr, was gemessen wurde.
     return {
       id: 'cta-below-fold',
       severity: 'problem',
-      text: `Das interaktive Element mit der höchsten vorhergesagten Klickwahrscheinlichkeit, ${describe(leader, input)}, liegt unterhalb des ersten Folds.`,
-      nodeIds: [leader.id],
+      text:
+        `${describe(leader.candidate, input)} führt die vorhergesagte Aufmerksamkeit innerhalb seines eigenen ` +
+        `Bildschirmausschnitts an — dieser Ausschnitt ist aber nicht der erste: das Element liegt unterhalb des ` +
+        `ersten Folds.`,
+      nodeIds: [leader.candidate.id],
     }
   },
 }

@@ -24,7 +24,19 @@ describe('normaliseSettings', () => {
   })
 
   it('keeps individually toggled maps', () => {
-    expect(normaliseSettings({ maps: { heat: false } }).maps).toEqual({ heat: false, click: true, focus: true })
+    expect(normaliseSettings({ maps: { heat: false } }).maps).toEqual({
+      heat: false,
+      click: true,
+      focus: true,
+      contrast: true,
+    })
+  })
+
+  it('schaltet eine neue Karte für alte Einstellungen ein, nicht aus', () => {
+    // Eine gespeicherte Einstellung von vor 1.2 kennt `contrast` nicht. Sie
+    // bekommt die Voreinstellung — eine neue Ausgabe, die still ausgeschaltet
+    // ankommt, sieht für den Nutzer aus wie eine, die es nicht gibt.
+    expect(normaliseSettings({ maps: { heat: true, focus: true, click: true } }).maps.contrast).toBe(true)
   })
 
   describe('Epic D — profile', () => {
