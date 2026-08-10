@@ -26,8 +26,9 @@ WCAG 2.1 AA:
   Ausnahme, die die meisten Fehlmeldungen verhindert: trägt eine Komponente
   eigenen sichtbaren Text, ist ihre Begrenzung nicht erforderlich. Ein gelber
   Knopf mit dunkler Beschriftung wird deshalb **nicht** gemeldet, obwohl seine
-  Fläche 1,45:1 misst — genau diese Fehlmeldung produzieren rasterbasierte
-  Prüfwerkzeuge.
+  Fläche 1,45:1 misst. Wir vermuten, dass rasterbasierte Prüfwerkzeuge hier
+  melden, weil sie nur Pixel sehen und nicht wissen, was ein Element ist —
+  nachgeprüft haben wir das nicht, der Eindruck stammt aus einem Screenshot.
 
 Gemessen wird hybrid: Geometrie, Schriftgröße und Textfarbe aus dem
 Layer-Baum, der Hintergrund aus den gerenderten Pixeln. Den Hintergrund aus dem
@@ -55,8 +56,19 @@ gibt nichts an ihnen einzustellen, und sie veralten nicht.
 **1. Vorhersage ist keine Messung — die Contrastmap schon.** Heatmap und
 Focusmap schätzen, wohin ein Blick wahrscheinlich fällt; sie sind an einem
 Datensatz kalibriert und können daneben liegen. Die Contrastmap rechnet eine
-Norm aus. Sie kann nicht in dem Sinne falsch sein, in dem eine Heatmap falsch
-sein kann — nur ungenau, und wo sie das ist, sagt sie es. Im Plugin sind die
+Norm aus.
+
+Der Unterschied liegt nicht darin, dass die Messung nicht falsch sein könnte.
+Sie war es: allein in dieser Version sind drei Messfehler in der Contrastmap
+aufgefallen — die Kantenglättung an Glyphen, die fehlende Textfarbe und eine
+Deckkraft unter 1, die aus dem Layer-Baum nicht in die Farbe einging. Der
+letzte hat es gerade **nicht** gesagt: er meldete stillschweigend zu gute
+Werte, und kein Test schlug an.
+
+Nachprüfbar ist deshalb nicht die Implementierung, sondern die **Größe**. Ein
+Kontrastverhältnis kann jeder mit einer Pipette gegenrechnen und uns
+widerlegen — das ist die Eigenschaft, die zählt. Eine Heatmap kann man nicht
+gegenrechnen; es gibt keinen Wert, gegen den man sie hielte. Im Plugin sind die
 beiden Arten deshalb getrennt: eigene Karte, eigene Befundliste, eigener
 Kartenkopf, kein gemeinsamer Text.
 
@@ -87,10 +99,12 @@ beschreibt.
 
 ## Bekannte Einschränkungen
 
-- **Sichtbar:** auf sehr langen, gleichförmigen Frames zeichnet die
-  Heatmap schwache waagerechte Bänder an den Abschnittsgrenzen. Die
-  naheliegende Abhilfe wurde gemessen und verworfen — sie kostet auf echten
-  Screens sichtbare Fläche.
+- **Sichtbar, und der einzige sichtbare Defekt, den wir bewusst ausliefern:**
+  auf sehr langen, gleichförmigen Frames zeichnet die Heatmap waagerechte
+  Bänder an den Abschnittsgrenzen. Auf dem grauen 1440 × 4000-Testframe
+  gemessen: Band 3 bei **100 %** Deckkraft, Bänder 4 und 5 bei rund **50 %**
+  (51 % und 48 %). Die naheliegende Abhilfe wurde gemessen und verworfen — sie
+  kostet auf echten Screens sichtbare Fläche.
 - Über Fotos und Verläufen gibt es kein „das" Kontrastverhältnis; gemeldet wird
   der schlechteste Wert im Textbereich, gekennzeichnet als Näherung.
 - Zustände (Hover, Fokus, deaktiviert) sind in einem statischen Frame nicht
@@ -99,6 +113,11 @@ beschreibt.
   Ebenennamens übersprungen und gezählt.
 - Verdeckte, gedrehte und subpixelgenau platzierte Elemente sind ungeprüft:
   die Bounding-Box eines Layers ist nicht immer das, was man sieht.
+- Die Vorhersage ist an **freiem Betrachten** kalibriert — die UEyes-Probanden
+  hatten keine Aufgabe. Wer vor einem Screen mit einer klaren
+  Handlungsaufforderung sitzt, schaut zielgerichtet, nicht frei. Auf
+  explorativen Screens ist die Vorhersage deshalb näher dran als auf Screens
+  mit einer einzelnen klaren Aktion.
 
 ## Installation
 
