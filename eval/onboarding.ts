@@ -147,7 +147,23 @@ export function buildOnboardingFrame(): OnboardingFrame {
   fill({ x: 0, y: 0, width: ONBOARDING_WIDTH, height: 47 }, [255, 255, 255])
   text({ x: 24, y: 16, width: 38, height: 13 }, INK)
   text({ x: ONBOARDING_WIDTH - 84, y: 16, width: 60, height: 13 }, INK)
-  signal({ name: 'Statusleiste', x: 0, y: 0, width: ONBOARDING_WIDTH, height: 47, hasFill: true })
+  // Heißt wie in jedem UI-Kit — die Contrastmap überspringt sie deshalb samt
+  // ihrem Inhalt (siehe `contrast/system-chrome.ts`).
+  const statusBar = signal({ name: 'Statusleiste', x: 0, y: 0, width: ONBOARDING_WIDTH, height: 47, hasFill: true })
+  signal({
+    name: '15:30',
+    parentId: statusBar.id,
+    x: 24,
+    y: 16,
+    width: 38,
+    height: 13,
+    isText: true,
+    charCount: 5,
+    fontSize: 13,
+    fontWeight: 600,
+    text: '15:30',
+    fillLuminance: inkLuminance(INK),
+  })
 
   // --- Kopfbereich ---------------------------------------------------------
   const headline = 'Willkommen zurück'

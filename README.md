@@ -2104,6 +2104,36 @@ ausgewiesene Farbe. Zusätzlich sind **weiß auf #222222** (15,91:1) und **weiß
 auf #4D4D4D** (8,45:1) in den Test mit bekannten Farbpaaren aufgenommen — mit
 Kantenglättung, auf 0,05 genau.
 
+### Betriebssystem-Chrome bleibt außen vor
+
+Auf einem Handy-Frame liegt oben die Statusleiste („15:30", WLAN, Akku) und
+unten der Home-Indicator. Das ist keine Gestaltung des Entwurfs, sondern das
+Betriebssystem; einen Kontrastbefund darüber kann niemand beheben.
+
+**Erkannt über den Namen, nicht über die Position** — und die Entscheidung fiel
+an der Fehlerrichtung:
+
+| | scheitert wie |
+|---|---|
+| Positionsregel („oberstes Band eines Mobile-Frames") | **stiller Ausfall.** Auf einem Screen ohne Statusleiste sitzt dort die Kopfzeile. Im eigenen Onboarding-Testframe steht „Willkommen zurück" bei 9,8 % der Höhe — jede Schwelle, die „15:30" bei 3 % erwischt, ist einen Handgriff davon entfernt, eine echte Überschrift zu verschlucken. Und niemand sieht, dass sie gefehlt hat. |
+| Namensmuster | **zu Rauschen hin.** Es übersieht eine anders benannte Statusleiste, und dann steht ein Befund zu viel im Report. Das sieht man. |
+
+Die Liste ist bewusst kurz: `status bar`, `statusleiste`, `statusbar`,
+`home indicator`. **`navigation bar` ist nicht dabei** — Androids Systemleiste
+heißt so, App-Navigationen aber auch, und ein Muster, das beides trifft, löscht
+die Hauptnavigation aus der Prüfung.
+
+**Auf Wortgrenzen, nicht als Teilstring.** Ein Teilstring-Vergleich verschluckt
+eine „Bewerbungsstatusleiste" — und zwar in genau der Fehlerrichtung, die mit
+der Entscheidung gegen die Positionsregel ausgeschlossen wurde. Der Test führt
+dieses Beispiel namentlich.
+
+Geprüft wird der Knoten **und seine Vorfahren**: die Uhrzeit in einer Komponente
+„iOS Status Bar" heißt meist schlicht „15:30". Und die Ausnahme gilt für
+**beide** Pfade — ohne das verschwände „15:30" aus 1.4.3 und die Symbole daneben
+blieben in 1.4.11 stehen. Übersprungenes wird gezählt und benannt, wie jedes
+andere nicht messbare Element auch.
+
 ### Grenzen, ehrlich benannt (C5)
 
 Über einem Foto oder einem Verlauf gibt es kein „das" Kontrastverhältnis,

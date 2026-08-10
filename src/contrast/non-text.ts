@@ -45,6 +45,7 @@
 import type { Bitmap } from '../engine/ops'
 import type { NodeSignal } from '../messages'
 import { estimateBackground, pixelLuminance } from './measure'
+import { isSystemChrome, SYSTEM_CHROME_REASON } from './system-chrome'
 import { contrastRatio, formatRatio, statusOf, type ContrastStatus } from './wcag'
 
 /** WCAG 1.4.11 fordert 3:1 — dieselbe Zahl wie für großen Text. */
@@ -251,8 +252,18 @@ export function measureNonTextContrast(options: NonTextOptions): {
 
   const results: NonTextResult[] = []
   const skipped: Array<{ nodeId: string; reason: string }> = []
+  const byId = new Map(signals.map((signal) => [signal.id, signal]))
 
   for (const signal of signals) {
+    // Dieselbe Ausnahme wie bei 1.4.3, und sie muss hier genauso gelten: WLAN-
+    // und Akku-Symbol sind Nicht-Text-Elemente. Ohne diese Zeile verschwände
+    // „15:30" aus der Prüfung und die Symbole daneben blieben stehen.
+    if (isSystemChrome(signal, byId)) {
+      if (reasonFor(signal, byParent.get(signal.parentId ?? '__root__') ?? [], frameWidth, frameHeight)) {
+        skipped.push({ nodeId: signal.id, reason: SYSTEM_CHROME_REASON })
+      }
+      continue
+    }
     const siblings = byParent.get(signal.parentId ?? '__root__') ?? []
     const reason = reasonFor(signal, siblings, frameWidth, frameHeight)
     if (!reason) continue

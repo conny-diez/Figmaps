@@ -21,6 +21,7 @@
  */
 import type { Bitmap } from '../engine/ops'
 import type { NodeSignal } from '../messages'
+import { isSystemChrome, SYSTEM_CHROME_REASON } from './system-chrome'
 import { contrastRatio, formatRatio, isLargeText, requiredRatio, statusOf, type ContrastStatus } from './wcag'
 
 /**
@@ -283,9 +284,16 @@ export function measureContrast(options: MeasureOptions): { results: ContrastRes
 
   const results: ContrastResult[] = []
   const skipped: Array<{ nodeId: string; reason: string }> = []
+  const byId = new Map(signals.map((signal) => [signal.id, signal]))
 
   for (const signal of signals) {
     if (!signal.isText) continue
+    // Statusleiste und Home-Indicator gehören dem Betriebssystem; ein Befund
+    // darüber ist für niemanden behebbar. Gezählt statt still ausgelassen.
+    if (isSystemChrome(signal, byId)) {
+      skipped.push({ nodeId: signal.id, reason: SYSTEM_CHROME_REASON })
+      continue
+    }
     if (signal.fillLuminance === undefined) {
       skipped.push({ nodeId: signal.id, reason: 'keine einfarbige Textfarbe (Verlauf, Bild oder mehrere Fills)' })
       continue

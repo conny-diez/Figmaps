@@ -258,6 +258,13 @@ export async function generateMaps(
       approximate: result.approximate,
     }))
 
+    if (nonText.skipped.length > 0) {
+      warnings.push(
+        `Contrastmap (Bedienelemente): ${nonText.skipped.length} Element(e) nicht geprüft ` +
+          `(${[...new Set(nonText.skipped.map((entry) => entry.reason))].join('; ')}).`,
+      )
+    }
+
     if (settings.maps.contrast) {
       if (cancelled()) return { ...empty(), ranking, segments }
       hooks.onStep?.('Contrastmap wird gezeichnet', 0.8)
