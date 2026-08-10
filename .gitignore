@@ -2,8 +2,16 @@ node_modules/
 build/
 out/
 # Reference data stays out of the repo — size and licence (PRD A-2).
+#
+# Ausnahme seit 1.2: die beiden Gate-Sets. Je 20 Bilder auf dem Analyseraster,
+# zusammen 7 MB, ausschließlich aus dem Test-Split. Sie liegen hier statt in
+# einem Actions-Cache, weil ein Cache verfallen kann und die Prüfung dann still
+# weg ist — genau das ist passiert. UEyes steht unter CC BY 4.0: Weitergabe
+# erlaubt, Nennung Pflicht, siehe NOTICE.md.
 eval/fixtures/*
 !eval/fixtures/README.md
+!eval/fixtures/gate-web/
+!eval/fixtures/gate-mobile/
 .DS_Store
 *.log
 .context/

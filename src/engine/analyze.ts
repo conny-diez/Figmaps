@@ -57,6 +57,23 @@ export type AnalyzeResult = {
    * frame scores as more "hierarchical" than one with a clear eye-catcher.
    */
   imageTerms: ScalarMap[]
+  /**
+   * Wie viel **eigene Struktur** dieser Frame hat, als eine Zahl: der
+   * flächengewichtete Mittelwert des Bildanalyse-Anteils über alle Abschnitte.
+   *
+   * Beantwortet die einzige Frage, die der Bildanteil *pro Frame* zuverlässig
+   * beantwortet — pro Pixel kann er es nicht (siehe `eval/band-gate.ts`):
+   * **hat dieser Frame überhaupt Inhalt?** Auf einer konstanten Fläche ist der
+   * Bildanteil exakt null, weil die Perzentil-Normierung dort keinen
+   * Wertebereich findet.
+   *
+   * Sie geht **nicht** in die Vorhersage ein und ändert keine einzige Karte.
+   * Sie ist die Grundlage für einen Hinweis im Panel — siehe
+   * `ENGINE_CONFIG.findings.lowContentLevel`.
+   *
+   * `NaN`, wenn die Engine ihre Teile nicht ausweist.
+   */
+  contentLevel: number
 }
 
 export type AnalyzeHooks = {
@@ -184,5 +201,21 @@ export async function analyzeFrame(
     imageTerms: parts.every((part) => part.imageTerm !== null)
       ? parts.map((part) => part.imageTerm as ScalarMap)
       : [],
+    // Flächengewichtet, damit ein kurzer letzter Abschnitt nicht so viel zählt
+    // wie ein voller. Ein Mittelwert von Mittelwerten — die Komposition wird
+    // dafür nicht gebraucht, und sie wäre auf jedem Lauf des Plugins teuer.
+    contentLevel: meanOfImageTerms(parts),
   }
+}
+
+/** Flächengewichteter Mittelwert der Abschnitts-Bildanteile. */
+function meanOfImageTerms(parts: ReadonlyArray<{ imageTerm: ScalarMap | null }>): number {
+  let sum = 0
+  let count = 0
+  for (const part of parts) {
+    if (!part.imageTerm) return Number.NaN
+    for (const value of part.imageTerm.values) sum += value
+    count += part.imageTerm.values.length
+  }
+  return count > 0 ? sum / count : Number.NaN
 }

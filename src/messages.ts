@@ -22,7 +22,7 @@ export type { ProfileId, PriorAssetId }
 export type UiTypeSetting = PriorAssetId | 'auto'
 
 /** `fold` is derived, not selectable — see `SELECTABLE_MAP_KINDS`. */
-export type MapKind = 'heat' | 'click' | 'focus' | 'fold'
+export type MapKind = 'heat' | 'click' | 'focus' | 'contrast' | 'fold'
 
 /**
  * The maps the user can switch on and off, in the order they are shown in the
@@ -30,9 +30,9 @@ export type MapKind = 'heat' | 'click' | 'focus' | 'fold'
  * Heatmap first (where attention goes at all), then Focusmap (what stays sharp),
  * then Clickmap (what gets clicked).
  */
-export const SELECTABLE_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = ['heat', 'focus', 'click']
+export const SELECTABLE_MAP_KINDS: readonly Exclude<MapKind, 'fold'>[] = ['heat', 'focus', 'contrast', 'click']
 
-export const MAP_KINDS: readonly MapKind[] = ['heat', 'focus', 'click', 'fold']
+export const MAP_KINDS: readonly MapKind[] = ['heat', 'focus', 'contrast', 'click', 'fold']
 
 /**
  * Whether the clickmap is offered in the panel. **Display only** — candidate
@@ -56,6 +56,7 @@ export const MAP_LABELS: Record<MapKind, string> = {
   heat: 'Heatmap',
   click: 'Clickmap',
   focus: 'Focusmap',
+  contrast: 'Contrastmap',
   fold: 'Above the Fold',
 }
 
@@ -68,6 +69,7 @@ export const MAP_DESCRIPTIONS: Record<Exclude<MapKind, 'fold'>, string> = {
   heat: 'Wohin die Aufmerksamkeit zuerst wandert',
   click: 'Die wahrscheinlichsten Klickziele',
   focus: 'Was scharf bleibt, wenn der Rest abfällt',
+  contrast: 'Prüft, ob Texte genug Kontrast zu ihrem Hintergrund haben',
 }
 
 /**
@@ -144,7 +146,7 @@ export type Settings = {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  maps: { heat: true, click: true, focus: true },
+  maps: { heat: true, click: true, focus: true, contrast: true },
   overlayOpacity: 65,
   profile: DEFAULT_PROFILE,
   uiType: 'auto',
@@ -232,6 +234,35 @@ export type FindingPayload = {
   nodeIds?: string[]
 }
 
+/**
+ * Ein Befund der Contrastmap (C4).
+ *
+ * **Eigener Typ, nicht `FindingPayload` mit einem Flag.** Die beiden sind
+ * verschiedene Arten von Aussage, und die Trennung muss im Typ stehen, damit
+ * sie nicht versehentlich in einer Liste landen:
+ *
+ *   `FindingPayload`  ist eine **Vorhersage**. „Liegt auf Rang 5 der
+ *                     vorhergesagten Klicks." Kann falsch sein, trägt den
+ *                     Vorhersage-Disclaimer, ist im Vorhersage-Modus formuliert.
+ *   `ContrastFinding` ist eine **überprüfbare Tatsache**. „Hat 3,1:1 gegen
+ *                     seinen Hintergrund, WCAG AA verlangt 4,5:1." Wer das
+ *                     nachmisst, bekommt dieselbe Zahl. Der Disclaimer gilt
+ *                     dafür ausdrücklich **nicht**.
+ *
+ * Das ist die belastbarste Ausgabe, die das Plugin hat, und sie darf nicht
+ * durch Nachbarschaft an Glaubwürdigkeit verlieren.
+ */
+export type ContrastFinding = {
+  nodeId: string
+  status: 'bestanden' | 'grenzwertig' | 'durchgefallen'
+  text: string
+  /** Gemessenes Verhältnis, für die Sortierung im Panel. */
+  ratio: number
+  required: number
+  /** Hintergrund wechselt unter dem Text — der Wert ist eine Näherung (C5). */
+  approximate: boolean
+}
+
 /** Epic B — what the analysis did with the frame, for labels and text frames. */
 export type SegmentInfo = {
   segmented: boolean
@@ -280,6 +311,8 @@ export type UiToMain =
       /** Non-fatal, user-facing notes produced while rendering. */
       warnings: string[]
       findings: FindingPayload[]
+      /** C4 — getrennt von `findings`, siehe `ContrastFinding`. */
+      contrastFindings?: ContrastFinding[]
       segments?: SegmentInfo
       /** Absent only when the frame failed before anything was rendered. */
       mapMeta?: MapMeta
@@ -319,6 +352,8 @@ export type MainToUi =
       maps: MapKind[]
       warnings: string[]
       findings: FindingPayload[]
+      /** C4 — getrennt von `findings`, siehe `ContrastFinding`. */
+      contrastFindings?: ContrastFinding[]
       segments?: SegmentInfo
     }
   | { type: 'DONE'; created: number; failed: number }

@@ -37,6 +37,23 @@ Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 | **Befunde** | Ein deterministisches Regelwerk formuliert, was gemessen wurde — mit „Im Canvas zeigen" auf die betroffene Ebene. |
 | **Betrachtungsdauer** | Drei Profile (`glance` 1 s, `scan` 3 s, `read` 7 s), **gemessen belegt**: sie tauschen den Ortsprior, nicht die Gewichte. |
 
+### Was 1.2 bisher ändert
+
+1.2 läuft in drei Blöcken (A Alpha-Kurve, B Regeln für Ein-Viewport-Screens,
+C Contrastmap). **Fertig ist A.**
+
+| | |
+|---|---|
+| **`blendAlpha` 0,3 → 0,5** | Kreuzvalidiert und out-of-sample nachgemessen statt in-sample abgelesen. AUC, CC und NSS haben ihr Optimum einstimmig bei 0,5, in beiden Kategorien. Siehe [Alpha-Kurve](#alpha-kurve-12-a). |
+| **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
+| **Contrastmap — die Hauptausgabe, nicht die dritte Karte** | Auf dem Onboarding-Screen stehen **8 gemessene Kontrastaussagen gegen 1 Vorhersagebefund**, auf einem Desktop-Frame **10 durchgefallene Elemente gegen Ø 1,67 Vorhersagebefunde**. Sie braucht weder Folds noch Abschnitte noch Kandidaten noch Kalibrierung und sagt auf **jeder** Frame-Form etwas — als einzige Ausgabe des Plugins. Siehe [Contrastmap](#contrastmap-12-c). |
+| **Schärfe: Blur 0,035 + `blendGamma` 1,6** | Der A1-Befund ist zu gut einem Drittel behoben, bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Nicht 2,0, obwohl der Mittelwert dafür spräche: dieser Wert lässt die Gruppe stehen, für die das Plugin existiert. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis) und [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften). |
+| **Transparenzschwelle nachgezogen** | 0,08 → 0,02. Dieselbe Schwelle hätte auf der neuen Karte 37,5 % statt 18,0 % verdeckt — ein Gutteil von „das Overlay ist leerer" war der Renderer, nicht die Vorhersage. |
+| **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. Die Zahlen des Gates sind **kein Qualitätsbeleg** — siehe unten. |
+| **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
+| **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
+| **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.1" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
+
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
 `hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt in
 einer 5-fachen Kreuzvalidierung über je 495 Bilder **jede bildunabhängige
@@ -72,6 +89,11 @@ npm run eval:fixtures -- --ueyes /pfad/zum/UEyes_dataset
 
 npm run eval -- --fixtures ueyes-web --set test --duration 3 --report out/eval.md
 npm run eval -- --help
+
+# 1.2 A — die Alpha-Kurve (siehe „Alpha-Kurve")
+npm run alpha                                     # Sweep, Tuning-Split, kreuzvalidiert
+npm run visual-check                              # die zwei Prüffälle als Bild
+npm run side-effects -- --before 0.3 --after 0.5  # Feuerraten vorher/nachher
 ```
 
 Die `id` in `manifest.json` ist ein lokaler Platzhalter. Beim Publishing in die
@@ -126,6 +148,21 @@ denen die Merkmale bestehen. Nur die technischen Grenzen unten schalten
 automatisch herunter.
 
 ### Panel: Design, Theming, Bedienelemente
+
+**Der Kopf trägt einen Beta-Marker.** Neben dem Produktnamen steht „Beta v1.1".
+Der Marker ist eine Aussage über die **Vorhersage**, nicht über die Stabilität
+des Codes: die Engine ist gegen einen einzigen öffentlichen Datensatz gemessen,
+drei der sechs Befundregeln sind abgeschaltet, und für die eigenen Screens fehlt
+weiterhin ein Validierungsset. Wer das Panel öffnet, soll das sehen, bevor er
+eine Karte für eine Messung hält.
+
+Die Zahl selbst kommt aus **`package.json` und nur von dort**; `scripts/build.mjs`
+und `vitest.config.ts` setzen sie beim Bündeln als Konstante ein
+(`src/version.ts`). Vorher stand sie als Literal im Code mit der Bitte, sie mit
+`package.json` synchron zu halten — eine Konstante, deren Richtigkeit von einem
+Kommentar abhängt, ist genau so lange richtig, bis jemand die andere Stelle
+anfasst. Die Engine-Version (`hybrid-v1`) ist davon getrennt und steht weiterhin
+an den Maps, nicht im Kopf: sie sagt, welche Vorhersage eine Karte erzeugt hat.
 
 **Zwei Themes, eigener Schalter.** Im Header sitzt eine Pille mit Mond und
 Sonne. Bewusst **nicht** `figma.showUI({ themeColors: true })`: die Farben des
@@ -462,7 +499,7 @@ ersetzen und die Bildanalyse additiv darüberlegen. Genau das ist `hybrid-v1`.
 `heuristic-v1` bleibt unverändert erhalten.
 
 ```
-Vorhersage = norm(Ortsprior)  +  0,3 · norm(Bildanalyse)
+Vorhersage = norm(Ortsprior)  +  0,5 · norm(Bildanalyse)
 ```
 
 - **Ortsprior:** je eine 32 × 32-Graustufen-Map für Webpage und Mobile UI,
@@ -471,9 +508,12 @@ Vorhersage = norm(Ortsprior)  +  0,3 · norm(Bildanalyse)
   `atob` — die Figma-Main-Thread-Umgebung garantiert keines davon.
 - **Rastergröße:** gemessen, nicht geschätzt. Ein Ortsprior ist glatt; schon
   16 × 16 erreicht denselben CC wie 128 × 128. 32 × 32 ist mit Reserve gewählt.
-- **α = 0,3**, nicht 0,5: 0,5 maximiert zwar CC (0,448 statt 0,444), **verliert
-  aber KL gegen die Mean Map** — und S-2 verlangt alle vier Metriken. Bei 0,3
-  gewinnen auf dem Tuning-Split alle vier, in beiden Kategorien.
+- **α = 0,5 seit 1.2**, vorher 0,3. Der alte Wert war in-sample abgelesen und
+  an einem einzigen Kriterium entschieden (KL gegen die Mean Map). Kreuzvalidiert
+  und out-of-sample nachgemessen liegt das Optimum von AUC, CC und NSS
+  einstimmig bei 0,5, in beiden Kategorien. Siehe
+  [Alpha-Kurve](#alpha-kurve-12-a) — dort steht auch, warum KL dabei nicht das
+  Kriterium ist und was der Wechsel **nicht** behebt.
 - **Kategorie-Wahl:** im Plugin über die Frame-Breite (dieselbe Schwelle wie die
   Viewport-Ableitung). Im Harness wird die Kategorie explizit gesetzt — UEyes
   speichert Handy-Screenshots mit 1080 px Gerätebreite, was die Breitenregel als
@@ -838,6 +878,695 @@ Der Engpass ist **Selektivität**, nicht Position.
 
 ---
 
+## Alpha-Kurve (1.2 A)
+
+```bash
+npm run alpha                                    # Sweep, Tuning-Split, kreuzvalidiert
+npm run alpha -- --confirm-only --chosen 0.5     # der eine Blick auf den Test-Split
+npm run visual-check                             # A4, die zwei Prüffälle als Bild
+npm run side-effects -- --before 0.3 --after 0.5 # A5, Feuerraten vorher/nachher
+```
+
+`blendAlpha` stand seit 1.1 auf 0,3 — und zwar aus einem einzigen Grund: bei 0,5
+verlor KL gegen die Mean Map, und S-2 verlangte einen Sieg in allen vier
+Metriken. Der Wert war damit an der schwächsten der vier Metriken aufgehängt,
+in-sample abgelesen und nie gegen eine Alternative geprüft. Das ist hier
+nachgeholt.
+
+**Ergebnis vorweg: 0,5, einstimmig in AUC, CC und NSS, in beiden Kategorien.**
+Und ein zweiter Befund, der wichtiger ist als der erste: der Verdacht, unsere
+Karten seien systematisch zu weich, **stimmt** — aber `blendAlpha` ist nicht das
+Mittel dagegen. Ein höheres α macht die Karten *weicher*, nicht schärfer.
+
+### Wie gemessen wurde
+
+5-fache Kreuzvalidierung, aber **nur auf dem Tuning-Split** (468 Bilder je
+Kategorie), nicht wie `npm run crossval` über Tuning + Test zusammen. Der
+Unterschied ist Absicht: `crossval` *berichtet* ein Ergebnis, hier wird ein
+Parameter *entschieden*, und dafür darf der Test-Split nicht mitlaufen. Pro Fold
+werden Ortsprior **und** Mean-Map-Baseline ausschließlich aus den übrigen vier
+Folds geschätzt, der Prior inklusive 8-Bit-Quantisierung auf 32 × 32 — also in
+der Form, die ausgeliefert wird.
+
+Der Sweep rechnet den Bildanteil einmal je Bild und mischt ihn danach für jeden
+α-Wert neu; dass diese Abkürzung Zeichen für Zeichen dieselbe Mischung ergibt
+wie `combineFeatureParts`, ist in `eval/__tests__/alpha.test.ts` festgenagelt.
+Eine Abkürzung, die still von der Engine wegdriftet, wäre genau der Fehler, für
+den A-1 existiert.
+
+### A1 — sind unsere Karten weicher als die Wirklichkeit?
+
+Gemessene Größe: **Anteil der Gesamtmasse in den stärksten 5 % der Pixel.** Eine
+gleichmäßige Karte liegt bei 0,05, eine mit einem einzigen scharfen Blickfang
+nahe 1. Beide Seiten werden vorher identisch normiert (Minimum *und* Maximum) —
+die Größe ist invariant gegen Skalierung, aber nicht gegen einen Sockel.
+
+| Webpage | p5 | p25 | Median | p75 | p95 | Mittel |
+|---|---:|---:|---:|---:|---:|---:|
+| **UEyes Ground Truth** | 0,278 | 0,383 | 0,483 | 0,578 | 0,681 | **0,482** |
+| Vorhersage, α = 0,3 (bisher) | 0,120 | 0,127 | 0,136 | 0,150 | 0,167 | 0,141 |
+| Vorhersage, α = 0,5 (jetzt) | 0,110 | 0,118 | 0,128 | 0,148 | 0,167 | 0,133 |
+| Vorhersage, α = 1,2 | 0,092 | 0,102 | 0,115 | 0,147 | 0,167 | 0,124 |
+| nur Ortsprior (α = 0) | | | | | | 0,164 |
+| Mean-Map-Baseline | | | | | | 0,165 |
+
+Mobile UI liegt gleichartig: Ground Truth 0,383, Vorhersage 0,145 (α = 0,3) bzw.
+0,138 (α = 0,5).
+
+**Der Verdacht ist bestätigt, und deutlicher als erwartet.** Die gemessene
+Aufmerksamkeit ist um den **Faktor 3,4** konzentrierter als unsere Vorhersage
+(Webpage; Mobile 2,6). Die beiden Verteilungen überlappen praktisch nicht: das
+95. Perzentil unserer Vorhersage (0,167) liegt unter dem 5. Perzentil der Ground
+Truth (0,278). Es gibt kein einziges Bild, auf dem unsere Karte so scharf ist
+wie eine durchschnittliche echte.
+
+**Warum das in AUC kaum sichtbar ist.** AUC-Judd bewertet die *Reihenfolge* der
+Pixel, nicht die Schärfe der Verteilung. Eine Karte, die dieselben Stellen
+richtig einsortiert, sie aber alle breit verschmiert, bekommt denselben Wert.
+CC und NSS sind ebenfalls weitgehend blind dafür — CC ist gegen lineare
+Reskalierung invariant, NSS z-normiert. Von den vier Metriken bestraft **nur KL**
+diesen Fehler, und KL ist genau die Metrik, an der die 0,3 hing. Das ist kein
+Zufall, sondern die Erklärung: der alte Wert war für die falsche Eigenschaft
+optimiert.
+
+Der Befund war im Ansatz schon da — „die gemessene Aufmerksamkeit ist vertikal
+um Faktor 1,5 enger konzentriert" (siehe [Kontaktbogen](#was-der-kontaktbogen-zeigt)).
+Vertikal um 1,5 und insgesamt um 3,4 sind aber zwei verschiedene Größenordnungen
+von Problem.
+
+### A2 — der Sweep
+
+Webpage, 468 Bilder, out-of-sample:
+
+| α | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ | Konzentration |
+|---|---:|---:|---:|---:|---:|
+| 0 (nur Prior) | 0,768 | 0,420 | 0,991 | 1,088 | 0,164 |
+| 0,3 | 0,780 | 0,443 | 1,049 | **1,078** | 0,141 |
+| **0,5** | **0,783** | **0,447** | **1,061** | 1,091 | 0,133 |
+| 0,8 | 0,782 | 0,444 | 1,055 | 1,111 | 0,127 |
+| 1,2 | 0,777 | 0,431 | 1,028 | 1,133 | 0,124 |
+| Mean Map (je Fold) | 0,766 | 0,420 | 0,990 | 1,090 | 0,165 |
+
+Mobile UI, 468 Bilder — derselbe Verlauf, dasselbe Optimum:
+
+| α | AUC-Judd ↑ | CC ↑ | NSS ↑ | KL ↓ | Konzentration |
+|---|---:|---:|---:|---:|---:|
+| 0 (nur Prior) | 0,766 | 0,507 | 0,995 | 0,795 | 0,164 |
+| 0,3 | 0,779 | 0,546 | 1,076 | **0,774** | 0,145 |
+| **0,5** | **0,781** | **0,552** | **1,091** | 0,785 | 0,138 |
+| 0,8 | 0,779 | 0,545 | 1,080 | 0,805 | 0,133 |
+| 1,2 | 0,771 | 0,523 | 1,042 | 0,829 | 0,130 |
+| Mean Map (je Fold) | 0,764 | 0,507 | 0,995 | 0,796 | 0,164 |
+
+Gepaart je Bild gegen α = 0,3, 95-%-Intervalle ohne Null in allen sechs Fällen:
+
+| | ΔAUC | ΔCC | ΔNSS |
+|---|---:|---:|---:|
+| Webpage | +0,0025 (t = 7,0) | +0,0040 (t = 4,7) | +0,0117 (t = 5,8) |
+| Mobile UI | +0,0018 (t = 4,5) | +0,0061 (t = 5,5) | +0,0149 (t = 6,9) |
+
+**Verlängert wurde nicht.** Die Kurve fällt nach 0,5 in allen drei
+Entscheidungsmetriken, in beiden Kategorien — die Bedingung „falls die Kurve am
+Ende noch steigt" ist nicht erfüllt. Der Sweep prüft das selbst
+(`stillRising` in `eval/alpha.ts`) und hätte automatisch verlängert.
+
+**Der Gewinn ist klein und soll klein aussehen.** +0,004 CC ist ein Fünftel
+dessen, was der Ortsprior gebracht hat. Er ist belastbar, aber er ist keine
+neue Fähigkeit — er ist das Aufräumen einer Entscheidung, die an der falschen
+Metrik hing. Bei Webpage liegt die **Trefferquote in CC sogar bei 44,2 %**: der
+Mittelwert steigt, die Mehrheit der Einzelbilder wird leicht schlechter und eine
+Minderheit deutlich besser. Bei Mobile ist es einheitlicher (56,6 %).
+
+### A3 — warum KL nicht entscheidet
+
+**Ausdrücklich und nicht stillschweigend:** KL wird berichtet, aber es
+entscheidet nicht. Der Grund ist kein Ausweichen vor einer unbequemen Zahl,
+sondern dass KL genau die Eigenschaft bestraft, die hier geprüft wird. KL misst,
+wie viel Masse die Vorhersage dort liegen lässt, wo die Ground Truth Masse hat.
+Eine zugespitzte Karte räumt die Ränder leer und wird dafür voll bestraft —
+Zuspitzung ist aber die *gesuchte* Eigenschaft (A1). KL als Kriterium hieße, die
+Frage mit der Antwort zu beantworten.
+
+Der Preis steht in jeder Tabelle: KL wird von 1,078 auf 1,091 (Webpage) bzw.
+0,774 auf 0,785 (Mobile) schlechter. Das ist die Zeile, die man zitieren muss,
+wenn man diese Entscheidung angreifen will.
+
+**Der historische Grund für 0,3 hält der Nachmessung nicht stand.** Gepaart je
+Bild und out-of-sample ist KL bei α = 0,5 gegen die Mean Map **kein Verlust,
+sondern ein Unentschieden** — Webpage −0,0014, Mobile +0,0112, beide Intervalle
+enthalten die Null. Der alte Vergleich war in-sample und über Mittelwerte statt
+gepaart:
+
+| α | ΔAUC | ΔCC | ΔNSS | ΔKL | |
+|---|---:|---:|---:|---:|---|
+| 0,3 | +0,0137 | +0,0233 | +0,0590 | +0,0123 | alle vier besser |
+| 0,5 | +0,0163 | +0,0273 | +0,0706 | −0,0014 | KL unentschieden |
+| 0,8 | +0,0159 | +0,0235 | +0,0646 | −0,0212 | KL belastbar schlechter |
+| 1,2 | +0,0109 | +0,0108 | +0,0376 | −0,0427 | KL belastbar schlechter |
+
+(Webpage, gegen die Mean Map des jeweiligen Folds.)
+
+Damit bleibt **S-2 erfüllt**: `hybrid-v1` mit α = 0,5 schlägt die Mean Map in
+AUC, CC und NSS belastbar und verliert in KL nicht.
+
+### Der Test-Split, einmalig
+
+Je 27 Bilder, mit dem **ausgelieferten** Prior statt einem Fold-Prior — hier
+soll stehen, was das Plugin tut:
+
+| | AUC | CC | NSS | KL | Konz. |
+|---|---:|---:|---:|---:|---:|
+| Webpage α = 0,3 | 0,796 | 0,464 | 1,153 | 1,111 | 0,139 |
+| Webpage α = 0,5 | 0,797 | 0,463 | 1,152 | 1,136 | 0,132 |
+| Mobile α = 0,3 | 0,794 | 0,547 | 1,171 | 0,834 | 0,144 |
+| Mobile α = 0,5 | 0,794 | 0,548 | 1,181 | 0,853 | 0,137 |
+
+**Der Test-Split kann diese Frage nicht beantworten, und das ist die ehrliche
+Auskunft.** Alle drei Entscheidungsmetriken zeigen Differenzen, deren
+95-%-Intervalle die Null einschließen (z. B. Webpage ΔCC −0,0010 [−0,0090,
++0,0070]). Das halbe Intervall ist mit ±0,008 doppelt so breit wie der Effekt,
+den die Kreuzvalidierung über 468 Bilder gemessen hat (+0,004). 27 Bilder können
+einen Unterschied dieser Größe nicht auflösen — der Lauf widerlegt ihn also
+nicht, er ist nur blind dafür. Nur KL ist auch hier belastbar schlechter
+(t = −3,4 bzw. −3,3), was die Erwartung bestätigt.
+
+Die Konzentration bestätigt sich unabhängig davon: Ground Truth 0,505 (Webpage)
+bzw. 0,412 (Mobile) gegen 0,132–0,144 in der Vorhersage.
+
+### A4 — die zwei Prüffälle am Bild
+
+Ein Onboarding-Screen, 393 × 852, vier Kategorie-Kacheln, ein gelber CTA unten
+(`eval/onboarding.ts`). **Konstruiert, nicht beobachtet** — der Zweck ist, zwei
+Fragen mit *bekannter* Antwort zu stellen. Keine Zahl von hier gehört in eine
+Feuerrate.
+
+![A4 — Onboarding-Prüffall über den Alpha-Sweep](assets/messungen/a4-onboarding.png)
+
+Links das Original, dann α = 0,3 / 0,5 / 0,8 / 1,2.
+
+| Element | α = 0,3 | α = 0,5 | α = 0,8 | α = 1,2 |
+|---|---|---|---|---|
+| dunkle Kachel „Nachrichten", Spitze | 0,569 gelbgrün | 0,591 gelbgrün | 0,619 gelbgrün | 0,655 **warm** |
+| gelber CTA unten, Spitze | 0,287 **blau** | 0,370 türkis | 0,460 türkis | 0,542 gelbgrün |
+
+**Die Bilder und die Zahlen sind sich nicht einig, und das wird hier nicht
+aufgelöst.** Die Metriken haben ihr Optimum bei 0,5 und fallen danach; die
+beiden Prüfelemente werden aber erst jenseits von 0,8 sichtbar wärmer. Der gelbe
+CTA erreicht auf **keinem** der geprüften Werte „heiß" — bei 1,2 liegt seine
+Spitze bei 0,542, also gelbgrün, im 70. Perzentil der Karte. Die dunkle Kachel
+wird erst bei 1,2 warm.
+
+Was dagegen bei jedem α gleich bleibt: die Überschrift dominiert den Screen, und
+der Rang des CTA unter den Klick-Kandidaten steht unverändert auf 5 von 6. Der
+Parameter verschiebt Helligkeit, keine Rangfolge.
+
+**Deutung, ohne den Konflikt wegzuräumen.** Beide Beobachtungen zeigen in
+dieselbe Richtung wie A1: was hier fehlt, ist nicht Gewicht, sondern *Schärfe*.
+Ein höheres α hebt den ganzen Bildanteil an — die Kachel wird wärmer, der
+Hintergrund aber auch, und die Konzentration sinkt dabei sogar (0,141 → 0,124).
+Die Bilder verlangen also nicht nach einem größeren α, sondern nach einem
+Bildanteil, der überhaupt selektiver ist. Das ist eine andere Baustelle
+(Nachbearbeitung: `blurSigmaRatio`, `gamma`, Perzentil-Clip — oder ein anderes
+Modell) und ausdrücklich **nicht** in diesem Schritt erledigt.
+
+### A5 — was der Wechsel an den Befundregeln verändert hat
+
+Die Schwellen von `cta-rank`, `competition` und `cold-fold` sind auf der Karte
+mit α = 0,3 kalibriert. Keine Zeile in `rules.ts` wurde angefasst, trotzdem:
+
+| Regel | Population | α = 0,3 | α = 0,5 |
+|---|---|---:|---:|
+| `cta-rank` | Desktop scrollend / Telefon 1 VP / Telefon scrollend | 66,7 % | 66,7 % |
+| `competition` | UEyes Webseiten (Viewport 500 erzwungen) | 2,2 % | **11,9 %** |
+| `competition` | UEyes Telefon-Screens (ein Viewport) | 10,3 % | **31,1 %** |
+| `competition` | Telefon, ein Viewport (konstruiert) | 0,0 % | 20,8 % |
+| `competition` | Telefon scrollend (konstruiert) | 0,0 % | 20,8 % |
+| `competition` | Desktop scrollend (konstruiert) | 0,0 % | 8,3 % |
+| `cold-fold` | UEyes Webseiten (Viewport 500 erzwungen) | 27,7 % | **34,9 %** |
+| `cold-fold` | Desktop scrollend (konstruiert) | 83,3 % | 95,8 % |
+| `cold-fold` | Telefon scrollend (konstruiert) | 100,0 % | 100,0 % |
+
+`cta-rank` ist unbeeindruckt, und das ist erwartbar: die Regel vergleicht Ränge,
+und der Parameter verschiebt keine Rangfolgen (dasselbe Bild wie in A4).
+
+**`competition` verdreifacht seine Quote.** Der Grund steht in der Verteilung:
+die Entscheidungsgröße ist Tal ÷ zweites Maximum, und der stärker gewichtete
+Bildanteil senkt die Fläche *zwischen* zwei Blickfängen ab. Auf Telefon-Screens
+fällt der Median von 1,002 auf 0,967 und das 5. Perzentil von 0,848 auf 0,703 —
+die Schwelle 0,9 liegt damit plötzlich mitten in der Verteilung statt an ihrem
+unteren Rand.
+
+**Nicht nachjustiert, mit Absicht.** 0,9 jetzt an die neue Verteilung
+anzupassen wäre eine zweite unkalibrierte Bewegung im selben Schritt. Die Regel
+wird in 1.2 B1 ohnehin umgebaut — der Mindestabstand wandert von einem Anteil
+der Kartenbreite auf die Diagonale oder auf getrennte x/y-Schwellen — und
+**danach** neu kalibriert, auf der Karte mit α = 0,5. Genau dafür steht A vor B.
+
+Bei `cold-fold` ist die Bewegung kleiner, aber die konstruierte Desktop-Form
+landet mit 95,8 % nahe bei „feuert immer". Auf echten Bildern bleibt die Regel
+mit 34,9 % im brauchbaren Bereich; 0,08 ist trotzdem neu zu bewerten, und dafür
+fehlt weiterhin das Set mit echten Layer-Bäumen.
+
+**Ein vierter Effekt, außerhalb der Tabelle.** Der Erreichbarkeitstest von
+`cta-below-fold` (nicht ausgeliefert) schlug nach dem Wechsel fehl. Die Ursache
+war nicht die Regel, sondern der Testaufbau: der CTA unter dem Fold gewann dort
+mit 0,5227 gegen 0,4773 — vier Tausendstel —, und das Verhältnis kippt schon bei
+α ≈ 0,35. „Diese Regel ist erreichbar" hing damit an der dritten
+Nachkommastelle eines Engine-Parameters. Der Wettbewerber steht jetzt dort, wo
+ein Impressum-Link wirklich steht, unten rechts im ersten Viewport; der CTA
+führt damit über den ganzen geprüften Alpha-Bereich. Siehe
+`findings/__tests__/end-to-end.test.ts`.
+
+### Das Regressions-Gate — was seine Zahlen sagen und was nicht
+
+Seit 1.2 liegen 40 Bilder im Repo (`eval/fixtures/gate-web`, `gate-mobile`), und
+das Gate vergleicht bei jedem PR den CC der ausgelieferten Konfiguration gegen
+`main`. Es meldet zum Beispiel:
+
+```
+gate-web     CC 0,4735 vs main 0,4561  (Δ +0,0174)
+gate-mobile  CC 0,5720 vs main 0,5543  (Δ +0,0177)
+```
+
+**Diese Zahlen sind kein Beleg für Genauigkeit, und sie dürfen nie als einer
+zitiert werden.** Der Grund ist nicht die Größe des Sets, sondern seine
+Verwendung: es nimmt 20 der 27 Test-Split-Bilder je Kategorie und läuft bei
+jedem PR **mit sichtbarem Ergebnis**. Wer eine Änderung so lange dreht, bis der
+Check grüner wird, hat auf diesem Set kalibriert — der Split ist damit
+Rückkopplung, nicht Beleg.
+
+Das ist der Preis des Aufbaus und nicht sein Fehler: ein Gate, dessen Zahl man
+nicht sieht, ist kein Gate. Deshalb steht hier eine Regel statt einer
+Gegenmaßnahme:
+
+> Das Gate beantwortet **„ist etwas kaputtgegangen"**. Es beantwortet **nicht**
+> „wie gut ist es". Jede Aussage über Güte kommt aus der Kreuzvalidierung über
+> 495 Bilder je Kategorie — und aus nichts anderem.
+
+Derselbe Absatz steht im `index.json` beider Sets, gleichrangig neben den drei
+anderen nicht verhandelbaren Eigenschaften (nur Test-Split, nur 3 s, auf dem
+Analyseraster), damit ihn auch findet, wer nur die Daten ansieht.
+
+### A6 — Schärfe: die Nachbearbeitung, nicht das Mischungsverhältnis
+
+```bash
+npm run sharpness                       # zwei Stufen, kreuzvalidiert
+npm run visual-check -- --sharp vor-a6  # der Prüffall, vorher gegen nachher
+```
+
+A1 hat den Befund geliefert und `blendAlpha` als Hebel ausgeschlossen. Was die
+*Form* der Verteilung bestimmt, sind die Schritte danach — und einer davon
+existierte in 1.1 gar nicht mehr:
+
+| Hebel | wo er sitzt | Stand 1.1 |
+|---|---|---|
+| `post.blurSigmaRatio` | Weichzeichnung des Bildanteils | 0,025 |
+| `post.gamma` | Tonkurve **innerhalb** des Bildanteils | 0,8 |
+| `post.clip{Low,High}Percentile` | Sockel und Sättigung des Bildanteils | p1 / p99 |
+| `blendGamma` | Tonkurve über der **fertigen** Karte | **ausgebaut** |
+
+Der vierte ist der eigentliche Anlass. Er wurde beim Einbau von `hybrid-v1`
+entfernt, **weil er KL verschlechterte** (1,115 statt 1,078) — nach genau dem
+Kriterium, das bei einer Frage nach Zuspitzung nicht entscheiden darf. Er ist
+als Parameter zurück, mit `undefined` = Verhalten von 1.1, und wurde an AUC,
+CC und NSS gemessen.
+
+Aufbau: erst ein Hebel nach dem anderen (vier lesbare Kurven statt einer
+Punktwolke), dann Kombinationen aus dem, was übrig blieb. Kreuzvalidiert auf dem
+Tuning-Split, Ortsprior je Fold, 468 Bilder je Kategorie.
+
+#### Was die Einzelhebel ergeben (Webpage)
+
+| Hebel | Wert | AUC | CC | NSS | KL | Konzentration | Urteil |
+|---|---|---:|---:|---:|---:|---:|---|
+| — | **Ist-Zustand** | 0,783 | 0,447 | 1,061 | 1,091 | 0,133 | — |
+| Blur | 0,006 | 0,778 | 0,440 | 1,044 | 1,089 | 0,139 | verloren |
+| Blur | 0,015 | 0,781 | 0,444 | 1,054 | 1,090 | 0,136 | verloren |
+| Blur | **0,035** | 0,784 | 0,449 | 1,063 | 1,094 | 0,131 | **besser** |
+| `post.gamma` | 1,4 | 0,782 | 0,450 | 1,067 | 1,065 | 0,143 | verloren |
+| `post.gamma` | 2,0 | 0,781 | 0,450 | 1,067 | 1,055 | 0,150 | verloren |
+| Clip | p20/p99 | 0,782 | 0,448 | 1,062 | 1,074 | 0,140 | besser |
+| Clip | p40/p99 | 0,781 | 0,449 | 1,066 | 1,058 | 0,148 | verloren |
+| `blendGamma` | **1,6** | 0,783 | 0,456 | 1,083 | 1,038 | 0,188 | **besser** |
+| `blendGamma` | 2,0 | 0,783 | 0,454 | 1,080 | 1,055 | 0,225 | **besser** |
+| `blendGamma` | 2,5 | 0,783 | 0,448 | 1,066 | 1,117 | 0,270 | gehalten |
+| `blendGamma` | 3,5 | 0,783 | 0,430 | 1,025 | 1,337 | 0,353 | verloren |
+
+„Verloren" heißt: das 95-%-Intervall einer der drei gepaarten Differenzen liegt
+ganz unter der Null. Bei 468 Bildern ist das ein strenges Kriterium — `post.gamma`
+1,4 gewinnt 0,003 CC und verliert 0,001 AUC, und das reicht.
+
+**Drei Befunde, von denen zwei überraschen:**
+
+1. **Schärfer zeichnen hilft nicht.** Blur 0,006 bis 0,020 verlieren in allen
+   drei Hauptmetriken, monoton, in beiden Kategorien. Der Bildanteil ist kein
+   Detailkanal — was er beiträgt, ist grobe Struktur. Der einzige Blur-Wert, der
+   hält, ist der **größere**.
+2. **`post.gamma` und der Clip sind Sackgassen.** Beide erhöhen die
+   Konzentration und kosten dabei zuverlässig ein bis zwei Tausendstel AUC. Sie
+   spitzen den *Bildanteil* zu, und der ist mit α = 0,5 nur die halbe Miete —
+   der Ortsprior bleibt so weich wie vorher.
+3. **`blendGamma` ist der Hebel.** Er sitzt über der fertigen Karte, nimmt den
+   Prior also mit. Bei 2,0 steigt die Konzentration von 0,133 auf 0,225, ohne
+   dass eine der drei Metriken leidet — und **KL wird besser**, nicht
+   schlechter. Der 1.1 entfernte Gamma-Wert war ein *glättender* (unter 1); ein
+   zuspitzender ist nie gemessen worden.
+
+Auf Mobile derselbe Verlauf. Die Obergrenze ist gemessen, nicht gewählt: bei
+`blendGamma` 2,5 hält Webpage noch (Konzentration 0,270), Mobile verliert CC
+belastbar (0,538 gegen 0,552). 2,0 ist damit der größte Wert, der **im
+Mittel** keine Metrik kostet — welcher Wert ausgeliefert wird, entscheidet
+allerdings nicht der Mittelwert, sondern die Aufteilung im Abschnitt danach.
+
+#### Die Kombination, und warum sie gegenläufig ist
+
+| | AUC | CC | NSS | KL | Konzentration |
+|---|---:|---:|---:|---:|---:|
+| **Webpage**, Ist-Zustand | 0,783 | 0,447 | 1,061 | 1,091 | 0,133 (0,28× GT) |
+| Webpage, Blur 0,035 + `blendGamma` 2 | **0,784** | **0,456** | **1,083** | **1,049** | **0,221** (0,46× GT) |
+| **Mobile**, Ist-Zustand | 0,781 | 0,552 | 1,091 | 0,785 | 0,138 (0,36× GT) |
+| Mobile, Blur 0,035 + `blendGamma` 2 | **0,783** | **0,557** | **1,115** | **0,728** | **0,247** (0,64× GT) |
+
+**Alle vier Metriken verbessern sich, KL eingeschlossen.** Die Zuspitzung wird
+hier nicht mit Vorhersagegüte bezahlt — sie bringt welche mit. Das ist der
+Unterschied zu A2, wo jeder Gewinn an AUC/CC/NSS mit KL bezahlt wurde.
+
+Der Mechanismus ist gegenläufig und deshalb erklärungsbedürftig: die
+**Bildanalyse wird weicher gezeichnet, das Ergebnis härter angezogen**. Ein
+glatterer Bildanteil passt besser zu einer Ground Truth, die selbst aus
+überlagerten Blickpunkten besteht; die Schärfe kommt danach aus der Tonkurve
+über der fertigen Karte, wo sie den Ortsprior mitnimmt statt ihn zu umgehen.
+
+### A7 — derselbe Mittelwert, zwei gegenläufige Hälften
+
+```bash
+npm run groups -- --gammas 0.3,1.3,1.6,2.0
+```
+
+Die Tabelle oben mittelt über alle Bilder, und ein Mittelwert kann zwei
+gegenläufige Effekte verdecken. Für den Verdacht gibt es hier einen konkreten
+Anlass: die Mean-Map-Diagnose teilt den Datensatz in zwei Gruppen — Screens,
+auf denen unsere Vorhersage die (fold-eigene) Mean Map schlägt, und die
+übrigen. **Die erste Gruppe ist die, für die das Plugin existiert.** Wo ein
+Ortsprior schon reicht, ist unsere Vorhersage ein Prior mit Zierrat; dort
+besser zu werden ist billig.
+
+Die Gruppen werden **einmal** im Zustand vor der Schärfe-Änderung bestimmt und
+dann festgehalten. Würde die Zugehörigkeit je Gamma-Wert neu berechnet,
+verglichen man zwei Populationen statt zwei Konfigurationen.
+
+ΔCC gegen „kein Gamma", je Gruppe:
+
+| γ | Webpage, Gewinner (326) | Webpage, übrige (142) | Mobile, Gewinner (351) | Mobile, übrige (117) |
+|---|---:|---:|---:|---:|
+| 0,3 | −0,0492 | −0,0594 | −0,0550 | −0,0634 |
+| 1,3 | +0,0058 | +0,0092 | +0,0057 | +0,0076 |
+| **1,6** | **+0,0072** | +0,0134 | **+0,0055** | +0,0087 |
+| 2,0 | +0,0051 | +0,0141 | **−0,0007** | +0,0034 |
+
+**Der Verdacht bestätigt sich.** In jeder Zeile gewinnt die Gewinner-Gruppe
+weniger als die andere, und der Abstand wächst mit γ. Bei 2,0 **verschwindet
+der Gewinn für die Gewinner auf Mobile ganz** (−0,0007, Intervall über der
+Null), während die übrigen weiter zulegen; auf Webpage bekommt die Gruppe noch
+ein Drittel dessen, was die andere bekommt. Bei **1,6 gewinnen beide Gruppen in
+beiden Kategorien**, jedes 95-%-Intervall ohne Null.
+
+**Ausgeliefert wird deshalb 1,6, nicht 2,0.** Der Mittelwert spricht für 2,0;
+die Aufteilung sagt, dass dieser Mittelwert von der Hälfte kommt, auf die es
+weniger ankommt. Gekostet wird das mit Konzentration — 0,188/0,207 statt
+0,221/0,253 — und damit schließt sich die Lücke zur Ground Truth zu **gut einem
+Drittel** statt zur Hälfte: Faktor 3,6 → 2,6 (Webpage), 2,8 → 1,9 (Mobile).
+
+**Woran sich die Gruppen wirklich unterscheiden.** „Hero-dominiert" ist ein
+Etikett aus der visuellen Lesung des Kontaktbogens, nicht aus einer Messung —
+siehe [Wo Figmaps die Mean Map schlägt](#wo-figmaps-die-mean-map-schlägt).
+Gemessen trennt sie **die vertikale Lage der Aufmerksamkeit**: Schwerpunkt y
+0,382 gegen 0,296, Masse im oberen Drittel 45,1 % gegen 62,7 %. Die
+Konzentration ihrer Ground Truth trennt sie **nicht** (0,479 gegen 0,488 hier
+nachgemessen, 47,3 % gegen 48,5 % in der Diagnose vom 8.8.), das
+Seitenverhältnis auch nicht.
+
+Das passt zum Befund oben, statt ihm zu widersprechen: der Ortsprior ist
+oben-lastig, und `blendGamma` zieht die Karte in Richtung ihrer stärksten
+Stellen — also nach oben. Genau dort steht bei der Gewinner-Gruppe **nicht**,
+worauf geschaut wird. Deshalb kostet ein zu großes Gamma sie ihren Gewinn,
+während es der anderen Gruppe hilft.
+
+γ unter 1 ist nebenbei eindeutig erledigt: 0,3 kostet rund 0,05 CC in jeder
+Gruppe und Kategorie. Der 1.1 wegen KL ausgebaute Wert war ein solcher.
+
+Ausgeliefert wird das als eigener Block `ENGINE_CONFIG.hybrid`, **nicht** in
+`post`: `HEURISTIC_V1` liest `post` und ist die eingefrorene 1.0-Referenz des
+Harness. Würde sie mitwandern, verschöbe jede Messung an der aktiven
+Konfiguration ihre eigene Vergleichsbasis.
+
+#### Die Prüffälle sagen etwas anderes — auch das bleibt stehen
+
+![A6 — Onboarding-Prüffall, neu gegen alt](assets/messungen/a6-schaerfe-onboarding.png)
+
+Links das Original, Mitte der neue Stand, rechts der alte.
+
+| Element (Spitzenwert) | vor A6 | nach A6 |
+|---|---|---|
+| dunkle Kachel „Nachrichten" | 0,591 gelbgrün | 0,388 türkis/grün |
+| gelber CTA unten | 0,370 türkis/grün | 0,133 **kalt (dunkelblau)** |
+
+**Beide Prüfelemente werden kälter, nicht wärmer.** Auf 936 echten Screens ist
+die Karte in allen vier Metriken besser geworden; auf dem konstruierten
+Prüffall sind genau die zwei Elemente, nach denen A4 fragt, deutlicher aus dem
+Bild verschwunden. Beides ist wahr, und es wird hier nicht aufgelöst.
+
+Was die Bilder zeigen: die neue Karte ist **selektiv**. Sie setzt fast alles auf
+die Überschrift und lässt den Rest fallen — und die Überschrift ist auf einem
+Screen dieses Typs auch das, wohin die gemessene Aufmerksamkeit geht. Die alte
+Karte war überall lauwarm und hat damit *keine* Aussage gemacht, die man hätte
+widerlegen können. Ob eine Karte, die den CTA klar als kalt ausweist, das
+bessere Produkt ist als eine, die ihn milde grün färbt, ist eine Frage, die
+UEyes nicht beantwortet: der Datensatz enthält keinen Screen dieser Art mit
+bekannter Antwort.
+
+#### Nebenwirkungen, zum zweiten Mal gemessen
+
+Dieselbe Prüfung wie A5, jetzt für die Nachbearbeitung — über **alle sechs**
+Regeln statt nur die drei ausgelieferten (`flat` liest den Bildanteil direkt,
+und der Blur formt genau den) und mit einer zweiten echten Population für
+`cold-fold`: Telefon-Screens mit erzwungener Segmentierung. Ohne die gäbe es
+für die Regel genau *eine* echte Population, und eine Quote aus einer einzigen
+Population ist keine Quote, sondern eine Beobachtung.
+
+| Regel | Population | vor A6 | jetzt | seit 1.1 |
+|---|---|---:|---:|---|
+| `cta-rank` | alle drei konstruierten Formen | 66,7 % | 66,7 % | unverändert |
+| `competition` | UEyes Telefon, ein Viewport | 31,1 % | **22,4 %** | 10,3 % → 22,4 % |
+| `competition` | UEyes Webseiten, segmentiert | 11,9 % | 10,3 % | 2,2 % → 10,3 % |
+| `competition` | UEyes Telefon, segmentiert | 6,3 % | 2,6 % | — |
+| `cold-fold` | UEyes Webseiten, segmentiert | 34,9 % | **40,0 %** | 27,7 % → 40,0 % |
+| `cold-fold` | UEyes Telefon, segmentiert | 58,6 % | **61,6 %** | — |
+| `cold-fold` | Desktop scrollend (konstruiert) | 95,8 % | 100,0 % | 83,3 % → 100,0 % |
+| `flat` (nicht ausgeliefert) | UEyes Webseiten, segmentiert | 15,2 % | 22,2 % | — |
+| `dead-cta` (nicht ausgeliefert) | Desktop scrollend (konstruiert) | 83,3 % | 100,0 % | — |
+| `cta-below-fold` (nicht ausgeliefert) | alle | 0,0 % | 0,0 % | unverändert |
+
+**`competition` bewegt sich zurück.** Die Zuspitzung senkt die Fläche *neben*
+den Blickfängen stärker als die zwischen ihnen, das Tal-Verhältnis steigt
+wieder. Über beide Schritte von 1.2 bleibt eine Verdopplung stehen (10,3 % →
+22,4 % auf Telefon-Screens) — die Regel ist damit zweimal auf einer Karte
+gemessen worden, für die sie nicht kalibriert wurde. B1 baut sie um und
+kalibriert danach neu; bis dahin ist keine dieser Zahlen eine Schwelle.
+
+##### `cold-fold`: die Rate steigt auch auf echten Daten — der Befund steht aber in der Verteilung
+
+Auf echten UEyes-Daten klettert sie mit, in beiden Populationen und in beiden
+Schritten: Webseiten 27,7 % → 34,9 % → **40,0 %**, Telefon-Screens 58,6 % →
+**61,6 %**. Die 100 % auf der konstruierten Desktop-Form bleiben ein Artefakt
+des Aufbaus — dort steht der Hero absichtlich weiter unten, die Quote ist die
+der Konstruktion, nicht die der Regel.
+
+Wichtiger als die Rate ist, **wo die Schwelle in der Verteilung sitzt**. Der
+relative Vorsprung des stärksten Abschnitts liegt
+
+| Population | p5 | Median | p95 | Schwelle 0,08 |
+|---|---:|---:|---:|---|
+| UEyes Webseiten, segmentiert | −0,172 | 0,037 | 0,318 | **über** dem Median |
+| UEyes Telefon, segmentiert | −0,129 | 0,131 | 0,502 | **unter** dem Median |
+
+Auf Telefon-Screens sagt die Regel damit häufiger ja als nein, und zwar nicht
+knapp. 0,08 stammt aus der Webseiten-Verteilung und ist auf der
+Telefon-Verteilung nie geprüft worden — **dieselbe Fehlerklasse wie bei `flat`,
+nur dass die Schwelle diesmal zwischen Populationen wandert statt zwischen
+Konfigurationen.** Eine Schwelle je UI-Typ, wie `flat` sie schon hat, ist der
+naheliegende Umbau; er gehört zu 1.2 B und braucht eine eigene Messung. Bis
+dahin gilt: von den zwei belastbaren Regeln ist eine auf der Hälfte ihrer
+Population unkalibriert.
+
+**`flat` und `dead-cta` sind nicht ausgeliefert, ihre Zahlen aber trotzdem
+veraltet.** Genau deshalb stehen sie hier: eine abgeschaltete Regel, deren
+Schwelle im Stillen wegdriftet, ist beim Wiedereinschalten eine Falle. `flat`
+liegt jetzt bei 22,2 % statt 15,2 %, weil sein Bildanteil mit dem neuen Blur
+gerechnet wird.
+
+### A8 — wie viel davon war der Renderer?
+
+```bash
+npm run cutoff -- --limit 150
+```
+
+Der Renderer blendet alles unter `transparencyCutoff` aus und fadet über
+`transparencyRamp` ein. Beides sind **Werte**, gewählt an einer Karte, deren
+Masse breiter lag. Gemessen, was dieselben Zahlen auf der neuen Karte tun:
+
+| | verdeckt vorher | verdeckt nachher, gleiche Schwelle |
+|---|---:|---:|
+| Webpage | 18,0 % | **37,5 %** |
+| Mobile | 13,1 % | **36,4 %** |
+
+Die Schwelle allein verdoppelt bis verdreifacht die unsichtbare Fläche. Ein
+Gutteil des Eindrucks „das Overlay ist leerer geworden" war also nicht die
+Vorhersage.
+
+Nachgezogen wurde nach einer Regel statt nach Augenmaß: **derselbe Anteil der
+Karte bleibt verdeckt wie bisher.** Das ergibt 0,021 (Webpage) und 0,020
+(Mobile) für die Schwelle und 0,082 bzw. 0,079 für das Rampenende —
+ausgeliefert werden 0,02 und eine Rampenbreite von 0,06. Was damit **nicht**
+entschieden ist: ob 18 % die richtige verdeckte Fläche sind. Diese Frage hat
+keine Ground Truth; sie wird übernommen, nicht geprüft.
+
+#### Was vom Prüffall-Effekt übrig bleibt
+
+![A8 — Onboarding-Prüffall mit nachgezogenem Cutoff](assets/messungen/a8-onboarding-cutoff.png)
+
+Links das Original, Mitte der Stand nach A6–A8, rechts der Stand vor 1.2 A6.
+
+| Element | Kartenwert (Spitze) | Deckkraft, neue Schwelle | Deckkraft, alte Schwelle |
+|---|---:|---:|---:|
+| dunkle Kachel, vor A6 | 0,591 | — | 100 % |
+| dunkle Kachel, jetzt | 0,469 | 100 % | 87 % |
+| gelber CTA, vor A6 | 0,370 | — | 99 % |
+| gelber CTA, jetzt | 0,199 | **97 %** | **41 %** |
+
+**Beim CTA war es fast vollständig der Renderer.** Mit nachgezogener Schwelle
+wird er wieder mit 97 % Deckkraft gezeichnet, praktisch wie vorher (99 %) — mit
+der alten Schwelle wären es 41 % gewesen. Was bleibt, ist die **Farbe**: er ist
+blau statt türkis, die Karte weist ihn also weiterhin als kalte Zone aus. Das
+ist die Aussage der Engine, und sie steht.
+
+Bei der dunklen Kachel war es umgekehrt: 100 % gegen 87 % Deckkraft, der
+Renderer trägt wenig bei. Ihr Rückgang von 0,591 auf 0,469 ist echt — und
+kleiner als die 0,388, die `blendGamma` 2,0 ergeben hätte.
+
+### Die Streifen aus 1.1 sind zurück — gemessen
+
+Auf einem inhaltsfreien grauen 1440 × 4000-Frame, dem Testbild, an dem die
+Scroll-Dämpfung 1.1 eingeführt wurde:
+
+![Abschnittsbänder auf einem leeren Frame](assets/messungen/a8-baender-grauer-frame.png)
+
+| Band | y | Wert | Deckkraft neu (0,02) | Deckkraft alt (0,08) |
+|---|---:|---:|---:|---:|
+| 1 | 180 px | 0,4048 | 100 % | 100 % |
+| 2 | 900 px | 0,2024 | 100 % | 100 % |
+| 3 | 1620 px | 0,1012 | 100 % | **18 %** |
+| 4 | 2340 px | 0,0506 | **51 %** | **0 %** |
+| 5 | 3060 px | 0,0486 | **48 %** | **0 %** |
+
+Täler dazwischen: 0,019 / 0,009 / 0,005 / 0,002 / 0,000 — die Bänder sind also
+sauber getrennt und einzeln sichtbar. **Ja, das Artefakt ist zurück**, und zwar
+deutlicher, als die eine Zahl 0,0506 vermuten ließ: nicht nur Band 4, auch Band
+3 springt von 18 % auf volle Deckkraft.
+
+**Die Dämpfung wird dafür nicht angefasst.** Sie ist eine ausdrücklich nicht
+gemessene Annahme (`config.ts`), und sie zu verstellen, damit ein Bild ruhiger
+aussieht, ist dieselbe Bewegung, die dieses Projekt sich bei den Regeln verboten
+hat. `sectionAttenuationFloor` scheidet ohnehin aus: von 0,12 bis 0,03
+nachgemessen bleibt Band 4 unverändert, weil dort noch `sectionAttenuation³`
+greift und nicht der Boden.
+
+#### Optionen, die weder Dämpfung noch Vorhersage anfassen
+
+| Option | was sie tut | was sie kostet |
+|---|---|---|
+| **(a) Schwelle wieder höher** | zurück Richtung 0,08 | Direkter Tausch: 0,08 verdeckt auf echten Screens 37,5 % der Karte statt 18,0 %. Der A8-Gewinn ist weg, der CTA aus dem Prüffall fällt auf 41 % Deckkraft zurück. Ehrlich, aber es ist ein Rückschritt, keine Lösung. |
+| **(b) Inhaltsschwelle im Renderer** — *gemessen und verworfen, siehe unten* | Unterhalb eines sehr kleinen **Bildanalyse-Anteils** wird nicht gezeichnet, darüber unverändert volle Deckkraft, dazwischen ein weicher Auslauf. Als Schwelle statt als Faktor, damit sich auf Inhalt **exakt** nichts ändert. | Auf echten Screens ändert sich eben doch etwas — 1,3 bis 3,8 % der sichtbaren Fläche verschwinden ganz. Zahlen unten. |
+| **(c) Lokaler Kontrast statt absolutem Wert** | Gezeichnet wird, wo die Karte sich von ihrer *Umgebung* abhebt, nicht wo sie über einer festen Zahl liegt. Ein breiter, glatter Hügel — genau die Form der Bänder — fällt damit weg, ein Blickfang nicht. | Neue Heuristik im Renderer mit eigener Fehlerrate und eigenen Konstanten. Am ehesten das, was das Auge ohnehin tut, aber es ist eine Neuentwicklung, keine Justierung. |
+| **(d) Nichts tun, benennen** | Der Fall betrifft Flächen **ohne jeden Inhalt**; echter Inhalt dominiert den Prior lokal. | Der erste Frame, den jemand zum Ausprobieren auswählt, ist oft ein halbleerer. Das Artefakt trifft damit ausgerechnet den ersten Eindruck. |
+
+#### (b) wurde gemessen, bevor sie gebaut wurde — und ist damit erledigt
+
+```bash
+npm run band-gate
+```
+
+Der Einwand gegen (b) war, dass sie als *Faktor* die Aussage der Karte
+umschreibt. Als **Schwelle** mit vollem Durchlass darüber gilt er nicht mehr —
+vorausgesetzt, auf echten Screens liegt nichts unter der Schwelle. Das ist eine
+prüfbare Bedingung, und sie ist auf den 40 Gate-Bildern geprüft worden, an der
+**gerenderten Deckkraft**, nicht an der Karte.
+
+| Schwelle / Auslauf | Pixel verändert | sichtbare Fläche ganz verloren | größte Δ Deckkraft | betroffene Bilder |
+|---|---:|---:|---:|---:|
+| **Webpage** | | | | |
+| 0,005 / 0,01 | 1,50 % | 1,28 % | 1,000 | 13/20 |
+| 0,01 / 0,02 | 2,00 % | 1,50 % | 1,000 | 14/20 |
+| 0,05 / 0,05 | 4,98 % | 3,00 % | 1,000 | 19/20 |
+| **Mobile** | | | | |
+| 0,005 / 0,01 | 4,09 % | 3,81 % | 1,000 | 16/20 |
+| 0,01 / 0,02 | 4,91 % | 4,24 % | 1,000 | 18/20 |
+| 0,05 / 0,05 | 8,70 % | 6,61 % | 1,000 | 20/20 |
+
+**Die Bedingung ist nicht erfüllt, und zwar schon beim kleinsten geprüften
+Wert.** Selbst 0,005 löscht auf mehr als der Hälfte der Bilder Fläche, die heute
+gezeichnet wird — und die größte Änderung ist 1,000, also *voll sichtbar → gar
+nicht mehr sichtbar*, nicht ein Verblassen.
+
+Der Grund steht in der Verteilung des Bildanteils: p1 liegt bei 0,0000 und p5
+bei 0,0063 (Webpage) bzw. 0,0000 (Mobile). Auf einem echten Screen gibt es
+reichlich Fläche mit fast keinem Bildanteil — Weißraum, ruhige Ränder,
+Randbereiche neben dem Inhalt —, und dort zeichnet die Karte heute etwas, weil
+der **Ortsprior** dort etwas sagt. Genau das ist eine Aussage: „hier schaut man
+hin, obwohl nichts steht" ist auf einem realen Entwurf oft richtig. Die Schwelle
+kann nicht zwischen „leerer Frame" und „leere Stelle auf einem vollen Frame"
+unterscheiden, weil der Bildanteil diesen Unterschied nicht kennt.
+
+**Damit gilt (d): nichts tun.** Das Artefakt bleibt bestehen und ist oben
+dokumentiert. (a) wäre ein Rückschritt, (c) eine Neuentwicklung mit eigener
+Fehlerrate; beide sind nicht ausgeschlossen, aber keine davon ist eine
+Justierung, und keine wird hier nebenbei getroffen.
+
+Das Messwerkzeug bleibt im Repo (`eval/band-gate.ts`) — nicht, weil die Idee
+noch lebt, sondern damit die nächste Variante desselben Gedankens nicht wieder
+bei null anfängt.
+
+### Was offen bleibt
+
+1. **Die Schärfe ist zu gut einem Drittel geschlossen, nicht ganz.** Faktor
+   3,6 → 2,6 (Webpage) und 2,8 → 1,9 (Mobile). Weiter zu gehen wäre technisch
+   möglich (γ 2,0 bringt die Hälfte), kostet aber genau die Gruppe, für die das
+   Plugin gebaut ist — siehe A7. Was noch fehlt, holt keiner der vier geprüften
+   Hebel: `post.gamma` und der Clip spitzen den Bildanteil zu und
+   kosten dabei zuverlässig AUC, ein schärferer Blur verliert überall, und
+   `blendGamma` ist bei 2,0 an seiner gemessenen Obergrenze. Der nächste Schritt
+   ist keine Konstante mehr, sondern eine andere Bildanalyse — der
+   Ortsprior selbst ist eine weiche Glocke und deckelt, wie scharf die Summe
+   werden kann.
+2. **Wie viel Fläche ein Overlay verdecken soll, ist weiterhin ungeprüft.** Die
+   Schwelle ist auf denselben *Anteil* nachgezogen wie vorher (A8) — aber dass
+   18 % der richtige Anteil sind, ist eine Annahme aus 1.0, nicht eine Messung.
+   Diese Frage hat keine Ground Truth und gehört an einen Menschen mit echten
+   Screens vor sich.
+3. **Die Streifen aus 1.1 sind zurück** — siehe unten, eigener Abschnitt.
+4. **`competition` neu kalibrieren**, nach dem Umbau in B1, auf der
+   ausgelieferten Karte, getrennt je Frame-Form.
+5. **Bei `cold-fold` ist die Höhe der Schwelle offen, nicht mehr ihre Form.**
+   Sie liegt jetzt je UI-Typ am selben Perzentil (p60, Raten 40,0 % und
+   39,8 %). Ob p60 die richtige Stelle ist — ob ein Befund auf 40 % der Screens
+   erscheinen soll —, ist eine Produktfrage und nicht beantwortet.
+6. **`flat` ist doppelt veraltet.** Seine Schwellen sind auf dem Bildanteil mit
+   Blur 0,025 geschätzt; der ist jetzt 0,035. Die Regel ist nicht ausgeliefert,
+   aber die Zahlen in `config.ts` sind es dem Namen nach — beim
+   Wiedereinschalten sind sie neu zu messen, nicht zu übernehmen.
+
+---
+
 ## Diagnose: woher kommt die Vorhersagekraft?
 
 ```bash
@@ -926,13 +1655,25 @@ Kategorien derselbe:
 Konzentration und Seitenverhältnis unterscheiden sich **nicht** — der einzige
 Trennfaktor ist die vertikale Lage der Aufmerksamkeit.
 
-Der Kontaktbogen bestätigt es: die Gewinner sind durchweg
-**Hero-dominierte Landingpages** — ein großes Bild oder eine
-kontrastreiche Grafik mit einer fetten Headline in der **Bildmitte**, nicht in
-der Kopfzeile. Also genau die Screens, auf denen der generische
-Ortsdurchschnitt danebenliegt und Luminanz-Kontrast und Kantendichte etwas
-finden. Verlierer sind dichte, konventionell aufgebaute Seiten mit starker
-Navigation oben, wo der Durchschnitt schon fast alles erklärt.
+**Das Etikett „hero-dominiert" ist hier entstanden — und es ist eine
+Lesart, keine Messung.** Auf dem Kontaktbogen sehen die Gewinner nach
+Landingpages mit großem Bild und fetter Headline in der Bildmitte aus, die
+Verlierer nach dichten Seiten mit starker Navigation oben. Das ist eine
+plausible Beschreibung von zwölf Bildern, und sie hat sich als Kurzform
+festgesetzt.
+
+Belegt ist sie nicht. Gemessen unterscheiden sich die beiden Gruppen **allein in
+der vertikalen Lage der Aufmerksamkeit** — Schwerpunkt y 0,382 gegen 0,296,
+Masse im oberen Drittel 45,1 % gegen 62,7 %. In der Konzentration der Ground
+Truth unterscheiden sie sich **nicht** (47,3 % gegen 48,5 %), im
+Seitenverhältnis auch nicht. „Hero" ist eine mögliche Ursache dafür, dass
+Aufmerksamkeit tiefer liegt; die Daten sagen nur, *dass* sie tiefer liegt.
+
+Der Unterschied ist nicht akademisch: die Gruppe taucht in 1.2 als
+Entscheidungsgrundlage wieder auf (siehe [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften)),
+und wer dort „hero-dominiert" liest, sucht die Erklärung im falschen Merkmal.
+Deshalb ab hier: **Gewinner = Screens, deren Aufmerksamkeit tiefer liegt, als
+der Ortsdurchschnitt erwartet.**
 
 ### Was daraus folgt
 
@@ -1069,6 +1810,350 @@ Code, der Rest ist das Set.
   Hervorhebung der Kandidaten, nicht als Verteilung. Enrico validiert die
   **Erkennung**, nicht die Rangfolge; eine Zahl, die Rangfolge behauptet,
   wäre durch nichts gedeckt.
+
+---
+
+## Contrastmap (1.2 C)
+
+```bash
+npm run contrast-check      # die Karte auf zwei Frames, Bild und Befunde
+```
+
+**Die dritte Karte, und die einzige, die keine Vorhersage ist.** Sie hat keinen
+Datensatz, keine Kalibrierung und keine Schwelle, die veralten kann — sie
+rechnet eine Norm aus. Sie kann nicht in dem Sinne falsch sein, in dem eine
+Heatmap falsch sein kann; sie kann nur ungenau sein, und wo sie das ist, sagt
+sie es.
+
+**Nach den Befundzahlen ist sie die Hauptausgabe des Plugins, nicht die dritte
+Karte.** Gemessen auf denselben zwei Frames:
+
+| Frame | Contrastmap | Vorhersage-Befunde |
+|---|---:|---:|
+| Onboarding 393 × 852 | **8** gemessene Aussagen (davon 2 zu beachten) | **1** |
+| Desktop 1440 × 3200 | **21** gemessene Aussagen, **10 durchgefallen** | Ø **1,67** |
+
+Von den drei Vorhersage-Regeln bedient jede genau eine Frame-Form
+([siehe oben](#die-aufteilung-ist-keine-einschränkung-sondern-die-struktur)); auf
+einem Ein-Viewport-Telefon bekommt ein Drittel der Screens gar nichts, und der
+Rest genau einen Befund. Die Contrastmap braucht weder Folds noch Abschnitte
+noch Kandidaten noch Kalibrierung — sie sagt auf **jeder** Frame-Form etwas, und
+was sie sagt, kann man nachrechnen.
+
+Das gehört auch in die Beschreibung fürs Publishing: wer das Plugin installiert,
+bekommt zuerst eine Kontrastprüfung nach WCAG und **zusätzlich** eine
+Aufmerksamkeitsvorhersage — nicht umgekehrt.
+
+### Wie gemessen wird (C1)
+
+Hybrid, und beide Hälften aus dem Grund, aus dem sie dort herkommen müssen:
+
+| aus dem Layer-Baum | aus den gerenderten Pixeln |
+|---|---|
+| Position, Größe, Schriftgröße, Schriftschnitt, Textfarbe | die tatsächliche Hintergrundfarbe |
+
+Den Hintergrund aus dem Baum zu rekonstruieren hieße, den Renderer nachzubauen —
+gestapelte Fills, Verläufe, Fotos, Deckkraft, Masken —, und jede Abweichung wäre
+ein falscher Befund über etwas, das man ansehen kann. Umgekehrt wäre „alles aus
+den Pixeln" ebenso falsch: aus einem Screenshot ist nicht zu erkennen, was ein
+Textknoten ist und wie groß seine Schrift wirklich ist — und genau davon hängt
+die Schwelle ab.
+
+Abgetastet wird **innerhalb** des Textrahmens, ohne die Glyphen: Pixel nahe der
+Textfarbe fallen weg, samt Antialiasing-Saum. Füllt der Text seinen Rahmen, wird
+auf einen Ring außerhalb ausgewichen. Gemessen wird auf der **vollen**
+Auflösung (`ENGINE_CONFIG.contrastSource`), nicht auf dem 1024 px breiten
+Analysebild — zwischen den Glyphen wäre dort kein reiner Hintergrund mehr übrig,
+und der Wert wäre eine Interpolation statt einer Messung.
+
+### Die Schwellen sind zitiert, nicht kalibriert (C2)
+
+WCAG 2.1, Erfolgskriterium 1.4.3, Level AA: **4,5:1** für normalen Text, **3:1**
+für großen — groß heißt ab 24 px, oder ab 18,66 px bei fett. Diese Zahlen stehen
+in einem Standard und veralten nicht mit unserer Engine.
+
+Was **nicht** übernommen ist, weil es ohne Auslegung nicht geht: die Ausnahmen
+des Kriteriums für rein dekorativen Text, für Logotypen und für inaktive
+Bedienelemente. Ein Layer-Baum sagt nicht, ob ein Text dekorativ ist. Gemessen
+werden deshalb alle Textknoten, und die Ausnahme bleibt beim Menschen — ein
+falsch gemeldeter Logotyp ist ein Ärgernis, ein verschwiegener Fließtext ein
+Fehler.
+
+Eine Stufe kommt von uns und ist als unsere gekennzeichnet: **grenzwertig** für
+Werte knapp über der Norm. 4,52:1 trägt dieselbe Aussage wie 4,48:1, und die
+Abtastung hat in der zweiten Nachkommastelle ohnehin keinen Halt.
+
+### Darstellung (C3)
+
+![Contrastmap auf dem Onboarding-Screen](assets/messungen/c-contrastmap-onboarding.png)
+![Contrastmap auf einem Desktop-Frame](assets/messungen/c-contrastmap-desktop.png)
+
+**Kein Overlay über dem Inhalt** — dieselbe Regel, aus der 1.1 die Legende und
+der Disclaimer aus den Bildern verschwunden sind. Bei einer Karte, die von
+Lesbarkeit handelt, wäre es besonders absurd, den Text zu verdecken. Stattdessen:
+ein Rahmen **um** jedes Textelement, der Wert in einer Fahne daneben, und der
+Rest des Bildes leicht abgedunkelt, damit die Markierungen hervortreten.
+
+Die drei Farben sind Status, keine Skala. Und sie sind nicht die einzige
+Kodierung: die Zahl steht an jedem Element, und die Rahmen unterscheiden sich in
+der Strichstärke — eine Barrierefreiheits-Ansicht, die selbst auf
+Rot-Grün-Unterscheidung angewiesen ist, wäre schwer zu verteidigen.
+
+Gemessen auf den beiden Prüffällen:
+
+| Frame | gemessen | durchgefallen | grenzwertig |
+|---|---:|---:|---:|
+| Onboarding-Screen 393 × 852 | 8 | 0 | 2 |
+| Desktop, scrollend 1440 × 3200 | 21 | 10 | 0 |
+
+Auf dem Desktop-Frame fallen die Firmennamen (4,1:1) und die Kartenknöpfe
+(4,4:1) durch, die Stellentitel bestehen mit 18,0:1. Auf dem Onboarding-Screen
+besteht alles; die Unterzeile liegt mit 4,5:1 knapp darüber und wird als
+grenzwertig markiert.
+
+#### Die angezeigte Zahl darf dem Urteil nicht widersprechen
+
+Die Kartenknöpfe standen in der ersten Fassung mit **„4,50:1"** neben „WCAG AA
+verlangt 4,5:1" und dem Urteil „durchgefallen". Beide Erklärungen waren zu
+prüfen:
+
+| | |
+|---|---|
+| Vergleichsoperator `>` statt `>=` | **Nein.** `statusOf` schneidet bei `ratio < required`; genau 4,5 besteht, wie WCAG 1.4.3 es verlangt („mindestens"). Ein Test hält das jetzt fest. |
+| Anzeige-Rundung | **Ja.** Der Rohwert war **4,499204**, das Urteil also richtig — kaufmännisch gerundet wurde daraus „4,50". |
+
+Rechnerisch stimmte alles, im Bild war es unhaltbar. Behoben durch **Abrunden**
+statt Runden, und zwar nicht als Notlösung: weil beide Schwellen bei einer
+Nachkommastelle exakt darstellbar sind (4,5 und 3,0), ist die angezeigte Zahl
+damit **beweisbar** widerspruchsfrei zum Urteil —
+
+```
+Verhältnis <  Schwelle  ⇒  Anzeige ≤ Verhältnis <  Schwelle
+Verhältnis ≥  Schwelle  ⇒  Anzeige ≥ Schwelle
+```
+
+Der Test prüft das als Eigenschaft über den ganzen Wertebereich beider
+Schwellen, nicht an Beispielen. Abrunden ist zusätzlich die sichere Richtung:
+wir behaupten nie mehr Kontrast, als gemessen wurde.
+
+### Die Befunde stehen getrennt (C4)
+
+> „Digital Works AG" hat 4,2:1 gegen seinen Hintergrund — WCAG AA verlangt
+> 4,5:1 (normaler Text).
+
+Eigene Sektion im Panel, eigene Bezeichnung („Kontrast (gemessen)"), und **der
+Vorhersage-Disclaimer gilt für sie nicht**. Die Trennung steht im Typ, nicht nur
+im Layout: `ContrastFinding` ist ein anderer Typ als `FindingPayload`, damit die
+beiden nicht versehentlich in einer Liste landen. In einer Liste vermischt würde
+das eine das andere abwerten — und zwar in die falsche Richtung, denn die
+belastbarere Aussage verlöre.
+
+### Bedienelemente: WCAG 1.4.11 (Non-text Contrast)
+
+**Was gemessen wird, und was ausdrücklich nicht.** 1.4.11 fordert 3:1 für
+visuelle Information, die nötig ist, um eine Komponente oder ihren **Zustand**
+zu *identifizieren*. Das ist nicht „jede Fläche gegen irgendetwas": gemessen
+wird die **Begrenzung gegen die unmittelbar angrenzende Farbe** — die Kante, an
+der man erkennt, dass hier eine Komponente anfängt.
+
+**Die Ausnahme, die die meisten Fehlmeldungen verhindert:** ist eine Komponente
+durch ihren **eigenen sichtbaren Text** identifizierbar, ist ihre Begrenzung
+nicht erforderlich. Der gelbe Knopf „Los geht's" hat gegen den cremefarbenen
+Grund **1,45:1** und wäre ohne diese Ausnahme ein Durchfaller — nach der Norm
+ist er keiner, weil die Beschriftung ihn identifiziert. Genau diese Fehlmeldung
+produzieren rasterbasierte Werkzeuge, die nur Pixel sehen. **Wir können es
+besser, weil wir wissen, was ein Element ist.** Icon-Knöpfe ohne Text bleiben
+drin, denn dort trägt nur die Form die Information.
+
+#### Umfang: sortiert nach „wie sicher verlangt die Norm hier 3:1"
+
+| Grund | ausgeliefert | warum |
+|---|---|---|
+| Prototype-Interaktion (`hasReactions`) | **ja** | per Definition bedienbar |
+| Name trifft ein Stichwort (Button, Kachel, Feld …) | **ja** | von einem Menschen so benannt |
+| wiederholtes Element (≥ 3 gleichartige Geschwister) | nein | klassischer Dekorationsfall |
+| Trennlinie (dünn, lang) | nein | eine Linie zwischen ohnehin unterscheidbaren Karten ist zum Verständnis nicht nötig |
+
+Die unteren beiden werden **gemessen, aber nicht gemeldet** — dieselbe
+Konstruktion wie `shipped: false` bei den Vorhersageregeln: Code und Grund
+bleiben beieinander, und die Rate ist da, wenn jemand entscheiden will. Auf dem
+konstruierten Desktop-Frame fallen 7 von 9 Elementen in diese Kategorie
+(Ergebniskarten), alle mit eigener Beschriftung — sie würden also selbst bei
+Auslieferung nichts melden.
+
+Gemessen auf den beiden Prüffällen:
+
+| Frame | im Prüfumfang | davon gemeldet |
+|---|---:|---:|
+| Onboarding 393 × 852 | 6 | **0** (alle tragen eine Beschriftung) |
+| Desktop 1440 × 3200 | 9 | **2** (Suchfeld, CTA — beide ohne Textkind) |
+
+**Fotos sind ausgenommen — aus einem Messgrund, nicht aus einem Normgrund.** Die
+Ausnahmen der Norm sind inaktive Komponenten, browserbestimmte Darstellung und
+Grafiken, bei denen eine bestimmte Darstellung wesentlich ist; Fotos stehen
+nicht darunter. Sie fallen hier trotzdem raus, weil es über einem Foto keinen
+definierbaren Vordergrund gegen Hintergrund gibt, gegen den sich eine Begrenzung
+berechnen ließe. Der Unterschied ist wichtig: eine falsche Normbehauptung im
+Werkzeug kostet die ganze Sektion ihre Glaubwürdigkeit.
+
+#### Zwei Grenzen, die prinzipiell bleiben
+
+1. **Zustände sind in einem statischen Frame nicht prüfbar.** Man sieht einen
+   Zustand. 1.4.11 verlangt Kontrast auch für die *Unterscheidung* der Zustände
+   untereinander — ob der aktive Reiter sich vom inaktiven abhebt, ist aus einem
+   Frame nicht zu beantworten.
+2. **Inaktive Komponenten sind ausgenommen, und „inaktiv" ist aus dem Layer-Baum
+   nicht zuverlässig zu erkennen.** Ein ausgegrauter Knopf sieht aus wie ein
+   Knopf mit wenig Kontrast. Wir melden ihn; die Entscheidung bleibt beim
+   Menschen.
+
+Beide stehen im Panel, nicht nur hier. Und 1.4.11 bekommt eine **eigene
+Sektion**: in 1.4.3 steckt keine Einschätzung, hier schon — ob ein Element eine
+Komponente ist, schätzt eine Heuristik.
+
+### Was die Generatoren nicht erzeugen — und was davon eine Messung kippt
+
+**Zweimal hintereinander haben die Testframes eine kaputte Methode bestätigt,
+weil ihnen eine Eigenschaft echter Renders fehlte.** Erst die Textfarbe (jeder
+Knoten wurde übersprungen), dann die Kantenglättung (jeder Wert war falsch).
+Beide Male war die Messung falsch und alle Tests grün. Das ist kein Zufall
+mehr, sondern ein Muster — also einmal systematisch durchgegangen, was
+`constructed.ts`, `onboarding.ts` und `fixtures-cli.ts` **nicht** erzeugen.
+
+| Fehlt in den Fixtures | Kippt es eine Messung? | Stand |
+|---|---|---|
+| **Kantenglättung** an Glyphen | **Ja, tat es.** Minimum über Pixel traf immer ein Mischpixel | **behoben**, eigener Test mit bekannten Farbpaaren |
+| **Textfarbe** (`fillLuminance`) | **Ja, tat es.** Ohne sie misst die Contrastmap gar nicht | **behoben**, beide Generatoren setzen sie |
+| **Deckkraft < 1** an Fill oder Knoten | **Ja.** Die Farbe aus dem Layer-Baum ist dann nicht die, die man sieht — der gemeldete Kontrast wäre **besser** als die Wirklichkeit | **behoben ohne Testfall**: `traverse.ts` setzt `fillLuminance` nur noch, wenn Paint und Knoten voll deckend sind. Lieber „nicht messbar" als eine geschönte Zahl |
+| **Überlappende Elemente / Verdeckung** | **Ja, offen.** Ein Knoten, der von einem späteren Element überdeckt wird, wird gegen Pixel gemessen, die gar nicht zu ihm gehören. Die Generatoren zeichnen überschneidungsfrei | **offen** — braucht einen Frame mit bewusster Verdeckung |
+| **Verläufe als Hintergrund** | **Vermutlich nein.** Der `varies`-Pfad ist getestet, aber nur mit einem synthetischen Verlauf, nicht aus einem Generator | **offen**, geringes Risiko |
+| **Text auf Fotos** | **Vermutlich nein**, gleicher Pfad wie Verläufe. Die Onboarding-Kacheln haben Bildflächen, aber der Text liegt darunter, nie darauf | **offen**, geringes Risiko |
+| **Subpixel-Positionen** | **Möglich.** Alle Rechtecke der Generatoren liegen auf ganzen Pixeln; Figma liefert Bruchteile. `luminancesIn` rundet, kann also eine Pixelreihe daneben greifen — bei kleinem Text anteilig viel | **offen** |
+| **Rotation** | **Ja, vermutlich.** Ein gedrehter Textknoten hat eine achsenparallele Bounding-Box voller Hintergrund; die dominante Fläche wäre dann der Grund neben dem Text statt der dahinter | **offen** |
+| **Effekte (Schatten, Blur), Masken, Clipping** | **Möglich.** Ein Schatten unter Text verschiebt den gemessenen Hintergrund; eine Maske kann Pixel zeigen, die nicht zum Knoten gehören | **offen** |
+| **`figma.mixed`** (mehrere Schriftgrößen, mehrere Fills in einem Knoten) | Nein — der Übersprungpfad existiert und meldet den Grund | abgedeckt durch Konstruktion |
+
+**Was das über die Testframes sagt.** Sie sind gut für Geometrie und für die
+Befundregeln, und sie waren für die Kontrastmessung von Anfang an ungeeignet:
+ein Generator, der Text als hartkantige Balken in ganzzahligen Rechtecken
+zeichnet, kann eine pixelbasierte Messung nicht prüfen. Der Test mit **bekannten
+Farbpaaren** ist die Antwort darauf — er baut die eine Eigenschaft nach, die
+zählt, und prüft gegen Zahlen, die feststehen.
+
+**Die drei offenen Punkte mit echtem Risiko** (Verdeckung, Rotation, Subpixel)
+haben eines gemeinsam: bei allen dreien ist die **Bounding-Box nicht das, was
+man sieht**. Der naheliegende nächste Schritt ist deshalb keine weitere
+Fixture-Variante, sondern eine Plausibilitätsprüfung in der Messung selbst — ob
+die dominante Fläche überhaupt groß genug ist, um der Hintergrund *dieses*
+Elements zu sein. Nicht in diesem Schritt gebaut.
+
+### Der Kopf der Contrastmap läuft nicht durch die Vorhersage-Vorlage
+
+Über jeder Karte stehen ein Titel und eine Zeile mit dem Disclaimer, dem
+Blickverhalten, der Betrachtungsdauer und der Engine-Version; unter allen Karten
+die UEyes-Datengrundlage. Für die Contrastmap ist **jedes einzelne davon
+falsch**: sie sagt nichts vorher, benutzt keinen Ortsprior, und keine der drei
+Größen geht in ein Kontrastverhältnis ein.
+
+| | Vorhersage-Karten | Contrastmap |
+|---|---|---|
+| Titel | „Heatmap — vorhergesagt" | **„Contrastmap — gemessen"** |
+| Zeile | „Algorithmische Vorhersage, keine Messdaten · Blickverhalten … · Betrachtungsdauer … · hybrid-v1" | **„Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage"** |
+| Ebenenname | `Heatmap · Blick (1 s) · hybrid-v1` | `Contrastmap · gemessen` |
+| Datengrundlage darunter | ja | **nur, wenn auch eine Vorhersage-Karte erzeugt wurde** |
+
+Die Datengrundlage hängt am Wrapper, nicht an der einzelnen Karte — sie
+verschwindet jetzt, wenn **ausschließlich** gemessene Karten entstehen. Sie
+belegt eine Abhängigkeit, und eine Contrastmap hat keine. (Die CC-BY-Pflicht
+selbst bleibt davon unberührt: sie greift für den Ortsprior, und der steckt in
+keiner Contrastmap.)
+
+Abgesichert wie der Ortsprior-Test: **kein Textknoten und kein Ebenenname in der
+Karten-Spalte** darf „vorhergesagt", „Vorhersage", „Betrachtungsdauer",
+„Blickverhalten", „UEyes" oder die Engine-Version enthalten. Ausgenommen sind
+genau die beiden freigegebenen Zeichenketten — die Zeile enthält „Vorhersage" in
+ihrer Verneinung —, und deren Wortlaut steht in einem eigenen Test.
+
+### Die Wertfahnen verdecken keinen Text mehr
+
+Dritter Anlauf mit diesen Fahnen: zuletzt lag eine über dem Wort „Hier" eines
+**anderen** Elements — rechts neben Element A war Platz, aber genau dort begann
+Element B. Die Platzierung probiert jetzt sechs Positionen um das Element herum
+(rechts, links, oben, unten, jeweils auch bündig) und nimmt die erste, die
+weder ein markiertes Element noch eine bereits gesetzte Fahne trifft und ins
+Bild passt. Findet keine Platz, gewinnt die mit der **kleinsten überlappten
+Fläche** — im Zweifel der kleinste Schaden statt einer willkürlichen Wahl.
+
+Fünf Tests halten das fest, darunter der Fall aus dem Bericht (zwei
+nebeneinanderliegende Textelemente) und der Rand des Bildes. Das Prüfbild aus
+`npm run contrast-check` benutzt dieselbe Platzierungsfunktion wie das Plugin —
+sonst zeigte es etwas anderes als das, was ausgeliefert wird.
+
+### Die gemessene Hintergrundfarbe steht im Ergebnis
+
+`npm run contrast-check` weist zu jedem Element aus, **gegen welche Farbe**
+gerechnet wurde. Das macht einen Verdacht überprüfbar statt ihn Verdacht bleiben
+zu lassen: wer einen Wert für falsch hält, hält diese Farbe gegen den Fill in
+der Datei.
+
+Der Anlass: ein weißer Text auf einer dunklen Kachel wurde mit 15,9:1 gemeldet,
+und das sah zu hoch aus. Nachgerechnet entspricht 15,9:1 **exakt #222222** — die
+Messung ist also in sich stimmig. Ob die Kachel wirklich so dunkel ist oder ob
+etwas Dunkleres darunter liegt (Schatten, Scrim, Overlay), zeigt jetzt die
+ausgewiesene Farbe. Zusätzlich sind **weiß auf #222222** (15,91:1) und **weiß
+auf #4D4D4D** (8,45:1) in den Test mit bekannten Farbpaaren aufgenommen — mit
+Kantenglättung, auf 0,05 genau.
+
+### Betriebssystem-Chrome bleibt außen vor
+
+Auf einem Handy-Frame liegt oben die Statusleiste („15:30", WLAN, Akku) und
+unten der Home-Indicator. Das ist keine Gestaltung des Entwurfs, sondern das
+Betriebssystem; einen Kontrastbefund darüber kann niemand beheben.
+
+**Erkannt über den Namen, nicht über die Position** — und die Entscheidung fiel
+an der Fehlerrichtung:
+
+| | scheitert wie |
+|---|---|
+| Positionsregel („oberstes Band eines Mobile-Frames") | **stiller Ausfall.** Auf einem Screen ohne Statusleiste sitzt dort die Kopfzeile. Im eigenen Onboarding-Testframe steht „Willkommen zurück" bei 9,8 % der Höhe — jede Schwelle, die „15:30" bei 3 % erwischt, ist einen Handgriff davon entfernt, eine echte Überschrift zu verschlucken. Und niemand sieht, dass sie gefehlt hat. |
+| Namensmuster | **zu Rauschen hin.** Es übersieht eine anders benannte Statusleiste, und dann steht ein Befund zu viel im Report. Das sieht man. |
+
+Die Liste ist bewusst kurz: `status bar`, `statusleiste`, `statusbar`,
+`home indicator`. **`navigation bar` ist nicht dabei** — Androids Systemleiste
+heißt so, App-Navigationen aber auch, und ein Muster, das beides trifft, löscht
+die Hauptnavigation aus der Prüfung.
+
+**Auf Wortgrenzen, nicht als Teilstring.** Ein Teilstring-Vergleich verschluckt
+eine „Bewerbungsstatusleiste" — und zwar in genau der Fehlerrichtung, die mit
+der Entscheidung gegen die Positionsregel ausgeschlossen wurde. Der Test führt
+dieses Beispiel namentlich.
+
+Geprüft wird der Knoten **und seine Vorfahren**: die Uhrzeit in einer Komponente
+„iOS Status Bar" heißt meist schlicht „15:30". Und die Ausnahme gilt für
+**beide** Pfade — ohne das verschwände „15:30" aus 1.4.3 und die Symbole daneben
+blieben in 1.4.11 stehen. Übersprungenes wird gezählt und benannt, wie jedes
+andere nicht messbare Element auch.
+
+### Grenzen, ehrlich benannt (C5)
+
+Über einem Foto oder einem Verlauf gibt es kein „das" Kontrastverhältnis,
+sondern eine Verteilung. Gemeldet wird der **schlechteste** Wert im Textbereich
+— die Aussage, die nicht zu gut aussieht — und der Befund sagt dazu, dass der
+Hintergrund wechselt und der Wert eine Näherung nach unten ist. In der Karte
+trägt die Fahne dann ein `~`.
+
+Elemente, die gar nicht messbar sind, werden **gezählt und benannt** statt still
+ausgelassen: mehrfarbiger Text ohne einfarbigen Fill, fehlende Schriftgröße,
+Text, der seinen Rahmen vollständig füllt. Eine Messung, die Elemente
+verschweigt, sagt „in Ordnung", wo sie „ich weiß es nicht" meint.
+
+### Panel (C6)
+
+Dritter Schalter, Reihenfolge Heatmap, Focusmap, Contrastmap — dieselbe
+Reihenfolge, in der die Ergebnisframes auf dem Canvas landen. Beschreibung:
+„Prüft, ob Texte genug Kontrast zu ihrem Hintergrund haben". Eine gespeicherte
+Einstellung von vor 1.2 bekommt die Karte **eingeschaltet**: eine neue Ausgabe,
+die still ausgeschaltet ankommt, sieht aus wie eine, die es nicht gibt.
 
 ---
 
@@ -1533,16 +2618,279 @@ wird von einer Seite mit Hero und viel Inhalt wieder gekippt.
 Erreichbarkeitstest bleibt (beide Richtungen), Zahlen stehen im Kommentar,
 Grund steht hier.
 
+### Wie viele Befunde bekommt ein Screen?
+
+```bash
+npm run finding-load
+```
+
+„Feuert diese Regel zu oft?" ist pro Regel nicht zu beantworten. Die Regeln
+konkurrieren um denselben Platz — `maxShown` ist 6, und wer einen Screen
+ansieht, liest die Liste als Ganzes. Was zählt, ist die Verteilung der
+**Befundzahl pro Screen**, und die ist eine Eigenschaft des Regelsatzes, nicht
+einer Regel. Gezählt wird, was das Panel zeigt: nur ausgelieferte Regeln, durch
+denselben `deriveFindings`-Pfad.
+
+#### Mit Layer-Baum — die Zahl, die für eine Figma-Datei gilt
+
+Eine Figma-Datei hat immer Ebenen. Die konstruierten Frames sind die einzige
+Population, auf der deshalb der **vollständige** Regelsatz laufen kann:
+
+| Population (24 Varianten) | 0 Befunde | 1 | 2 | Ø |
+|---|---:|---:|---:|---:|
+| Desktop, scrollend | 0,0 % | 33,3 % | **66,7 %** | **1,67** |
+| Telefon, scrollend | 0,0 % | 37,5 % | 62,5 % | 1,63 |
+| **Telefon, ein Viewport** | **33,3 %** | 66,7 % | 0 % | **0,67** |
+
+Dazu der Onboarding-Nachbau (393 × 852, 6 Kandidaten), der Prüffall aus A4 —
+**ein** Befund:
+
+> `cta-rank`: „Jetzt loslegen Button" liegt auf Rang 5 der vorhergesagten
+> Klicks — Rang 1 hat „Wetter".
+
+Auf gescrollten Frames bekommt damit **jeder** Screen mindestens einen Befund
+und zwei Drittel bekommen zwei. Auf dem Ein-Viewport-Telefon bekommt ein Drittel
+nichts, und der Rest bekommt genau einen — immer `cta-rank`.
+
+#### Ohne Layer-Baum — und warum diese Zahlen zu niedrig sind
+
+| Population | 0 Befunde | 1 | 2 | Ø |
+|---|---:|---:|---:|---:|
+| UEyes Webseiten, segmentiert (495) | 57,6 % | 37,8 % | 4,6 % | 0,47 |
+| UEyes Telefon, ein Viewport (495) | 77,6 % | 22,4 % | 0 % | 0,22 |
+| UEyes Telefon, segmentiert (495) | 58,6 % | 40,4 % | 1,0 % | 0,42 |
+
+**Diese Zahlen unterschätzen die Befundlast systematisch, und zwar um den
+Faktor drei.** UEyes besteht aus Screenshots; ein Screenshot hat keine Ebenen,
+also keine Klick-Kandidaten, also kann `cta-rank` dort **nie** feuern — die
+einzige Regel ohne bekannten Defekt fehlt in jeder dieser Zeilen. Auf dem
+Ein-Viewport-Telefon steht 0,22 gegen 0,67 mit Layer-Baum.
+
+**Wer 0,22 zitiert, zitiert eine untere Schranke als Ergebnis.** Die Zahl für
+eine Figma-Datei ist die aus der Tabelle davor.
+
+Was beide Tabellen gemeinsam sagen: **kein Screen bekommt mehr als zwei
+Befunde.** Die Obergrenze von 6 wird nicht annähernd erreicht — die Regeln
+nehmen einander nichts weg. Die Frage, die diesen Abschnitt ausgelöst hat, ob
+`cold-fold` mit 40 % zu laut sei, ist damit anders zu stellen: das Problem ist
+das Gegenteil.
+
+Für 1.2 B heißt das: **eine Schwelle zu senken, damit eine Regel häufiger
+feuert, ist die falsche Bewegung.** Was fehlt, sind Regeln, die auf einem
+Ein-Viewport-Screen überhaupt etwas zu sagen haben.
+
+#### Die Aufteilung ist keine Einschränkung, sondern die Struktur
+
+Die beiden Vorhersage-Regeln, die **ohne** Layer-Baum auskommen, schließen
+einander aus — nicht durch Absicht, sondern durch ihre Voraussetzungen:
+
+| | Ein Viewport | segmentiert |
+|---|---:|---:|
+| `competition` | **15,2 %** (Telefon) / 15,8 % (Web) | 0,0 % (Telefon) / 7,1 % (Web) |
+| `cold-fold` | **blockiert** (keine Abschnitte) | **39,8 %** (Telefon) / 40,0 % (Web) |
+
+`competition` ist faktisch eine **Ein-Viewport-Regel**: auf der komponierten
+Karte ist jeder tiefere Abschnitt gedämpft, das zweite Maximum erreicht die
+Intensitätsschwelle nicht mehr. `cold-fold` ist eine **Abschnitts-Regel**: ohne
+zwei Abschnitte hat sie nichts zu vergleichen und wird gar nicht erst gefragt.
+
+**Jede Frame-Form hat damit genau eine Vorhersage-Regel, die feuern kann, ohne
+jede Überdeckung.** Fällt sie aus — durch eine Kalibrierung, einen Umbau, eine
+Engine-Änderung —, bekommt diese Form nichts. Das ist keine Redundanz, die man
+verliert, sondern eine, die es nie gab.
+
+`cta-rank` ist die einzige Regel, die **beide** Formen bedient. Sie braucht
+dafür einen Layer-Baum — in Figma immer vorhanden, in jedem Datensatz, den wir
+messen können, nie. Das macht sie strukturell zur wichtigsten der drei und
+erklärt nebenbei, warum sie in den UEyes-Zahlen fehlt.
+
+#### `cta-rank` mit 67 % — das ist der Generator, nicht die Regel
+
+Die einzige Regel ohne bekannten Defekt ist auch die häufigste, und die 66,7 %
+sahen nach einem Ausreißer aus. Sie sind keiner. Gegenübergestellt, ob der
+Aufbau den CTA nach unten stellt und ob die Regel feuert, über 24 Varianten je
+Frame-Form:
+
+| Frame-Form | CTA unten, feuert | CTA unten, schweigt | CTA oben, feuert | CTA oben, schweigt | Übereinstimmung |
+|---|---:|---:|---:|---:|---:|
+| Desktop, scrollend | 16 | 0 | 0 | 8 | **100 %** |
+| Telefon, ein Viewport | 16 | 0 | 0 | 8 | **100 %** |
+| Telefon, scrollend | 16 | 0 | 0 | 8 | **100 %** |
+
+`constructed.ts` → `layoutFor` setzt `ctaAtBottom = variant % 3 !== 2`, stellt
+den CTA also in **genau zwei Dritteln** der Varianten nach unten. Die Regel
+feuert auf genau diesen und schweigt auf genau den anderen — **keine
+Fehlmeldung, kein Versäumnis, in keiner Frame-Form.** 66,7 % ist die Quote von
+`layoutFor`, nicht die von `cta-rank`.
+
+Wer 67 % als Eigenschaft der Regel liest, liest eine Eigenschaft des Generators.
+Und die Quote auf echten Screens ist **unbekannt und mit UEyes auch nicht
+messbar**: ohne Layer-Baum gibt es keine Kandidaten. Was hier gemessen wurde,
+ist nicht „wie oft der Fall vorkommt", sondern „ob die Regel den Fall erkennt" —
+und das tut sie vollständig.
+
+(Nebenbei erledigt: der Kommentar in `rules.ts` nannte für „Telefon scrollend"
+noch 7/8 mit einer Fehlmeldung. Die ist mit den Engine-Änderungen aus 1.2 A
+verschwunden — jetzt 24/24 in allen drei Formen.)
+
+**Was das über die Häufigkeit nicht sagt.** Ob eine Regel, die auf zwei Dritteln
+der Screens dasselbe sagt, überlesen wird, ist eine Frage an echte Nutzung und
+an ein Set mit Layer-Bäumen. Beides fehlt. Solange es fehlt, ist an dieser Regel
+nichts zu justieren — sie hat ohnehin keine Schwelle, „nicht auf Rang 1" ist
+eine Definition.
+
+### B1 — `competition` misst den Abstand jetzt auf der Diagonale
+
+```bash
+npm run competition
+```
+
+Der Mindestabstand der beiden Spitzen war ein Anteil der Karten**breite** und
+bedeutete je nach Frame-Form 3,9 % bis 48,0 % der Höhe. Er ist jetzt ein Anteil
+der **Diagonale** — die Größe, die mit der Form skaliert, statt eine Kante
+willkürlich auszuzeichnen. **Alle Quoten dieser Regel von vor 1.2 B1 sind damit
+ungültig**, auch die 3,3 % / 10,0 % aus 1.1; das stand seit 1.1 so im Code und
+ist hiermit eingelöst.
+
+Getrennte x/y-Schwellen wären ausdrucksstärker — „nebeneinander" ist etwas
+anderes als „untereinander" —, sind aber **zwei** Konstanten auf einer
+Population, auf der die Regel selten feuert. Zwei Werte an so wenigen Auslösern
+zu kalibrieren hieße, Rauschen zu kalibrieren.
+
+Feuerrate über je 495 Bilder, die beiden Ein-Viewport-Populationen — der Fall,
+um den es in B geht:
+
+| Abstand (Anteil Diagonale) | Webseiten | Telefon |
+|---|---:|---:|
+| 0,15 | 47,1 % | 22,2 % |
+| 0,20 | 31,1 % | 18,6 % |
+| **0,25** | **15,8 %** | **15,2 %** |
+| 0,30 | 4,0 % | 10,5 % |
+| 0,35 | 0,8 % | 6,3 % |
+
+**Bei 0,25 sind die beiden Formen praktisch gleich.** Darunter unterscheiden sie
+sich um mehr als das Doppelte, darüber kippt das Verhältnis um. Genau diese
+Formunabhängigkeit war der Zweck der Umstellung — und sie ist der Grund für den
+Wert, nicht die Rate selbst, für die es keine Ground Truth gibt.
+
+Die bindende Bedingung ist dabei **nicht** der Abstand, sondern
+`competitionIntensity`: je weiter der Suchradius, desto schwächer das zweite
+Maximum. Sein Median fällt auf Webseiten von 0,873 (bei 0,15) auf 0,390 (bei
+0,35) und unterschreitet die Schwelle 0,65 zwischen 0,25 und 0,30. Das
+Talverhältnis sitzt bei 0,25 in beiden Ein-Viewport-Populationen innerhalb der
+Verteilung (p22 bzw. p34) — die Regel kann dort also beides, feuern und
+schweigen.
+
+#### Ein neuer Befund: auf segmentierten Telefon-Frames feuert sie nicht mehr
+
+| Population | Rate bei 0,25 |
+|---|---:|
+| UEyes Webseiten, ein Viewport | 15,8 % |
+| UEyes Webseiten, segmentiert | 7,1 % |
+| UEyes Telefon, ein Viewport | 15,2 % |
+| **UEyes Telefon, segmentiert** | **0,0 %** |
+| Telefon, ein Viewport (konstruiert) | 0,0 % |
+| beide konstruierten Scroll-Formen | 0,0 % |
+
+Der Grund ist strukturell und nicht der Abstand: auf der komponierten Karte ist
+jeder tiefere Abschnitt um `sectionAttenuation^i` gedämpft, das zweite Maximum
+erreicht `competitionIntensity` = 0,65 dort nicht mehr. **Dieselbe Blockade wie
+bei `cta-below-fold`**, und dieselbe Konsequenz: die Dämpfung wird dafür nicht
+angefasst, sie ist eine nicht gemessene Annahme.
+
+`competition` ist damit faktisch eine **Ein-Viewport-Regel**. Für B ist das
+keine schlechte Nachricht — der Ein-Viewport-Screen ist genau der Fall, für den
+B gebaut wird —, aber es heißt, dass von den zwei belastbaren Regeln auf einer
+gescrollten Telefonseite keine übrig bleibt: `cold-fold` braucht Abschnitte und
+feuert dort, `competition` kann dort nicht.
+
+### Hinweis auf inhaltsarme Frames
+
+```bash
+npm run band-gate      # prüft die Schwelle bei jedem Lauf mit
+```
+
+Aus dem verworfenen Renderer-Vorschlag folgt eine, die trägt: **die
+Unterscheidung, die pro Pixel unmöglich ist, ist pro Frame möglich.** Der
+Bildanalyse-Anteil kann nicht sagen, ob *diese Stelle* leer ist — Weißraum auf
+einem vollen Screen sieht aus wie Fläche auf einem leeren. Über den ganzen
+Frame gemittelt kann er es sehr wohl, weil die Perzentil-Normierung auf einer
+strukturlosen Fläche gar keinen Wertebereich findet und exakt null liefert.
+
+| | Frame-Mittelwert des Bildanteils |
+|---|---:|
+| grauer 1440 × 4000-Testframe, ohne Inhalt | **0,000000** |
+| niedrigster der 40 Gate-Bilder | **0,228585** |
+| Median der 40 Gate-Bilder | 0,4516 |
+
+Zwei Größenordnungen Abstand, dazwischen in dieser Stichprobe nichts. Die
+Schwelle liegt bei **0,02**, eine Größenordnung unter dem kleinsten echten
+Wert; auf keinem der 40 Gate-Bilder erscheint der Hinweis, und `npm run
+band-gate` prüft das bei jedem Lauf nach.
+
+Statt der Karte ändert sich der Text daneben:
+
+> Dieser Frame enthält kaum Inhalt — die Karte zeigt überwiegend die
+> Positionsannahme. Die wiederkehrenden Bänder sind der Ortsprior je Abschnitt,
+> keine Aussage über den Entwurf.
+
+Er steht bei den **Warnungen**, nicht bei den Befunden: ein Befund sagt etwas
+über den Entwurf, dieser Satz sagt etwas über die Karte.
+
+**Was die Schwelle nicht leistet.** 40 Bilder zeigen keine Population — dass
+zwischen 0,02 und 0,23 nie ein echter Frame liegt, ist nicht bewiesen. Die Wahl
+ist deshalb bewusst konservativ: ein *dünn* gefüllter Frame löst den Hinweis
+nicht aus, obwohl er ihn vielleicht verdiente. Das ist die richtige Richtung
+für einen Fehler — ein fehlender Hinweis kostet nichts, ein falscher erzählt dem
+Nutzer, seine Datei sei leer.
+
 ### Bekannte Einschränkungen — bewusst nicht in diesem Schritt behoben
 
-Zwei Befunde aus dem Audit bleiben stehen. Beide sind belegt, beide sind
-**keine offenen Bugs ohne Notiz**, und beide werden hier absichtlich nicht
-angefasst: eine Korrektur ohne neue Kalibrierung wäre derselbe Fehler, um den
-es in diesem Abschnitt geht.
+Drei Befunde bleiben stehen. Alle drei sind belegt, alle drei sind **keine
+offenen Bugs ohne Notiz**, und alle drei werden absichtlich nicht angefasst:
+eine Korrektur ohne neue Kalibrierung wäre derselbe Fehler, um den es in diesem
+Abschnitt geht.
+
+**Der erste ist ein sichtbarer Defekt, und er ist der einzige seiner Art.** Die
+anderen beiden sind Regeln, die zu selten oder falsch skaliert feuern — das
+merkt niemand, der das Plugin benutzt. Diesen hier sieht man.
+
+#### Abschnittsbänder auf inhaltsarmen Flächen (sichtbar, ausgeliefert)
+
+Auf einem Frame ohne Inhalt zeichnet die Karte pro Abschnitt ein Band — den
+Ortsprior, der sich je Abschnitt wiederholt. Gemessen auf dem grauen
+1440 × 4000-Testframe, an dem die Scroll-Dämpfung 1.1 eingeführt wurde:
+
+| Band | y | Wert | Deckkraft heute | Deckkraft vor 1.2 A8 |
+|---|---:|---:|---:|---:|
+| 1 | 180 px | 0,4048 | 100 % | 100 % |
+| 2 | 900 px | 0,2024 | 100 % | 100 % |
+| 3 | 1620 px | 0,1012 | **100 %** | 18 % |
+| 4 | 2340 px | 0,0506 | **~51 %** | 0 % |
+| 5 | 3060 px | 0,0486 | **~48 %** | 0 % |
+
+Vor 1.2 waren die Bänder 4 und 5 unsichtbar und Band 3 kaum zu sehen — nicht
+weil die Dämpfung sie wegbekommen hätte, sondern weil die Transparenzschwelle
+des Renderers zufällig darüber lag. Mit der auf die neue Verteilung
+nachgezogenen Schwelle (A8) liegt sie darunter, und das Artefakt ist zurück.
+
+**Warum es bleibt.** Die Dämpfung steiler zu stellen wäre die einzige direkte
+Abhilfe, und sie ist eine ausdrücklich nicht gemessene Annahme
+([`NOTICE.md`](NOTICE.md)) — sie zu verstellen, damit ein Bild ruhiger aussieht,
+ist dieselbe Bewegung, die dieses Projekt sich bei den Regeln verboten hat. Die
+naheliegende Alternative, im Renderer unterhalb eines sehr kleinen
+Bildanalyse-Anteils nicht zu zeichnen, ist **gemessen und verworfen**: sie
+löscht auf echten Screens 1,3 bis 3,8 % der sichtbaren Fläche, siehe
+[A8](#b-wurde-gemessen-bevor-sie-gebaut-wurde--und-ist-damit-erledigt).
+
+Was stattdessen passiert: das Panel **sagt es**, statt die Karte zu ändern —
+siehe [Hinweis auf inhaltsarme Frames](#hinweis-auf-inhaltsarme-frames).
+
+#### Die beiden übrigen
 
 | Was | Beleg | warum jetzt nicht |
 |---|---|---|
-| `competitionMinDistance` misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Kartenhöhe | Tabelle oben | Die Regel ist mit 3–10 % nicht entartet. Eine Umstellung auf die Diagonale oder auf getrennte x/y-Schwellen ändert die Verteilung und verlangt eine eigene Neukalibrierung — ein eigener Schritt. **Die 3–10 % selbst stammen von diesem Maß und sind danach ungültig.** |
+| `competition` kann auf segmentierten Telefon-Frames nicht feuern (0,0 % bei 495 Bildern) | [B1](#b1--competition-misst-den-abstand-jetzt-auf-der-diagonale) | Die Ursache ist `sectionAttenuation`: das zweite Maximum erreicht die Intensitätsschwelle auf der gedämpften Karte nicht mehr. Dieselbe Blockade wie bei `cta-below-fold`, und dieselbe Antwort — die Dämpfung ist eine nicht gemessene Annahme und wird nicht verstellt, damit eine Regel feuert. |
 | `cta-below-fold` ist durch `sectionAttenuation` strukturell unterdrückt (0 von 48 konstruierten Scrollframes) | Tabelle oben | Die Ursache ist die Scroll-Dämpfung, laut `config.ts` ausdrücklich eine **Annahme ohne Messung**. Sie zu ändern, um eine Regel häufiger feuern zu lassen, hieße die Vorhersage an die Regel anzupassen statt umgekehrt. Erst die Dämpfung belegen, dann die Regel. |
 
 Beide stehen zusätzlich als Kommentar an der jeweiligen Regel in
@@ -1618,20 +2966,63 @@ Hero — die richtige Antwort ist also bekannt:
 23 von 24 Urteilen stimmen. Die Quote von rund 79 % ist hoch, aber sie ist die
 Quote, die der Aufbau vorgibt — kein Zeichen einer Regel, die immer feuert.
 
-**`cta-below-fold` steht auf `shipped: false`, und der Grund ist strukturell.**
-Nicht „die Schwelle ist falsch", sondern: die Regel liest `candidates[0]` auf der
-komponierten Karte, und diese Karte ist zweifach oben-lastig — der Ortsprior ist
-aus Einzel-Viewports geschätzt, und jeder Abschnitt wird zusätzlich mit
-`sectionAttenuation^i` gedämpft. Ein Element unter dem Fold startet bei der
-Hälfte. **0 von 24** konstruierten Frames, in allen drei Formen. Der
-Erreichbarkeitstest zeigt, dass es geht — aber nur mit Prototype-Interaktion
-*und* einem starken Block dahinter *und* einem Gegenspieler ohne beides.
+**`cta-below-fold` steht auf `shipped: false`** — bis 1.2 aus einem
+strukturellen Grund, seit 1.2 B4 aus einem gemessenen. Der Unterschied ist der
+eigentliche Ertrag dieser Runde, auch wenn der Schalter auf derselben Stellung
+bleibt.
+
+*Vorher:* die Regel las `candidates[0]` auf der komponierten Karte, und diese
+Karte ist zweifach oben-lastig — der Ortsprior ist aus Einzel-Viewports
+geschätzt, und jeder Abschnitt wird zusätzlich mit `sectionAttenuation^i`
+gedämpft. Ein Element unter dem Fold startet bei der Hälfte. **0 von 24**
+konstruierten Frames, in allen drei Formen. Über die eigene
+Entscheidungsgröße war damit nichts zu erfahren: die Regel kam nie zu Wort.
 
 Die Dämpfung wird dafür **nicht** angefasst. Sie ist selbst eine Annahme ohne
 Messung; sie zu verstellen, damit eine Regel feuert, hieße die Vorhersage an die
-Regel anzupassen. Was die Regel bräuchte, ist eine Größe, die den Kandidaten
-**innerhalb seines Abschnitts** bewertet statt auf der gedämpften Gesamtkarte —
-eine Neuentwicklung, kein Schwellenwert.
+Regel anzupassen.
+
+*Der Umbau (1.2 B4):* die Rangfolge läuft jetzt über `localMean`, also über die
+ungedämpfte Karte des eigenen Abschnitts — derselbe Weg, den `dead-cta` schon
+geht. Der Befundsatz ist neu geschrieben, weil sich die Aussage ändert: aus
+„der stärkste Kandidat des Screens liegt unter dem Fold" wird „der Kandidat,
+der seinen eigenen Viewport anführt, sitzt nicht im ersten".
+
+*Das Ergebnis, gegen die bekannte Antwort des Generators, je 24 Frames
+(`npm run finding-load`):*
+
+| Frame-Form | Rate | CTA unten → feuert | CTA **oben** → feuert | Übereinstimmung |
+|---|---:|---:|---:|---:|
+| Desktop, scrollend | 4,2 % | 0/16 | 1/8 | 29,2 % |
+| Telefon, scrollend | 100,0 % | 16/16 | 8/8 | 66,7 % |
+| Telefon, ein Viewport | — | keine Folds, also keine Frage | | |
+
+**Der Umbau behebt den Defekt nicht, und beide Zeilen sind aus
+entgegengesetzten Richtungen wertlos.** Auf Desktop meldet die Regel genau
+einmal, und dieser eine Fall ist einer mit CTA oben — die einzige Aussage, die
+sie macht, ist falsch. Auf Telefon meldet sie ausnahmslos, auch auf allen acht
+Frames mit CTA oben; die 66,7 % Übereinstimmung sind der Sockel des Generators,
+den eine Regel, die immer „ja" sagt, gratis bekommt.
+
+**Die Ursache ist verwertbar.** Der Umbau nimmt die Dämpfung *zwischen* den
+Abschnitten heraus, lässt den oben-lastigen Prior aber *innerhalb* jedes
+Abschnitts stehen. Der Vergleich über Abschnitte hinweg wird damit zu „wer
+sitzt am dichtesten am oberen Rand seines eigenen Viewports" — eine Frage ohne
+Bezug zum Fold. Und weil ein 390 × 3000-Frame vier Ausschnitte hat, von denen
+drei unter dem Fold liegen, gewinnt dort fast zwangsläufig einer von den
+dreien.
+
+Was die Regel bräuchte, ist keine dritte Karte, sondern eine **relative**
+Größe: nicht „dieser Kandidat führt seinen Ausschnitt an", sondern „er führt
+ihn deutlicher an, als der Anführer des ersten Ausschnitts den seinen" — ein
+Verhältnis zweier Dominanzen und damit unabhängig von der Zahl der Ausschnitte.
+Nicht gemessen, und ohne das Set mit echten Layer-Bäumen (PRD Set 2) auch nicht
+kalibrierbar.
+
+Der Messcode bleibt trotzdem stehen. Die alte Fassung schwieg; diese feuert,
+und man *sieht*, dass sie das Falsche trifft. Ein Rückbau würde diese
+Beobachtung wegwerfen und den nächsten Anlauf wieder bei der Dämpfung anfangen
+lassen.
 
 Damit sind **drei von sechs** Regeln ausgeliefert: `cta-rank`, `competition`,
 `cold-fold`.
@@ -1664,8 +3055,47 @@ Drei Regeln, die ohne Folds und ohne Abschnitte auskommen:
 | **CTA in der ruhigsten Zone** — der primäre Kandidat liegt dort, wo die Karte kalt ist | `meanInRect` über die Kandidatengeometrie, `percentile` über die ganze Karte, `isPrimaryCandidate` | Die Entscheidungsgröße muss der Rang des CTA **innerhalb der Kartenverteilung** sein (z. B. „unter dem 30. Perzentil aller Pixel"), nicht relativ zu den anderen Kandidaten — genau der Fehler, an dem `dead-cta` hängt. Schwelle aus Daten |
 | **Kopfbereich stärker als Inhalt** — die Aufmerksamkeit bleibt im oberen Band hängen | Die Karte selbst, `sectionSalience` als Konzentrationsmaß, Geometrie aller Knoten | Bandaufteilung (z. B. obere 25 % gegen Rest) und ein Verhältnismaß. Dieselbe Vorsicht wie bei `flat`: die Größe darf nicht auf die *Menge* an Inhalt reagieren |
 
-**Der entscheidende Vorteil dieser drei:** sie lesen nur die Karte und die
-Geometrie, nicht die Abschnittsstruktur — und damit sind sie **an UEyes
+**Vierter Punkt, in 1.2 A dazugekommen und als Erstes von B erledigt:
+`cold-fold` hat jetzt eine Schwelle je UI-Typ.**
+
+```bash
+npm run cold-fold
+```
+
+Die Regel ist eine von nur zwei belastbaren, und ihre einzige Konstante —
+`coldFoldMargin` — war eine Zahl für alle UI-Typen, geschätzt an Webseiten.
+Gemessen mit erzwungener Segmentierung, je rund 500 Bilder:
+
+| Dezile der Entscheidungsgröße | p10 | p20 | p30 | p40 | p50 | p60 | p70 | p80 | p90 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| UEyes Webseiten | −0,132 | −0,081 | −0,043 | 0,005 | 0,037 | **0,080** | 0,128 | 0,181 | 0,259 |
+| UEyes Telefon | −0,071 | −0,007 | 0,045 | 0,088 | 0,131 | **0,189** | 0,250 | 0,315 | 0,411 |
+
+Die alte 0,08 sitzt in der Webseiten-Verteilung bei **p60** (Rate 40,0 %) und in
+der Telefon-Verteilung bei **p38** (61,6 %) — dort also unter dem Median, die
+Regel sagte häufiger ja als nein. Dieselbe Fehlerklasse wie bei `flat`, nur
+wandert die Schwelle hier zwischen **UI-Typen** statt zwischen Konfigurationen.
+
+**Kalibriert wird auf Vergleichbarkeit, nicht gegen eine Wahrheit.** Es gibt
+keine Ground Truth dafür, ob ein Screen diesen Befund verdient — niemand hat
+gelabelt, wo Aufmerksamkeit „zu weit unten" bündelt. Die Schwelle liegt deshalb
+in jedem Typ am **selben Perzentil** seiner eigenen Verteilung, damit die
+Aussage in beiden dasselbe heißt. Genau die Begründung, mit der `flat` seine
+vier Schwellen bekommen hat.
+
+| | Schwelle | Rate |
+|---|---:|---:|
+| web | 0,080 | 40,0 % |
+| mobile | **0,189** | 39,8 % |
+
+**Das Perzentil selbst ist nicht kalibriert.** p60 ist aus dem ausgelieferten
+Zustand übernommen. Ob ein Befund auf 40 % der Screens erscheinen soll, ist eine
+Produktfrage und hier ausdrücklich **nicht** entschieden — entschieden ist nur,
+dass die Regel in beiden Typen dieselbe Frage stellt. `desktop` und `poster`
+fallen auf den web-Wert zurück; das ist eine Annahme, keine Messung.
+
+**Der entscheidende Vorteil der drei Regel-Ideen oben:** sie lesen nur die Karte
+und die Geometrie, nicht die Abschnittsstruktur — und damit sind sie **an UEyes
 kalibrierbar**. Der Datensatz besteht aus 1.980 Einzel-Viewport-Screenshots,
 also genau der Population, um die es hier geht. Nur der CTA-Teil der zweiten
 Regel braucht Layer-Bäume (PRD Set 2); die anderen beiden nicht. Das ist der
@@ -1677,28 +3107,93 @@ noch Abschnitte und funktioniert auf einem Ein-Viewport-Screen vollständig —
 damit deckt sie genau die Lücke ab, die die Befunde dort lassen. (In diesem
 Branch existiert sie noch nicht; hier steht sie als Vormerkung für 1.2.)
 
+### B2 — „Kopfbereich stärker als Inhalt" wird nicht gebaut
+
+```bash
+npm run header-weight
+```
+
+Die Regel wäre die zweite Vorhersage-Regel für Ein-Viewport-Screens gewesen. Die
+vorgeschlagene Größe — Bandaufteilung plus Verhältnismaß, mittlerer
+Bildanalyse-Anteil im oberen Viertel geteilt durch den im Rest — ist **vor**
+jeder Kalibrierung an Fällen mit bekannter Antwort geprüft worden. Sie besteht
+die Prüfung nicht.
+
+| Fall | erwartet | Bildanteil | fertige Karte |
+|---|---|---:|---:|
+| leer | undefiniert | — | 3,757 |
+| kräftiger Kopfbereich, ruhiger Inhalt | **hoch** | 1,246 | 2,637 |
+| ein kleiner Blickfang in der Mitte | niedrig | **—** | 2,437 |
+| ein großer Blickfang in der Mitte | niedrig | 0,000 | 1,572 |
+| ein kleiner Blickfang im Kopfbereich | **hoch** | **201,955** | 5,820 |
+| 3 gleich starke Blöcke | neutral | **1,280** | 2,410 |
+| 6 gleich starke Blöcke | neutral | 1,035 | 1,959 |
+| 12 gleich starke Blöcke | neutral | 0,953 | 1,870 |
+
+**Drei Gründe, jeder für sich hinreichend:**
+
+1. **Die Größe ist auf dem klarsten Fall undefiniert.** „Ein kleiner Blickfang
+   in der Mitte" hat im oberen Band gar keine Masse — der Bildanteil ist dort
+   nach der Perzentil-Normierung exakt null. Ein Verhältnis 0 ÷ x ist keine
+   kleine Zahl, sondern keine Zahl. Genau dort, wo die Antwort am eindeutigsten
+   ist, sagt die Größe nichts.
+2. **Der Wertebereich ist unbrauchbar.** Ein Verhältnis zweier Mittelwerte
+   explodiert, sobald der Nenner klein wird: 0,000 bis 201,955, mit Löchern
+   dazwischen. In einer solchen Verteilung liegt keine Schwelle sinnvoll.
+3. **Die Inhaltsmenge schiebt die Fälle über die Klassengrenze.** Drei gleich
+   starke Blöcke kommen auf **1,280** und liegen damit **über** dem Fall, der
+   „hoch" heißen soll (kräftiger Kopfbereich, 1,246). Das ist exakt die
+   `flat`-Falle: die Größe reagiert stärker auf die Menge an Inhalt als auf das,
+   was sie messen soll.
+
+Die Spalte „fertige Karte" steht daneben, weil sie die naheliegende Alternative
+erledigt: dort bekommt der **leere** Frame mit 3,757 den höchsten Wert von
+allen. Das ist der Ortsprior, der von sich aus oben-lastig ist — auf der
+fertigen Karte misst diese Größe die Positionsannahme, nicht den Entwurf.
+
+**Es gibt keinen zweiten Anlauf.** Weder ein anderes Band noch ein anderes
+Verhältnis: die Instabilität kommt aus der Konstruktion „Quotient zweier
+Mittelwerte" und nicht aus der Bandgröße, und `flat` hat fünf Anläufe gekostet,
+von denen vier nichts gefunden haben, was der erste nicht schon zeigte.
+
+**Was das kostet, und warum es tragbar ist.** Ein-Viewport-Screens behalten
+damit genau eine Vorhersage-Regel (`competition`, 15,2 %) plus `cta-rank`, wo
+ein Layer-Baum vorliegt. Die Lücke, die B2 hätte füllen sollen, füllt die
+[Contrastmap](#contrastmap-12-c) — und zwar besser, als diese Regel es gekonnt
+hätte: sie sagt auf jedem Screen etwas, und was sie sagt, ist nachrechenbar.
+
+---
+
 ### Offen für 1.2 — die abgeschalteten Regeln
 
 Alle drei brauchen eine **neue Entscheidungsgröße**, nicht eine neue Schwelle.
 In allen Fällen ist der Umbau benannt und die Messung fehlt noch:
 
-**Zwei der drei teilen sich eine Änderung.** `cta-below-fold` und `dead-cta`
-scheitern am selben Mechanismus — die komponierte Karte ist um
-`sectionAttenuation^i` gedämpft, also ist alles weiter unten rechnerisch leise,
-unabhängig vom Entwurf. Die Größe, die das behebt, **ist bereits gebaut**:
-`localMean` in `rules.ts` liest die mittlere Aufmerksamkeit eines Kandidaten auf
-der *ungedämpften* Karte seines eigenen Viewports und wird von `dead-cta` schon
-benutzt. `cta-below-fold` müsste seine Rangfolge nur ebenfalls darauf stellen.
-Das ist in 1.2 **eine Änderung für zwei Regeln**, nicht zwei Aufgaben.
+**Zwei der drei teilten sich eine vermutete Änderung — und die Vermutung war
+falsch.** `cta-below-fold` und `dead-cta` scheitern am selben Mechanismus: die
+komponierte Karte ist um `sectionAttenuation^i` gedämpft, also ist alles weiter
+unten rechnerisch leise, unabhängig vom Entwurf. Die Größe dagegen war schon
+gebaut — `localMean` liest die mittlere Aufmerksamkeit eines Kandidaten auf der
+*ungedämpften* Karte seines eigenen Viewports. Der Plan war, `cta-below-fold`
+seine Rangfolge ebenfalls darauf zu stellen: eine Änderung für zwei Regeln.
 
-Mitentschieden werden muss dabei, dass sich die *Aussage* ändert: „der stärkste
-Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
-eigenen Viewport dominiert, sitzt nicht im ersten". Der Satz ist neu zu
-schreiben, nicht nur die Zahl.
+**In 1.2 B4 umgesetzt und gemessen: die Änderung reicht nicht.** Die Regel
+feuert danach zwar, aber unkorreliert mit dem Aufbau — auf Desktop einmal, und
+zwar falsch; auf Telefon scrollend auf 24 von 24 Frames. Der Grund steht oben
+im Abschnitt zu `cta-below-fold`: der Umbau entfernt die Dämpfung *zwischen*
+den Abschnitten und lässt den oben-lastigen Prior *innerhalb* jedes Abschnitts
+stehen, womit der Vergleich zu „wer sitzt am dichtesten am oberen Rand seines
+eigenen Viewports" wird. Der Befundsatz ist neu geschrieben, die Regel bleibt
+`shipped: false`, der Messcode bleibt stehen.
 
-| Regel | neue Größe | warum sie das Problem löst |
+**Was daraus zu lernen ist, gilt über diese Regel hinaus:** „die Größe existiert
+schon und muss nur angeschlossen werden" ist eine Vermutung wie jede andere und
+gehört gemessen, bevor sie in einer Tabelle als Lösung steht. Diese Tabelle
+sagte genau das, drei Runden lang.
+
+| Regel | neue Größe | Stand |
 |---|---|---|
-| `cta-below-fold` | Rangfolge über `localMean` statt über die komponierte Karte — **derselbe Umbau wie bei `dead-cta`** | Die Regel ist nicht falsch kalibriert, sie ist blockiert: oben-lastiger Prior plus `sectionAttenuation^i`. Auf der ungedämpften Abschnittskarte ist „stärkster Kandidat dieses Viewports" wieder eine beantwortbare Frage. |
+| `cta-below-fold` | **Verhältnis zweier Dominanzen**: um wieviel deutlicher führt dieser Kandidat seinen Ausschnitt an als der Anführer des ersten Ausschnitts den seinen | Die naheliegende Größe (`localMean`) ist in 1.2 B4 gebaut, gemessen und als unzureichend belegt. Ein Verhältnis ist unabhängig von der Zahl der Ausschnitte — genau die Abhängigkeit, an der `localMean` scheitert. Nicht gemessen. |
 | `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
 | `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden — auf `localMean`, das dafür schon existiert | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
 
@@ -1924,7 +3419,7 @@ blockiert (NFR-3).
 npm test
 ```
 
-152 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
+414 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
 Bild ⇒ flache Feature-Map, schwarzes Quadrat ⇒ Peak an dessen Position,
 Prototype-Hotspot schlägt Namens-Treffer, gleiche Eingabe ⇒ identische Ausgabe.
 Echte Screens haben keine bekannte Wahrheit und eignen sich nicht für
@@ -1941,6 +3436,47 @@ Die für 1.1 tragenden Gruppen:
 | `eval/metrics/__tests__/metrics.test.ts` | A-3 — jede Metrik gegen einen handgerechneten 5×5-Fall |
 | `src/findings/__tests__/rules.test.ts` | C-1 — je Regel Auslöser *und* Nicht-Auslöser; C-2 — die Sprachregeln maschinell erzwungen |
 | `src/engine/__tests__/params.test.ts` | Epic D — Profile normalisiert, `scan` identisch zu 1.0, nur Belegtes wird ausgeliefert |
+| `src/findings/__tests__/end-to-end.test.ts` | C-1 — jede Regel ist über den **echten** Analysepfad auslösbar *und* zum Schweigen zu bringen |
+| `src/findings/__tests__/robustness.test.ts` | 1.2 — dieselben zwölf Fälle noch einmal unter verstellten Engine-Parametern |
+| `eval/__tests__/alpha.test.ts` | 1.2 — die Abkürzung im Alpha-Sweep rechnet dasselbe wie `combineFeatureParts` |
+
+### Die Erreichbarkeitsfälle halten auch, wenn jemand an der Engine dreht
+
+Beim Umstieg auf `blendAlpha` 0,5 fiel der Erreichbarkeitstest von
+`cta-below-fold` um — nicht, weil die Regel falsch war, sondern weil der Fall
+auf der Kippe stand: 0,5227 gegen 0,4773 im Score, und das Verhältnis dreht
+sich schon bei α ≈ 0,35. Ein Fall, der nur bei genau den heutigen Konstanten
+das Erwartete tut, belegt nichts über die Regel.
+
+Die anderen elf wurden daraufhin unter denselben Störungen nachgemessen. Zwei
+weitere waren genauso zerbrechlich, beide bei `competition`:
+
+| Fall | kippte unter | Ursache |
+|---|---|---|
+| `competition` feuert | `blendGamma` | Ein Gamma über der fertigen Karte drückt alle Werte außer dem Maximum nach unten; das zweite Maximum fiel von 0,709 auf 0,502, unter die Schwelle 0,65. |
+| `competition` schweigt | `post.gamma` | Die steilere Tonkurve machte einen abseits stehenden Textknoten zu einer zweiten Region. |
+| `cta-below-fold` feuert | `blendAlpha` | Der Gegenspieler stand oben links statt dort, wo ein Impressum-Link wirklich steht. |
+
+Alle drei sind repariert — größere Blöcke und eine größere Lücke bei
+`competition`, der Textknoten näher am Block, der Gegenspieler in die ruhigste
+Ecke des ersten Viewports. Danach halten **elf von zwölf** Fällen über alle
+fünf geprüften Parameter-Ränder (`blendAlpha` 0,3, `blendGamma` 2, `post.gamma`
+2, `blurSigmaRatio` 0,035, `clipLowPercentile` 40).
+
+**Der zwölfte hält nicht, und das ist ein Befund über die Regel.** `flat` feuert
+nicht mehr, sobald `clipLowPercentile` angehoben wird. Der Grund ist nicht der
+Testfall: die Entscheidungsgröße ist die Konzentration des Bildanteils, und der
+Clip ist genau dessen Sockel — was darunter liegt, wird 0 und trägt keine Masse
+mehr, also steigt die gemessene Konzentration mechanisch, auf einem
+gleichmäßigen Screen wie auf einem mit Blickfang. Das ist dieselbe Schwäche der
+Größe, an der `flat` schon dreimal gescheitert ist. Die Ausnahme steht als
+begründeter Eintrag im Szenario, und der Test prüft, dass die Liste dieser
+Ausnahmen **genau einen** Eintrag hat: eine Ausnahmeliste, die wächst, ist ein
+Feigenblatt.
+
+Was der Test ausdrücklich **nicht** behauptet: dass die Regeln unter diesen
+Parametern gleich *häufig* feuern. Das tun sie nachweislich nicht — siehe A5.
+Geprüft wird nur, dass ein Fall mit bekannter Antwort diese Antwort behält.
 
 ---
 
@@ -2041,10 +3577,10 @@ Zusätzlich für 1.1 (M4, M5):
 1. **`hybrid-v1` scharfschalten — oder nicht.** Der Code steht, die Zahl steht
    (S-2 erfüllt), das Umschalten ist eine Zeile. Zwei Dinge sprechen dagegen und
    gehören auf den Tisch: die Engine wird damit **datensatzabhängig** (der Prior stammt aus
-   UEyes und passt auf meinestadt-Screens nur, soweit die dem Durchschnitt
+   UEyes und passt auf die eigenen Screens nur, soweit die dem Durchschnitt
    ähneln), und mit dem Asset kommt die **CC-BY-Pflicht** ins Produkt
    ([`NOTICE.md`](NOTICE.md)). Dafür spricht der gemessene Sprung.
-2. **Vorab prüfen, ob der Prior auf meinestadt-Screens trägt.** Der billigste
+2. **Vorab prüfen, ob der Prior auf den eigenen Screens trägt.** Der billigste
    Test ist das eigene First-Click-Set — es beantwortet gleichzeitig die
    Teilmessungs-Frage.
 3. **Trainiertes Modell (1.2)** bleibt der sauberere Weg: ONNX Runtime Web im
@@ -2058,6 +3594,23 @@ Zusätzlich für 1.1 (M4, M5):
    Regel feuert, deren Text nicht von einem Menschen bestätigt wurde.
 6. **Desktop und Poster** sind importierbar (`--category desktop|poster`), aber
    für Figmaps nicht die relevanten UI-Typen.
+7. **Das Lockfile zeigt weiterhin auf eine interne Registry** — 211 von 211
+   `resolved`-URLs. Die CI kommt inzwischen daran vorbei
+   (`scripts/ci-lockfile.mjs` nimmt die Adressen vor `npm ci` aus der
+   Arbeitskopie, `integrity` bleibt), aber die Ursache liegt weiter in der
+   npm-Konfiguration, die das Lockfile erzeugt: es gibt keine Repo-`.npmrc`,
+   der Eintrag kommt aus der Benutzerkonfiguration der Maschine, und der
+   nächste `npm install` schreibt die Hosts zurück. Der dauerhafte Ort für
+   diese Entscheidung ist eine Repo-`.npmrc` oder die Benutzerkonfiguration —
+   beides berührt, wie intern gebaut wird, und liegt bei Security.
+8. **Der Gate-Split ist verbrannt.** Er nimmt 20 der 27 Test-Split-Bilder je
+   Kategorie und läuft bei jedem PR mit sichtbaren Zahlen — wer eine Änderung
+   dreht, bis die Zahl im Check steigt, hat auf ihm kalibriert. Das ist kein
+   Mangel des Aufbaus, sondern sein Preis: ein Gate, dessen Zahl man nicht
+   sieht, ist kein Gate. Die Konsequenz ist eine Regel, keine Gegenmaßnahme —
+   **diese Zahlen dürfen nie als Beleg für Genauigkeit zitiert werden.** Und
+   das Set ist mit 40 Bildern ohnehin nur grob: eine Verschlechterung von
+   0,065 CC fällt auf, eine von 0,005 nicht zuverlässig.
 
 ## Nicht in 1.1
 

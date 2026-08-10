@@ -39,6 +39,10 @@ export function normaliseSettings(raw: unknown): Settings {
       heat: maps.heat ?? DEFAULT_SETTINGS.maps.heat,
       click: maps.click ?? DEFAULT_SETTINGS.maps.click,
       focus: maps.focus ?? DEFAULT_SETTINGS.maps.focus,
+      // Eine gespeicherte Einstellung von vor 1.2 kennt die Contrastmap nicht;
+      // sie bekommt die Voreinstellung statt `false`. Eine neue Ausgabe, die
+      // still ausgeschaltet ankommt, sieht aus wie eine, die es nicht gibt.
+      contrast: maps.contrast ?? DEFAULT_SETTINGS.maps.contrast,
     },
     overlayOpacity: Math.round(clamp(input.overlayOpacity as number, 0, 100, DEFAULT_SETTINGS.overlayOpacity)),
     profile,

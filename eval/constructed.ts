@@ -19,6 +19,7 @@
  * Aktionsbeschriftungen und einen primären CTA. Was sich unterscheidet, ist
  * die Geometrie — und genau die ist die geprüfte Größe.
  */
+import { pixelLuminance } from '../src/contrast/measure'
 import type { Bitmap } from '../src/engine/ops'
 import type { PriorAssetId } from '../src/engine/priors'
 import type { NodeSignal } from '../src/messages'
@@ -266,6 +267,9 @@ export function buildFrame(shape: FrameShape, variant: number): BuiltFrame {
       fontSize: 16,
       fontWeight: 600,
       text: title,
+      // Wie `collectSignals` es in Figma aus dem Fill liest — ohne dieses Feld
+      // kann die Contrastmap den Knoten nicht messen.
+      fillLuminance: pixelLuminance(20, 22, 28),
     })
     signal({
       name: 'Firmenname',
@@ -278,6 +282,7 @@ export function buildFrame(shape: FrameShape, variant: number): BuiltFrame {
       charCount: company.length,
       fontSize: 13,
       text: company,
+      fillLuminance: pixelLuminance(120, 124, 132),
     })
     signal({
       name: 'Details ansehen',
@@ -288,9 +293,13 @@ export function buildFrame(shape: FrameShape, variant: number): BuiltFrame {
       height: 30,
       isText: true,
       charCount: 15,
+      // Eine Schriftgröße hat in Figma jeder Textknoten; ohne sie ist die
+      // WCAG-Schwelle nicht bestimmt und die Contrastmap überspringt ihn.
+      fontSize: 12,
       hasFill: true,
       nameHints: ['button'],
       text: 'Details ansehen',
+      fillLuminance: pixelLuminance(255, 255, 255),
     })
   }
 

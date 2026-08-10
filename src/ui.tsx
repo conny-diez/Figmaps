@@ -19,6 +19,7 @@ import {
   PANEL_MAP_KINDS,
   PANEL_SIZE,
   type ClickRanking,
+  type ContrastFinding,
   type FindingPayload,
   type FrameSummary,
   type MapKind,
@@ -30,7 +31,7 @@ import { viewportHeightFor } from './engine/segments'
 import { Logo } from './ui/logo'
 import { generateMaps, type FrameData } from './ui/pipeline'
 import { paletteFor } from './ui/theme'
-import { PLUGIN_VERSION } from './version'
+import { PLUGIN_LABEL } from './version'
 
 type Phase = 'empty' | 'ready' | 'working' | 'done' | 'error'
 
@@ -420,6 +421,8 @@ function App(): preact.JSX.Element {
   const [ranking, setRanking] = useState<ClickRanking[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [findings, setFindings] = useState<FindingPayload[]>([])
+  const [contrastFindings, setContrastFindings] = useState<ContrastFinding[]>([])
+  const [nonTextFindings, setNonTextFindings] = useState<ContrastFinding[]>([])
   const [segments, setSegments] = useState<SegmentInfo | null>(null)
 
   // Refs, because the message handler is installed once and must not close over
@@ -446,6 +449,8 @@ function App(): preact.JSX.Element {
       })
       if (result.ranking.length > 0) setRanking(result.ranking)
       setFindings(result.findings)
+      setContrastFindings(result.contrastFindings)
+      setNonTextFindings(result.nonTextFindings)
       setSegments(result.segments)
       send({
         type: 'PLACE_RESULT',
@@ -453,6 +458,7 @@ function App(): preact.JSX.Element {
         maps: result.maps,
         warnings: result.warnings,
         findings: result.findings,
+        contrastFindings: result.contrastFindings,
         segments: result.segments,
         mapMeta: result.mapMeta,
       })
@@ -591,8 +597,10 @@ function App(): preact.JSX.Element {
         <Logo size={27} />
         <h1 class="app__title">Figmaps</h1>
         {/* The engine version stays with the maps (the line under each map
-            title); the header names the version of the plugin. */}
-        <p class="app__subtitle">{PLUGIN_VERSION}</p>
+            title); the header names the product the user installed — plus the
+            Beta marker, which is a statement about the prediction, not about
+            the code (see `version.ts`). */}
+        <p class="app__subtitle">{PLUGIN_LABEL}</p>
         <button
           type="button"
           class="themepill"
@@ -850,6 +858,83 @@ function App(): preact.JSX.Element {
                     </li>
                   ))}
                 </ul>
+              </section>
+            )}
+
+            {/* C4 — eigene Sektion, eigene Bezeichnung, und der
+                Vorhersage-Disclaimer gilt hier NICHT.
+
+                Die Trennung ist kein Layout-Detail: darüber stehen
+                Vorhersagen, die falsch sein können, hier stehen Messwerte, die
+                jeder nachrechnen kann. In einer Liste vermischt würde das eine
+                das andere abwerten — und zwar in die falsche Richtung, denn die
+                belastbarere Aussage verlöre. */}
+            {contrastFindings.length > 0 && (
+              <section class="section">
+                <p class="section__label">Kontrast (gemessen)</p>
+                <p class="section__hint">
+                  Nach WCAG 2.1 AA geprüft. Keine Vorhersage — diese Werte sind nachmessbar.
+                </p>
+                <ul class="findings">
+                  {contrastFindings
+                    .filter((entry) => entry.status !== 'bestanden')
+                    .map((entry) => (
+                      <li key={entry.nodeId} class={`findings__item findings__item--${entry.status === 'durchgefallen' ? 'problem' : 'attention'}`}>
+                        <span class="findings__bar" aria-hidden="true" />
+                        <div class="findings__body">
+                          <span class="findings__severity">
+                            {entry.status === 'durchgefallen' ? 'Durchgefallen' : 'Grenzwertig'}
+                          </span>
+                          <span class="findings__text">{entry.text}</span>
+                          <button
+                            type="button"
+                            class="linkbutton findings__link"
+                            onClick={() => reveal([entry.nodeId])}
+                          >
+                            Im Canvas zeigen
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+                <p class="section__hint">
+                  {contrastFindings.filter((entry) => entry.status === 'bestanden').length} weitere Textelemente
+                  erfüllen die Anforderung.
+                </p>
+              </section>
+            )}
+
+            {/* WCAG 1.4.11 — eigene Sektion, weil hier eine EINSCHÄTZUNG
+                drinsteckt: ob ein Element eine Komponente ist, entscheidet
+                eine Heuristik über Name und Prototype-Interaktion. 1.4.3
+                darüber ist reine Tatsache. Die beiden dürfen nicht denselben
+                Anstrich bekommen. */}
+            {nonTextFindings.length > 0 && (
+              <section class="section">
+                <p class="section__label">Kontrast von Bedienelementen</p>
+                <p class="section__hint">
+                  Nach WCAG 2.1 AA (1.4.11), 3:1 für die Begrenzung gegen die angrenzende Farbe. Welche Elemente
+                  Komponenten sind, schätzt das Plugin aus Name und Prototype-Interaktion — Elemente mit eigener
+                  Beschriftung sind ausgenommen, weil die Beschriftung sie identifiziert.
+                </p>
+                <ul class="findings">
+                  {nonTextFindings.map((entry) => (
+                    <li key={entry.nodeId} class="findings__item findings__item--attention">
+                      <span class="findings__bar" aria-hidden="true" />
+                      <div class="findings__body">
+                        <span class="findings__severity">Prüfen</span>
+                        <span class="findings__text">{entry.text}</span>
+                        <button type="button" class="linkbutton findings__link" onClick={() => reveal([entry.nodeId])}>
+                          Im Canvas zeigen
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <p class="section__hint">
+                  Nicht prüfbar: Zustände (ein Frame zeigt einen), und ob eine Komponente inaktiv ist — inaktive
+                  sind von 1.4.11 ausgenommen.
+                </p>
               </section>
             )}
 

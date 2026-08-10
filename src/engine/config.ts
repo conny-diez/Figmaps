@@ -29,11 +29,12 @@ export const ENGINE_VERSION = 'hybrid-v1'
  * is listed: `melden` covers „Anmelden" and „Abmelden", `schalter` covers
  * „Umschalter", `feld` covers „Eingabefeld" und „Suchfeld".
  *
- * **Deutsch gehört dazu, nicht als Zugabe.** Bei meinestadt.de sind sämtliche
- * Ebenennamen deutsch, und mit der rein englischen Liste traf davon *keiner*
- * (gemessen an 24 typischen Namen: 0 Treffer). Das betrifft nicht nur die
- * ausgeblendete Clickmap: `cta-rank` und `cta-below-fold` sind ausgeliefert und
- * hängen an denselben Kandidaten.
+ * **Deutsch gehört dazu, nicht als Zugabe.** Figma-Dateien werden in der
+ * Sprache benannt, in der das Team arbeitet, und in einer durchgängig deutsch
+ * benannten Bibliothek traf die rein englische Liste *keinen einzigen* Namen
+ * (gemessen an 24 typischen deutschen Ebenennamen: 0 Treffer). Das betrifft
+ * nicht nur die ausgeblendete Clickmap: `cta-rank` und `cta-below-fold` sind
+ * ausgeliefert und hängen an denselben Kandidaten.
  *
  * Bekannte Fehlgriffe, bewusst in Kauf genommen: `karte` trifft auch eine
  * „Standortkarte", `reiter` steckt in „breiter", `feld` in „Umfeld". Ein
@@ -103,6 +104,28 @@ export const ENGINE_CONFIG = {
     maxPixels: 12_000_000,
   },
 
+  /**
+   * Auflösung, auf der die **Contrastmap** misst (1.2 C1).
+   *
+   * Bewusst großzügiger als `analysisSource`, und das ist kein Widerspruch:
+   * die Aufmerksamkeitsvorhersage arbeitet mit weichgezeichneten Merkmalen und
+   * verliert durch Verkleinern nichts, die Kontrastmessung schon. Sie tastet
+   * den Hintergrund **zwischen den Glyphen** ab; wird das Bild verkleinert,
+   * mischen sich Text- und Hintergrundpixel, und der gemessene Wert wäre eine
+   * Interpolation statt einer Messung.
+   *
+   * Bei einer Ausgabe, die als überprüfbare Tatsache auftritt, ist das der
+   * Unterschied zwischen richtig und falsch — anders als bei einer Heatmap, die
+   * ohnehin eine Schätzung ist.
+   *
+   * Die Grenzen sind Speicher, nicht Genauigkeit: 4096 ist die Kante, die
+   * `figma.createImage` verträgt, 12 Mio. Pixel dieselbe Schranke wie oben.
+   */
+  contrastSource: {
+    maxEdge: 4096,
+    maxPixels: 12_000_000,
+  },
+
   /** Epic B — viewport derivation and segmentation. */
   viewport: {
     /** Frames at least this wide are treated as desktop. */
@@ -156,12 +179,21 @@ export const ENGINE_CONFIG = {
     /**
      * Untergrenze der Dämpfung.
      *
-     * Bewusst knapp unter der Transparenzschwelle des Renderers gewählt: auf
-     * inhaltsfreien Flächen fallen tiefe Abschnitte damit unter die Schwelle
-     * und werden gar nicht gezeichnet, während ein echter Blickfang dort noch
-     * schwach sichtbar bleibt. Eine höhere Untergrenze erzeugt wieder ein
-     * Plateau gleich heller Bänder — genau das Artefakt, das die Dämpfung
-     * beseitigen soll.
+     * Ursprünglich knapp unter der damaligen Transparenzschwelle des Renderers
+     * gewählt (0,08): auf inhaltsfreien Flächen fielen tiefe Abschnitte damit
+     * unter die Schwelle und wurden gar nicht gezeichnet, während ein echter
+     * Blickfang dort noch schwach sichtbar blieb. Eine höhere Untergrenze
+     * erzeugt wieder ein Plateau gleich heller Bänder — genau das Artefakt, das
+     * die Dämpfung beseitigen soll.
+     *
+     * **Diese Kopplung ist seit 1.2 A8 gebrochen, und zwar bewusst.** Die
+     * Schwelle steht jetzt bei 0,02, das vierte Band einer inhaltsfreien Seite
+     * bei 0,0506 — es ist also wieder schwach sichtbar. Der Boden hier ist
+     * daran unbeteiligt: nachgemessen von 0,12 bis 0,03 bleibt das vierte Band
+     * unverändert, weil dort noch `sectionAttenuation^3` greift und nicht der
+     * Boden. Wegzubekommen wäre es nur über eine steilere `sectionAttenuation`
+     * — und die ist eine nicht gemessene Annahme, die nicht verstellt wird,
+     * damit ein Bild ruhiger aussieht. Steht als offener Punkt im README.
      */
     sectionAttenuationFloor: 0.12,
   },
@@ -241,13 +273,122 @@ export const ENGINE_CONFIG = {
     mirrorHorizontally: false,
   },
 
-  /** Post-processing of the weighted sum. */
+  /**
+   * Post-processing of the weighted sum.
+   *
+   * Diese Werte sind die von 1.0 und bleiben es: `HEURISTIC_V1` liest sie, und
+   * das ist die **eingefrorene Referenz** des Harness (A-4). Was `hybrid-v1`
+   * abweichend macht, steht in `hybrid` darunter — sonst würde eine Messung an
+   * der aktiven Konfiguration die Vergleichsbasis mitverschieben.
+   */
   post: {
     /** Gaussian blur sigma as a fraction of the longer analysis edge. */
     blurSigmaRatio: 0.025,
     clipLowPercentile: 1,
     clipHighPercentile: 99,
     gamma: 0.8,
+  },
+
+  /**
+   * Was `hybrid-v1` an der Nachbearbeitung anders macht (1.2 A6).
+   *
+   * Anlass ist der A1-Befund: die Ground Truth hält 48,2 % ihrer Masse in den
+   * stärksten 5 % der Pixel, unsere Karte 13,3 %. `blendAlpha` ist dafür der
+   * falsche Hebel — ein höheres α macht die Karte weicher. Gemessen wurde
+   * stattdessen über die vier Größen, die die *Form* der Verteilung bestimmen
+   * (`npm run sharpness`, kreuzvalidiert auf dem Tuning-Split, 468 Bilder je
+   * Kategorie). Zwei davon tragen, und zwar zusammen:
+   *
+   *                          AUC     CC      NSS     KL      Konzentration
+   *   Ist-Zustand 1.1        0,783   0,447   1,061   1,091   0,133
+   *   nur blendGamma 1,6     0,783   0,456   1,083   1,038   0,188
+   *   nur blendGamma 2,0     0,783   0,454   1,080   1,055   0,225
+   *   nur Blur 0,035         0,784   0,449   1,063   1,094   0,131
+   *   **ausgeliefert**       —       —       —       —       0,188
+   *                                                          (Webpage)
+   *
+   * **Alle vier Metriken verbessern sich, KL eingeschlossen** — die Zuspitzung
+   * wird hier nicht mit Vorhersagegüte bezahlt, sondern bringt welche mit. Auf
+   * Mobile derselbe Befund.
+   *
+   * Welcher Gamma-Wert ausgeliefert wird, entscheidet nicht diese Tabelle,
+   * sondern die Aufteilung nach Gewinnern und Verlierern der Mean-Map-Diagnose
+   * — siehe `blendGamma` unten.
+   *
+   * Der Mechanismus ist gegenläufig und deshalb erklärungsbedürftig: die
+   * Bildanalyse wird **weicher** gezeichnet und das Ergebnis **härter**
+   * angezogen. Ein glatterer Bildanteil passt besser zu einer Ground Truth, die
+   * selbst aus überlagerten Blickpunkten besteht; die Schärfe kommt danach aus
+   * der Tonkurve über der fertigen Karte, wo sie den Ortsprior mitnimmt.
+   */
+  hybrid: {
+    /**
+     * Weichzeichnung des Bildanteils — 0,035 statt 0,025.
+     *
+     * Die Richtung ist die überraschende: **schärfer zeichnen hilft nicht.**
+     * 0,006 bis 0,020 verlieren in allen drei Hauptmetriken, monoton, in beiden
+     * Kategorien (web CC 0,440 bei 0,006 gegen 0,447 im Ist-Zustand). Der
+     * Bildanteil ist kein Detailkanal.
+     */
+    blurSigmaRatio: 0.035,
+    /**
+     * Tonkurve über der **fertigen**, gemischten Karte — `map^2`.
+     *
+     * Dieser Hebel war in 1.1 ausgebaut, **weil er KL verschlechterte**
+     * (1,115 statt 1,078). Der ausgebaute war aber ein Gamma *unter* 1, also
+     * ein glättendes; ein zuspitzendes hat nie jemand gemessen. Es verbessert
+     * KL (1,091 → 1,055) statt es zu verschlechtern.
+     *
+     * **1,6 und nicht 2,0 — und der Unterschied ist kein Feinschliff.**
+     *
+     * Über alle Bilder gemittelt ist 2,0 der größte Wert, der in beiden
+     * Kategorien keine der drei Hauptmetriken kostet (bei 2,5 verliert Mobile
+     * CC belastbar). Ein Mittelwert kann aber zwei gegenläufige Effekte
+     * verdecken, und genau das tut er hier. `npm run groups` misst getrennt für
+     * die beiden Hälften der Mean-Map-Diagnose — Screens, auf denen unsere
+     * Vorhersage die Mean Map schlägt, und die übrigen. ΔCC gegen „kein Gamma":
+     *
+     *              Gewinner (Vorhersage schlägt Mean Map)   übrige
+     *   Webpage
+     *     γ 1,3     +0,0058 [0,0043, 0,0073]                +0,0092
+     *     γ 1,6     +0,0072 [0,0044, 0,0100]                +0,0134
+     *     γ 2,0     +0,0051 [0,0008, 0,0094]                +0,0141
+     *   Mobile
+     *     γ 1,3     +0,0057 [0,0038, 0,0077]                +0,0076
+     *     γ 1,6     +0,0055 [0,0019, 0,0092]                +0,0087
+     *     γ 2,0     −0,0007 [−0,0063, 0,0048]               +0,0034
+     *
+     * Bei 2,0 **verschwindet der Gewinn für die Gewinner-Gruppe auf Mobile
+     * ganz** (Intervall über der Null), während die übrigen weiter zulegen; auf
+     * Webpage bekommt die Gruppe noch ein Drittel dessen, was die andere
+     * bekommt. Bei 1,6 gewinnen **beide** Gruppen in **beiden** Kategorien,
+     * jedes Intervall ohne Null.
+     *
+     * Warum das den Ausschlag gibt: die Gewinner sind die Screens, auf denen
+     * die Bildanalyse überhaupt etwas beiträgt. Wo die Mean Map schon reicht,
+     * ist die Vorhersage ein Ortsprior mit Zierrat — dort besser zu werden ist
+     * billig und sagt über das Produkt nichts. Ein Wert, der den Mittelwert
+     * hebt, indem er die Mehrheit verbessert und die Minderheit stehen lässt,
+     * verbessert die Zahl und verschlechtert das Werkzeug.
+     *
+     * Gekostet wird das mit Konzentration: 0,184/0,207 statt 0,220/0,253. Die
+     * Lücke zur Ground Truth schließt sich damit zu gut einem Drittel statt zur
+     * Hälfte. Das ist der Preis, und er steht hier, damit er nicht in einer
+     * Mittelwertstabelle verschwindet.
+     *
+     * **Ein Vorbehalt zur Benennung:** die Gewinner-Gruppe wird gern
+     * „hero-dominiert" genannt. Die Konzentration ihrer *Ground Truth* stützt
+     * das nicht — sie liegt bei 0,479 gegen 0,488 (Webpage) und 0,390 gegen
+     * 0,362 (Mobile), also praktisch gleich. Die beiden Gruppen unterscheiden
+     * sich nachweislich in der Wirkung dieses Parameters, aber nicht darin, wie
+     * scharf ihre gemessene Aufmerksamkeit ist. Woran sie sich unterscheiden,
+     * ist offen.
+     *
+     * Ein Gamma **unter** 1 ist gemessen und eindeutig falsch: γ 0,3 kostet
+     * rund 0,05 CC in jeder Gruppe und Kategorie. Der 1.1 ausgebaute Wert war
+     * ein solcher.
+     */
+    blendGamma: 1.6,
   },
 
   /** Clickmap scoring (FR-5). */
@@ -299,10 +440,37 @@ export const ENGINE_CONFIG = {
   render: {
     /** Hard limit of `figma.createImage` — verified against the API docs. */
     maxImageEdge: 4096,
-    /** Heat values below this render fully transparent. */
-    transparencyCutoff: 0.08,
-    /** Width of the fade-in ramp above the cutoff. */
-    transparencyRamp: 0.12,
+    /**
+     * Heat values below this render fully transparent.
+     *
+     * **0,02 seit 1.2 A8, vorher 0,08 — nachgezogen, nicht neu erfunden.**
+     *
+     * Die Schwelle ist ein *Wert*, die Karte hat sich aber in der Form
+     * geändert (`hybrid.blendGamma`). Dieselbe Zahl verdeckte danach 37,5 %
+     * der Karte statt 18,0 % (Webpage; Mobile 36,4 % statt 13,1 %) — ein
+     * Gutteil des Eindrucks „das Overlay ist leerer geworden" war der
+     * Renderer, nicht die Vorhersage.
+     *
+     * Nachgezogen wurde nach einer Regel, nicht nach Augenmaß: **derselbe
+     * Anteil der Karte bleibt verdeckt wie bisher.** Gemessen mit
+     * `npm run cutoff` über je 150 Bilder, ergibt 0,021 (Webpage) und 0,020
+     * (Mobile); ausgeliefert wird 0,02.
+     *
+     * Was damit ausdrücklich **nicht** entschieden ist: ob 18 % die richtige
+     * verdeckte Fläche sind. Diese Frage hat keine Ground Truth — sie wird
+     * übernommen, nicht geprüft, und gehört an einen Menschen mit echten
+     * Screens vor sich.
+     */
+    transparencyCutoff: 0.02,
+    /**
+     * Width of the fade-in ramp above the cutoff.
+     *
+     * Nach derselben Regel nachgezogen: das Rampenende lag bei 0,20 und
+     * verdeckte teilweise 38,1 % (Webpage) bzw. 36,0 % (Mobile) der Karte;
+     * derselbe Anteil liegt auf der neuen Karte bei 0,082 bzw. 0,079. Ende
+     * also 0,08, Rampenbreite 0,06.
+     */
+    transparencyRamp: 0.06,
     // The legend box and the disclaimer footer used to be drawn into every map
     // and had their own typography block here. They are Figma text nodes beside
     // the image now (`figma/place.ts`) — nothing but the prediction is painted
@@ -391,6 +559,37 @@ export const ENGINE_CONFIG = {
     /** Never show more than this many findings (C-1). */
     maxShown: 6,
     /**
+     * Unterhalb dieses Frame-Mittelwerts des Bildanalyse-Anteils sagt das Panel
+     * dazu, dass die Karte überwiegend die Positionsannahme zeigt.
+     *
+     * **Ein Hinweis, keine Änderung an der Karte.** Die Unterscheidung
+     * „inhaltsarm" ist pro Pixel nachweislich unmöglich — eine Schwelle auf dem
+     * Bildanteil löscht auf echten Screens 1,3 bis 3,8 % der sichtbaren Fläche
+     * (`eval/band-gate.ts`). Pro **Frame** ist sie möglich, weil die
+     * Perzentil-Normierung auf einer strukturlosen Fläche keinen Wertebereich
+     * findet und exakt null liefert.
+     *
+     * **Gemessen, nicht geschätzt** (`npm run band-gate`). Die beiden
+     * Populationen liegen zwei Größenordnungen auseinander:
+     *
+     *   grauer 1440 x 4000-Testframe, ohne Inhalt   0,000000
+     *   niedrigster der 40 Gate-Bilder              0,228585
+     *   Median der Gate-Bilder                      0,4516
+     *
+     * Dazwischen liegt in dieser Stichprobe **nichts**. 0,02 ist eine
+     * Größenordnung unter dem kleinsten beobachteten echten Wert und liegt
+     * damit sicher in der Lücke; auf keinem der 40 Gate-Bilder erscheint der
+     * Hinweis. Der Lauf prüft diese Bedingung bei jedem Aufruf mit.
+     *
+     * Was das nicht heißt: dass zwischen 0,02 und 0,23 nie ein echter Frame
+     * liegt. 40 Bilder zeigen keine Population. Die Wahl ist deshalb bewusst
+     * konservativ — ein *dünn* gefüllter Frame löst den Hinweis **nicht** aus,
+     * obwohl er ihn vielleicht verdiente. Das ist die richtige Richtung für
+     * einen Fehler: ein fehlender Hinweis kostet nichts, ein falscher erzählt
+     * dem Nutzer, seine Datei sei leer.
+     */
+    lowContentLevel: 0.02,
+    /**
      * `competition`: Anteil des Maximums, den eine Region erreichen muss, um
      * als zweiter Hotspot zu zählen.
      *
@@ -405,8 +604,58 @@ export const ENGINE_CONFIG = {
      * die eigentliche Aussage trägt („zwei getrennte Regionen").
      */
     competitionIntensity: 0.65,
-    /** `competition`: minimum distance between the two peaks, share of width. */
-    competitionMinDistance: 0.3,
+    /**
+     * `competition`: Mindestabstand der beiden Spitzen, als Anteil der
+     * **Bilddiagonale**.
+     *
+     * **Umgestellt in 1.2 B1 — vorher ein Anteil der Karten*breite*.** Das war
+     * der dokumentierte Fehler: derselbe Wert 0,3 bedeutete je nach Frame-Form
+     *
+     *   Desktop, ein Viewport   154 px = 48,0 % der Kartenhöhe
+     *   Telefon, ein Viewport    71 px = 13,9 %
+     *   Telefon, scrollend       77 px =  3,9 %
+     *
+     * „Weit auseinander" hieß also auf einem Telefon etwas völlig anderes als
+     * auf einem Desktop. Auf der Diagonale hieße dasselbe 0,3 zwischen 26 % und
+     * 13 % — immer noch nicht identisch, aber die Diagonale ist die Größe, die
+     * mit der Form skaliert, statt eine Kante willkürlich auszuzeichnen.
+     *
+     * **Warum die Diagonale und nicht getrennte x/y-Schwellen.** Getrennte
+     * Schwellen wären ausdrucksstärker — „nebeneinander" ist etwas anderes als
+     * „untereinander" —, aber sie sind **zwei** Konstanten statt einer, auf
+     * einer Population, auf der die Regel ohnehin selten feuert (2,6 % bis
+     * 22,4 %). Zwei Werte an so wenigen Auslösern zu kalibrieren hieße, Rauschen
+     * zu kalibrieren. Die Diagonale ist die sparsamere Wahl; getrennte Schwellen
+     * bleiben möglich, sobald es eine Population gibt, die sie trägt.
+     *
+     * Der Name trägt die Einheit, weil der alte Wert sonst stillschweigend
+     * weitergelesen würde.
+     *
+     * **0,25 ist gemessen** (`npm run competition`, je 495 Bilder). Die
+     * Feuerrate der beiden Ein-Viewport-Populationen — der Fall, um den es in
+     * 1.2 B geht:
+     *
+     *   Abstand   Webseiten   Telefon
+     *   0,15        47,1 %     22,2 %
+     *   0,20        31,1 %     18,6 %
+     *   **0,25**    15,8 %     15,2 %
+     *   0,30         4,0 %     10,5 %
+     *   0,35         0,8 %      6,3 %
+     *
+     * **Bei 0,25 sind die beiden Formen praktisch gleich** (15,8 gegen 15,2 %).
+     * Darunter unterscheiden sie sich um mehr als das Doppelte, darüber kippt
+     * das Verhältnis um. Genau diese Formunabhängigkeit war der Zweck der
+     * Umstellung, und sie ist der Grund für den Wert — nicht die Rate selbst,
+     * für die es keine Ground Truth gibt.
+     *
+     * Die bindende Bedingung ist dabei **nicht** der Abstand, sondern
+     * `competitionIntensity`: je weiter der Suchradius, desto schwächer das
+     * zweite Maximum. Sein Median fällt auf Webseiten von 0,873 (0,15) auf
+     * 0,390 (0,35) und unterschreitet die Schwelle 0,65 zwischen 0,25 und 0,30.
+     * Das Talverhältnis sitzt bei 0,25 in beiden Ein-Viewport-Populationen
+     * innerhalb der Verteilung (p22 bzw. p34), die Regel kann dort also beides.
+     */
+    competitionMinDistanceDiagonal: 0.25,
     /**
      * `competition`: the path between the two peaks must dip below
      * `zweites Maximum x this`. Without the valley test a single wide bright
@@ -482,8 +731,42 @@ export const ENGINE_CONFIG = {
      * a featureless page sits at 0,163 and a page with a strong eye-catcher
      * deep down at 0,182. An absolute margin on the old 0..1 peak scale could
      * never be reached — which is why this rule was silently inert.
+     *
+     * **Je UI-Typ seit 1.2 B, vorher eine Zahl für alle.** Die 0,08 stammen aus
+     * der Webseiten-Verteilung, und auf Telefon-Screens lagen sie unter deren
+     * Median: die Regel sagte dort häufiger ja als nein. Gemessen mit
+     * `npm run cold-fold`, je 495 Bilder mit erzwungener Segmentierung:
+     *
+     *   Dezile web     −0,132 −0,081 −0,043  0,005  0,037  0,080  0,128  0,181  0,259
+     *   Dezile mobile  −0,071 −0,007  0,045  0,088  0,131  0,189  0,250  0,315  0,411
+     *
+     * 0,08 sitzt in web bei **p60** (Rate 40,0 %) und in mobile bei **p38**
+     * (61,6 %). Dieselbe Fehlerklasse wie bei `flat` — eine Schwelle, in einer
+     * Population geschätzt und in einer anderen angewandt —, nur wandert sie
+     * hier zwischen UI-Typen statt zwischen Konfigurationen.
+     *
+     * **Kalibriert wird auf Vergleichbarkeit, nicht gegen eine Wahrheit.** Es
+     * gibt keine Ground Truth dafür, ob ein Screen diesen Befund verdient;
+     * niemand hat gelabelt, wo Aufmerksamkeit „zu weit unten" bündelt. Die
+     * Schwelle liegt deshalb in jedem Typ am **selben Perzentil** seiner
+     * eigenen Verteilung, damit die Aussage in beiden dasselbe heißt — genau
+     * die Begründung, mit der `flat` seine vier Schwellen bekommen hat. Mit
+     * p60 in beiden: web 40,0 %, mobile 39,8 %.
+     *
+     * **Das Perzentil selbst ist nicht kalibriert.** p60 ist aus dem
+     * ausgelieferten Zustand übernommen. Ob ein Befund auf 40 % der Screens
+     * erscheinen soll, ist eine Produktfrage und hier ausdrücklich **nicht**
+     * entschieden — entschieden ist nur, dass die Regel in beiden Typen
+     * dieselbe Frage stellt.
+     *
+     * `desktop` und `poster` sind **nicht gemessen**: die Kategorien sind
+     * importierbar, aber für Figmaps nicht die relevanten UI-Typen. Sie fallen
+     * auf den web-Wert zurück, und das ist eine Annahme, keine Messung.
      */
-    coldFoldMargin: 0.08,
+    coldFoldMargin: {
+      web: 0.08,
+      mobile: 0.189,
+    } as Record<string, number>,
     /** `cta-rank`: a primary candidate below this rank is worth reporting. */
     ctaRankThreshold: 1,
     /** Name tokens that mark a candidate as the *primary* call to action. */

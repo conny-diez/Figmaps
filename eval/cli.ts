@@ -10,8 +10,18 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
-import { PROFILE_DURATIONS, PROFILE_IDS, type ProfileId } from '../src/engine/params'
+import {
+  ACTIVE_CONFIG_ID,
+  cloneParams,
+  DEFAULT_PROFILE,
+  PROFILE_DURATIONS,
+  PROFILE_IDS,
+  resolveParams,
+  type EngineParams,
+  type ProfileId,
+} from '../src/engine/params'
 import { analyzeFrame } from '../src/engine/analyze'
+import { ENGINE_CONFIG } from '../src/engine/config'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { renderContactSheet, type Triptych } from './contact-sheet'
@@ -19,6 +29,37 @@ import { iterateSamples, loadSamples, readIndex, type SplitName } from './datase
 import { PRIOR_ASSET_IDS, PRIOR_DURATIONS, type PriorAssetId } from '../src/engine/priors'
 import { buildPrior, renderPriorModule, type PriorBuild } from './build-prior'
 import { crossValidate, ENGINE_LABELS, FOLDS } from './crossval'
+import {
+  alphaSweep,
+  confirmOnTest,
+  DEFAULT_ALPHAS,
+  extendedAlphas,
+  stillRising,
+  type AlphaSweepResult,
+  type TestConfirmation,
+} from './alpha'
+import { buildAlphaReport, buildTestConfirmationSection, decisionFor, DECISION_METRICS } from './alpha-report'
+import { alphaVariants, runVisualCheck, type CheckVariant } from './visual-check'
+import { ALL_RULE_IDS, buildSideEffectReport, measureSideEffects, SHIPPED_RULES } from './side-effects'
+import { baseParams, beforeSharpnessVariant, sharpnessSweep, stageOneVariants, stageTwoVariants, type SharpnessResult, type Variant } from './sharpness'
+import { buildSharpnessReport, verdictOf } from './sharpness-report'
+import { groupSweep, GROUP_LABELS, type GroupSweepResult } from './groups'
+import { measureCutoff } from './cutoff'
+import { buildGateFixtures } from './gate-fixtures'
+import { measureBandGate, type ThresholdCandidate } from './band-gate'
+import { measureColdFold } from './cold-fold'
+import {
+  analyseAgainstConstruction,
+  LOAD_POPULATIONS,
+  LOAD_POPULATIONS_WITH_LAYERS,
+  measureFindingLoad,
+  onboardingFindings,
+} from './finding-load'
+import { sweepCompetition } from './competition'
+import { runContrastCheck } from './contrast-check'
+import { judgeOrder, measureKnownCases, HEADER_BAND } from './header-weight'
+import { formatRatio } from '../src/contrast/wcag'
+import { solidImage } from '../src/engine/__tests__/helpers'
 import { DURATIONS, measureEpicD, REFERENCE_DURATION } from './epic-d'
 import { auditConstructed, auditFindings, quantiles, thresholdPosition, type AuditResult } from './findings-audit'
 import { buildCrossvalReport } from './crossval-report'
@@ -27,7 +68,7 @@ import { diagnose } from './diagnose'
 import { buildDiagnoseReport } from './diagnose-report'
 import { METRIC_IDS, METRIC_LABELS } from './metrics/types'
 import { computeMeanMap, type MeanMap } from './mean-map'
-import { CENTER_BIAS_SIGMAS, meanMapPredictor, resolvePredictors } from './predictors'
+import { CENTER_BIAS_SIGMAS, heuristicPredictor, meanMapPredictor, resolvePredictors } from './predictors'
 import { buildReport, type UniformCheck } from './report'
 import { meanProfile, runEvaluation, spatialProfile, sweepCenterBias, worstCases, type PredictorResult } from './runner'
 import { renderTunedModule, tuneProfile, type TuneOutcome } from './tune'
@@ -117,7 +158,20 @@ function logTable(results: readonly PredictorResult[]): void {
 async function runEval(args: Args): Promise<number> {
   const setName = str(args, 'fixtures', 'ueyes-web')
   const split = str(args, 'set', 'test') as SplitName
-  const engine = str(args, 'engine', 'heuristic')
+  // Voreinstellung ist die **ausgelieferte** Konfiguration, nicht mehr die
+  // eingefrorene 1.0-Referenz.
+  //
+  // Bis 1.2 stand hier `'heuristic'`, und das hat das Regressions-Gate aus A-7
+  // wirkungslos gemacht: `heuristic-v1` ist als Baseline markiert, also fiel
+  // `primary` auf sie zurück, und das Gate schrieb ihren CC in die
+  // Referenzdatei (0,2981). Diese Zahl kann sich nicht ändern — die
+  // Konfiguration ist eingefroren. Das Gate hätte also **nie** ausgelöst,
+  // gleich was mit der ausgelieferten Engine passiert. Gemessen am selben
+  // Split: `hybrid-v1` liegt bei 0,4721.
+  //
+  // Dieselbe Fehlerklasse wie bei `cold-fold` und `flat`: eine Prüfung, die
+  // grün ist, weil sie das Falsche ansieht.
+  const engine = str(args, 'engine', ACTIVE_CONFIG_ID)
   const duration = num(args, 'duration', 3)
   const limit = args.limit ? num(args, 'limit', 0) : undefined
 
@@ -133,6 +187,29 @@ async function runEval(args: Args): Promise<number> {
         ? 'web'
         : undefined
   const predictors = resolvePredictors(engine, priorAsset)
+
+  // `--blend-gamma` verstellt die Tonkurve der ausgelieferten Konfiguration.
+  //
+  // Der Schalter existiert für **einen** Zweck: nachzuweisen, dass das
+  // Regressions-Gate überhaupt auslösen kann. Ein Gate, das nie rot wird, ist
+  // kein Gate — und genau das war es bis 1.2, weil es die eingefrorene
+  // Referenz bewachte. Dieselbe Lücke wie bei `cold-fold` und `flat`, drittes
+  // Vorkommen; deshalb ist die Erreichbarkeit jetzt ein Schritt in der CI.
+  if (typeof args['blend-gamma'] === 'string') {
+    const gamma = num(args, 'blend-gamma', 1)
+    for (const predictor of predictors) {
+      if (predictor.baseline) continue
+      const degraded = cloneParams(resolveParams(ACTIVE_CONFIG_ID))
+      degraded.blendGamma = gamma
+      const replacement = heuristicPredictor(ACTIVE_CONFIG_ID, DEFAULT_PROFILE, {
+        label: `${predictor.label} — ABSICHTLICH VERSTELLT, blendGamma ${gamma}`,
+        params: degraded,
+        ...(priorAsset ? { priorAsset } : {}),
+      })
+      predictors[predictors.indexOf(predictor)] = { ...replacement, id: predictor.id }
+    }
+    console.log(`ACHTUNG: blendGamma auf ${gamma} verstellt. Das ist kein Messlauf, sondern ein Selbsttest.`)
+  }
 
   // A-4, third baseline: the averaged ground truth of the *tuning* split.
   // Computed from tuning even when a different split is being scored, so the
@@ -457,6 +534,912 @@ async function runEpicD(args: Args): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// alpha — 1.2 A: how much the image analysis may count
+//
+//   npm run alpha
+//   npm run alpha -- --alphas 0.3,0.5,0.8,1.2,1.8,2.7 --extend
+//   npm run alpha -- --confirm            (der eine erlaubte Blick auf test)
+//
+// Läuft auf dem Tuning-Split, kreuzvalidiert, Ortsprior und Mean Map je Fold
+// neu geschätzt. `--confirm` ist ein eigener Schalter, weil der Test-Split
+// nicht nebenbei verbraucht werden darf.
+// ---------------------------------------------------------------------------
+
+const ALPHA_SETS: ReadonlyArray<{ setName: string; priorAsset: PriorAssetId }> = [
+  { setName: 'ueyes-web', priorAsset: 'web' },
+  { setName: 'ueyes-mobile', priorAsset: 'mobile' },
+]
+
+async function runAlpha(args: Args): Promise<number> {
+  const duration = num(args, 'duration', 3)
+  const folds = num(args, 'folds', 5)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+  const requested = typeof args.alphas === 'string' ? args.alphas.split(',').map(Number).filter(Number.isFinite) : undefined
+  const sets = typeof args.fixtures === 'string'
+    ? ALPHA_SETS.filter((entry) => (args.fixtures as string).split(',').includes(entry.setName))
+    : ALPHA_SETS
+
+  let alphas = requested ?? [...DEFAULT_ALPHAS]
+  const notes: string[] = []
+  const results: AlphaSweepResult[] = []
+
+  // `--confirm-only` überspringt den Sweep und macht ausschließlich den einen
+  // Blick auf den Test-Split. Der Sweep dauert eine halbe Stunde je Kategorie,
+  // und ihn allein für die Bestätigung zu wiederholen wäre kein zweites
+  // Ergebnis — sondern dasselbe, zweimal bezahlt.
+  if (args['confirm-only']) {
+    const chosen = num(args, 'chosen', Number.NaN)
+    if (!Number.isFinite(chosen)) {
+      console.error('--confirm-only braucht --chosen <α>: welcher Wert bestätigt werden soll.')
+      return 2
+    }
+    const referenceAlpha = num(args, 'reference', 0.3)
+    console.log(`Test-Split, einmalig: α = ${chosen} gegen α = ${referenceAlpha}.`)
+    const confirmations: TestConfirmation[] = []
+    for (const set of sets) {
+      const confirmation = await confirmOnTest({
+        setName: set.setName,
+        duration,
+        alphas: [chosen],
+        priorAsset: set.priorAsset,
+        referenceAlpha,
+      })
+      confirmations.push(confirmation)
+      console.log(`  ${set.setName}: ${confirmation.imageCount} Bilder`)
+      for (const alpha of confirmation.alphas) {
+        const metrics = confirmation.metrics.get(alpha)!
+        console.log(
+          `    α ${String(alpha).padEnd(4)} ` +
+            `${METRIC_IDS.map((id) => `${METRIC_LABELS[id]} ${metrics[id].mean.toFixed(3)}`).join('  ')}` +
+            `  Konz. ${confirmation.concentration.get(alpha)!.mean.toFixed(3)}`,
+        )
+      }
+      console.log(`    Ground-Truth-Konzentration ${confirmation.truthConcentration.mean.toFixed(3)}`)
+      for (const alpha of confirmation.alphas) {
+        if (alpha === referenceAlpha) continue
+        for (const delta of confirmation.paired.get(alpha)!) {
+          console.log(
+            `    Δ ${METRIC_LABELS[delta.metric].padEnd(9)} ${delta.mean >= 0 ? '+' : ''}${delta.mean.toFixed(4)}  ` +
+              `95%-KI [${delta.ci95[0].toFixed(4)}, ${delta.ci95[1].toFixed(4)}]  t=${delta.tStatistic.toFixed(1)}`,
+          )
+        }
+      }
+    }
+    const path = str(args, 'report', 'out/alpha-test-split.md')
+    writeFile(path, buildTestConfirmationSection(confirmations))
+    console.log('')
+    console.log(`Report: ${path}`)
+    return 0
+  }
+
+  for (let round = 0; ; round++) {
+    results.length = 0
+    for (const set of sets) {
+      console.log(`Alpha-Sweep "${set.setName}" / tuning / ${duration}s — α ∈ {${alphas.join(', ')}}, ${folds} Folds.`)
+      let last = 0
+      const result = await alphaSweep({
+        setName: set.setName,
+        duration,
+        folds,
+        alphas,
+        ...(limit ? { limit } : {}),
+        onProgress: (done, total) => {
+          if (done - last >= 25 || done === total) {
+            last = done
+            process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+          }
+        },
+      })
+      process.stdout.write(`\r  ${result.imageCount} Bilder out-of-sample bewertet     \n`)
+      printAlpha(result)
+      results.push(result)
+    }
+
+    // A2: „und weiter, falls die Kurve am Ende noch steigt".
+    // `--no-extend` landet als eigener Schlüssel im Parser, nicht als
+    // `extend: false` — dieselbe Schreibweise wie bei `--no-mean-map`.
+    if (args['no-extend'] === true || args.extend === false || round >= 2) break
+    const rising = new Set(results.flatMap((result) => stillRising(result)))
+    if (rising.size === 0) break
+    const next = extendedAlphas(alphas)
+    console.log('')
+    console.log(
+      `Die Kurve steigt am oberen Ende noch (${[...rising].map((id) => METRIC_LABELS[id]).join(', ')}) — ` +
+        `verlängert um α = ${next.join(', ')}.`,
+    )
+    notes.push(
+      `Der Sweep wurde verlängert: bei α = ${Math.max(...alphas)} stiegen ${[...rising]
+        .map((id) => METRIC_LABELS[id])
+        .join(', ')} gegenüber dem vorletzten Punkt noch über den Standardfehler hinaus.`,
+    )
+    alphas = [...alphas, ...next]
+  }
+
+  const reportPath = str(args, 'report', 'out/alpha.md')
+  let markdown = buildAlphaReport(results, timestamp(), notes)
+
+  if (args.confirm) {
+    const winners = results.map((result) => decisionFor(result).winner).filter((alpha): alpha is number => alpha !== null)
+    const chosen = num(args, 'chosen', winners.length > 0 ? Math.max(...winners) : results[0].referenceAlpha)
+    console.log('')
+    console.log(`Test-Split, einmalig: α = ${chosen} gegen α = ${results[0].referenceAlpha}.`)
+    const confirmations: TestConfirmation[] = []
+    for (const set of sets) {
+      const confirmation = await confirmOnTest({
+        setName: set.setName,
+        duration,
+        alphas: [chosen],
+        priorAsset: set.priorAsset,
+        referenceAlpha: results.find((result) => result.setName === set.setName)?.referenceAlpha ?? 0.3,
+      })
+      confirmations.push(confirmation)
+      console.log(`  ${set.setName}: ${confirmation.imageCount} Bilder`)
+      for (const alpha of confirmation.alphas) {
+        const metrics = confirmation.metrics.get(alpha)!
+        console.log(
+          `    α ${String(alpha).padEnd(4)} ${METRIC_IDS.map((id) => `${METRIC_LABELS[id]} ${metrics[id].mean.toFixed(3)}`).join('  ')}`,
+        )
+      }
+    }
+    markdown += '\n\n---\n\n' + buildTestConfirmationSection(confirmations)
+  }
+
+  writeFile(reportPath, markdown)
+  console.log('')
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+function printAlpha(result: AlphaSweepResult): void {
+  console.log('')
+  console.log(`  Konzentration (Top-5-%-Masse): Ground Truth ${result.truthConcentration.mean.toFixed(3)}`)
+  console.log(`  ${'α'.padEnd(6)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}${'Konz.'.padStart(10)}`)
+  for (const point of result.points) {
+    const cells = METRIC_IDS.map((id) => point.metrics[id].mean.toFixed(3).padStart(10)).join('')
+    console.log(`  ${String(point.alpha).padEnd(6)}${cells}${point.concentration.mean.toFixed(3).padStart(10)}`)
+  }
+  const meanMapCells = METRIC_IDS.map((id) => result.meanMap.metrics[id].mean.toFixed(3).padStart(10)).join('')
+  console.log(`  ${'Mean'.padEnd(6)}${meanMapCells}${result.meanMap.concentration.mean.toFixed(3).padStart(10)}`)
+  const decision = decisionFor(result)
+  console.log(
+    `  Bester Wert — ${DECISION_METRICS.map((id) => `${METRIC_LABELS[id]} α=${decision.best[id]}`).join(', ')}` +
+      `   (KL α=${decision.best.kl}, nicht Kriterium)`,
+  )
+  console.log('')
+}
+
+// ---------------------------------------------------------------------------
+// sharpness — 1.2 A6: die Nachbearbeitung, nicht das Mischungsverhältnis
+//
+//   npm run sharpness                 Stufe 1 und Stufe 2 nacheinander
+//   npm run sharpness -- --stage 1    nur die Einzelhebel
+// ---------------------------------------------------------------------------
+
+async function runSharpness(args: Args): Promise<number> {
+  const duration = num(args, 'duration', 3)
+  const folds = num(args, 'folds', 5)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+  const stage = num(args, 'stage', 0)
+  const sets = typeof args.fixtures === 'string'
+    ? ALPHA_SETS.filter((entry) => (args.fixtures as string).split(',').includes(entry.setName))
+    : ALPHA_SETS
+
+  const runStage = async (variants: readonly Variant[], title: string): Promise<SharpnessResult[]> => {
+    const out: SharpnessResult[] = []
+    for (const set of sets) {
+      console.log(`${title} — "${set.setName}", ${variants.length} Varianten, ${folds} Folds.`)
+      let last = 0
+      const result = await sharpnessSweep({
+        setName: set.setName,
+        duration,
+        folds,
+        variants,
+        ...(limit ? { limit } : {}),
+        onProgress: (done, total) => {
+          if (done - last >= 25 || done === total) {
+            last = done
+            process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+          }
+        },
+      })
+      process.stdout.write(`\r  ${result.imageCount} Bilder out-of-sample bewertet     \n`)
+      printSharpness(result)
+      out.push(result)
+    }
+    return out
+  }
+
+  const stageOne = await runStage(stageOneVariants(), 'Stufe 1')
+  writeFile(str(args, 'report', 'out/schaerfe-stufe1.md'), buildSharpnessReport(stageOne, 'Stufe 1 — ein Hebel nach dem anderen', timestamp()))
+  console.log(`Report: ${str(args, 'report', 'out/schaerfe-stufe1.md')}`)
+  if (stage === 1) return 0
+
+  const two = stageTwoVariants(stageOne)
+  if (two.length <= 1) {
+    console.log('')
+    console.log('Kein Hebel hat Stufe 1 überstanden — keine Kombination zu prüfen. Das ist ein Ergebnis.')
+    return 0
+  }
+  console.log('')
+  const stageTwo = await runStage(two, 'Stufe 2')
+  const path2 = str(args, 'report2', 'out/schaerfe-stufe2.md')
+  writeFile(path2, buildSharpnessReport(stageTwo, 'Stufe 2 — Kombinationen', timestamp()))
+  console.log(`Report: ${path2}`)
+  return 0
+}
+
+function printSharpness(result: SharpnessResult): void {
+  const basis = result.points.find((point) => point.variant.id === 'basis')
+  console.log('')
+  console.log(`  Konzentration Ground Truth ${result.truthConcentration.mean.toFixed(3)}`)
+  console.log(`  ${'Hebel'.padEnd(12)}${'Wert'.padEnd(24)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(9)).join('')}${'Konz.'.padStart(9)}   Urteil`)
+  for (const point of result.points) {
+    const cells = METRIC_IDS.map((id) => point.metrics[id].mean.toFixed(3).padStart(9)).join('')
+    const verdict = point.variant.id === 'basis' ? '—' : verdictOf(point)
+    console.log(
+      `  ${point.variant.lever.padEnd(12)}${point.variant.label.slice(0, 23).padEnd(24)}${cells}` +
+        `${point.concentration.mean.toFixed(3).padStart(9)}   ${verdict}`,
+    )
+  }
+  if (basis) console.log(`  (Ist-Zustand Konzentration ${basis.concentration.mean.toFixed(3)})`)
+  console.log('')
+}
+
+// ---------------------------------------------------------------------------
+// groups — 1.2 A7: wirkt blendGamma auf beide Hälften des Datensatzes gleich?
+//
+//   npm run groups -- --gammas 0.3,1.6,2.0
+// ---------------------------------------------------------------------------
+
+async function runGroups(args: Args): Promise<number> {
+  const duration = num(args, 'duration', 3)
+  const folds = num(args, 'folds', 5)
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+  const blendGammas = typeof args.gammas === 'string'
+    ? args.gammas.split(',').map(Number).filter(Number.isFinite)
+    : [0.3, 1.6, 2.0]
+  const sets = typeof args.fixtures === 'string'
+    ? ALPHA_SETS.filter((entry) => (args.fixtures as string).split(',').includes(entry.setName))
+    : ALPHA_SETS
+
+  const results: GroupSweepResult[] = []
+  for (const set of sets) {
+    console.log(`Gruppen-Sweep "${set.setName}" — blendGamma ∈ {${blendGammas.join(', ')}}, ${folds} Folds.`)
+    console.log('  Die Gruppen werden EINMAL im Zustand vor der Schärfe-Änderung bestimmt und dann festgehalten.')
+    let last = 0
+    const result = await groupSweep({
+      setName: set.setName,
+      duration,
+      folds,
+      blendGammas,
+      ...(limit ? { limit } : {}),
+      onProgress: (done, total) => {
+        if (done - last >= 25 || done === total) {
+          last = done
+          process.stdout.write(`\r  ${done}/${total} Bilder …   `)
+        }
+      },
+    })
+    process.stdout.write(`\r  ${result.imageCount} Bilder bewertet          \n`)
+    printGroups(result)
+    results.push(result)
+  }
+
+  writeFile(str(args, 'report', 'out/gruppen.md'), buildGroupReport(results, timestamp()))
+  console.log(`Report: ${str(args, 'report', 'out/gruppen.md')}`)
+  return 0
+}
+
+function printGroups(result: GroupSweepResult): void {
+  for (const group of result.groups) {
+    console.log('')
+    console.log(
+      `  ${GROUP_LABELS[group.group]} — ${group.imageCount} Bilder, ` +
+        `Konzentration der Ground Truth ${group.truthConcentration.mean.toFixed(3)}`,
+    )
+    console.log(`  ${'γ'.padEnd(6)}${METRIC_IDS.map((id) => METRIC_LABELS[id].padStart(10)).join('')}${'Konz.'.padStart(10)}   ΔCC gegen γ=1`)
+    for (const point of group.points) {
+      const cells = METRIC_IDS.map((id) => point.metrics[id].mean.toFixed(3).padStart(10)).join('')
+      const delta = point.versusNoGamma.cc
+      const verdict = point.blendGamma === 1 ? '' : `   ${delta.mean >= 0 ? '+' : ''}${delta.mean.toFixed(4)} [${delta.ci95[0].toFixed(4)}, ${delta.ci95[1].toFixed(4)}]`
+      console.log(`  ${String(point.blendGamma).padEnd(6)}${cells}${point.concentration.mean.toFixed(3).padStart(10)}${verdict}`)
+    }
+  }
+  console.log('')
+}
+
+function buildGroupReport(results: readonly GroupSweepResult[], generatedAt: string): string {
+  const lines: string[] = []
+  lines.push('# Wirkt `blendGamma` auf beide Hälften des Datensatzes gleich? (1.2 A7)')
+  lines.push('')
+  lines.push(`Erzeugt: ${generatedAt}`)
+  lines.push('')
+  lines.push(
+    'Die Gruppen kommen aus der Mean-Map-Diagnose: **Gewinner** sind die Screens, auf denen die Vorhersage die ' +
+      '(fold-eigene) Mean Map in CC schlägt, **Verlierer** die übrigen. Sie werden **einmal** im Zustand vor der ' +
+      'Schärfe-Änderung bestimmt und für jeden Gamma-Wert unverändert verwendet — würde die Zugehörigkeit ' +
+      'mitwandern, verglichen man zwei Populationen statt zwei Konfigurationen.',
+  )
+  lines.push('')
+  lines.push(
+    '**Warum das zählt:** die Gewinner sind die Minderheit, für die das Plugin existiert. Auf einem Screen, dessen ' +
+      'Aufmerksamkeit schon aus der Position folgt, trägt die Bildanalyse nichts bei. Ein Parameter, der den ' +
+      'Mittelwert hebt, indem er die Mehrheit verbessert und die Minderheit verschlechtert, verbessert die Zahl ' +
+      'und verschlechtert das Produkt.',
+  )
+  lines.push('')
+
+  for (const result of results) {
+    lines.push('---')
+    lines.push('')
+    lines.push(`## ${result.setName} — ${result.imageCount} Bilder`)
+    lines.push('')
+    for (const group of result.groups) {
+      lines.push(`### ${GROUP_LABELS[group.group]}`)
+      lines.push('')
+      lines.push(
+        `${group.imageCount} Bilder (${((group.imageCount / result.imageCount) * 100).toFixed(1).replace('.', ',')} %). ` +
+          `Konzentration der **Ground Truth**: ${group.truthConcentration.mean.toFixed(3)} ` +
+          `(Median ${group.truthConcentrationQuantiles[2].toFixed(3)}). ` +
+          `Vorsprung gegen die Mean Map im Referenzzustand: ${group.referenceMargin.mean >= 0 ? '+' : ''}${group.referenceMargin.mean.toFixed(4)} CC.`,
+      )
+      lines.push('')
+      lines.push('| γ | AUC | CC | NSS | KL | Konzentration | ΔCC gegen γ = 1 | ΔNSS | Urteil (CC) |')
+      lines.push('|---|---:|---:|---:|---:|---:|---:|---:|---|')
+      for (const point of group.points) {
+        const cells = METRIC_IDS.map((id) => point.metrics[id].mean.toFixed(3))
+        const cc = point.versusNoGamma.cc
+        const nss = point.versusNoGamma.nss
+        const verdict =
+          point.blendGamma === 1
+            ? '—'
+            : cc.ci95[0] > 0
+              ? '**besser**'
+              : cc.ci95[1] < 0
+                ? '**schlechter**'
+                : 'nicht unterscheidbar'
+        const fmtDelta = (d: { mean: number; ci95: [number, number] }): string =>
+          point.blendGamma === 1 ? '—' : `${d.mean >= 0 ? '+' : ''}${d.mean.toFixed(4)}`
+        lines.push(
+          `| ${point.blendGamma}${point.blendGamma === 1 ? ' (Referenz)' : ''} | ${cells.join(' | ')} | ` +
+            `${point.concentration.mean.toFixed(3)} | ${fmtDelta(cc)} | ${fmtDelta(nss)} | ${verdict} |`,
+        )
+      }
+      lines.push('')
+    }
+  }
+  return lines.join('\n')
+}
+
+// ---------------------------------------------------------------------------
+// visual-check — 1.2 A4: die zwei Prüffälle am Onboarding-Screen
+//
+//   npm run visual-check -- --alphas 0.3,0.5
+// ---------------------------------------------------------------------------
+
+async function runVisualCheckCommand(args: Args): Promise<number> {
+  const alphas = typeof args.alphas === 'string'
+    ? args.alphas.split(',').map(Number).filter(Number.isFinite)
+    : [0.3, 0.5, 0.8, 1.2]
+
+  // `--sharp` stellt statt des Alpha-Sweeps die Schärfe-Kandidaten nebeneinander:
+  // Ist-Zustand gegen die Varianten, die `npm run sharpness` übrig gelassen hat.
+  const variants: CheckVariant[] = typeof args.sharp === 'string' ? sharpnessVariants(args.sharp) : alphaVariants(alphas)
+  console.log(
+    typeof args.sharp === 'string'
+      ? `Prüffall Onboarding-Screen 393 x 852 — Schärfe-Varianten: ${variants.map((v) => v.label).join(', ')}`
+      : `Prüffall Onboarding-Screen 393 x 852 — α ∈ {${alphas.join(', ')}}`,
+  )
+  console.log('KONSTRUIERT, nicht beobachtet: der Screen prüft zwei Fragen mit bekannter Antwort.')
+  console.log('Keine Zahl von hier gehört in eine Feuerrate oder in einen Metrik-Vergleich.')
+  const result = await runVisualCheck({ variants })
+
+  for (const region of result.regions) {
+    console.log('')
+    console.log(`${region.label} — ${region.question}`)
+    console.log(
+      `  ${'Variante'.padEnd(22)}${'Mittel'.padStart(9)}${'Spitze'.padStart(9)}${'Perzentil'.padStart(11)}` +
+        `${'Deckkraft'.padStart(11)}${'(alt)'.padStart(8)}   Farbe der Spitze`,
+    )
+    for (const picture of result.pictures) {
+      const measurement = picture.measurements.find((entry) => entry.regionId === region.id)!
+      console.log(
+        `  ${picture.label.slice(0, 21).padEnd(22)}${measurement.mean.toFixed(3).padStart(9)}` +
+          `${measurement.max.toFixed(3).padStart(9)}${(measurement.percentileOfMax * 100).toFixed(1).padStart(10)} %` +
+          `${(measurement.opacityShipped * 100).toFixed(0).padStart(10)} %${(measurement.opacityOldCutoff * 100).toFixed(0).padStart(7)} %   ` +
+          measurement.bandOfMax,
+      )
+    }
+  }
+
+  console.log('')
+  console.log('Rang des CTA unter den Klick-Kandidaten:')
+  for (const picture of result.pictures) {
+    console.log(`  ${picture.label.padEnd(22)} Rang ${picture.ctaRank ?? '—'} von ${picture.candidateCount}`)
+  }
+
+  const target = str(args, 'out', 'out/a4-onboarding.png')
+  writeFile(target, result.sheet)
+  console.log('')
+  console.log(`Bild: ${target}  (links das Original, danach je Variante eine Spalte)`)
+  return 0
+}
+
+/**
+ * Spalten für `--sharp`: eine Kommaliste von Varianten-Ids aus dem
+ * Schärfe-Sweep (`eval/sharpness.ts`), immer mit dem Ist-Zustand voran.
+ *
+ * Damit zeigt der Prüfbogen dieselben Konfigurationen, über die die Zahlen
+ * entschieden haben — und nicht eine, die nur ähnlich aussieht.
+ */
+function sharpnessVariants(ids: string): CheckVariant[] {
+  const all = [...stageOneVariants(), beforeSharpnessVariant()]
+  const wanted = ids.split(',').map((id) => id.trim())
+  const out: CheckVariant[] = [{ label: 'Ist-Zustand', params: baseParams() }]
+  for (const id of wanted) {
+    const variant = all.find((entry) => entry.id === id)
+    if (!variant) throw new Error(`Unbekannte Schärfe-Variante "${id}". Verfügbar: ${all.map((entry) => entry.id).join(', ')}`)
+    out.push({ label: `${variant.lever} ${variant.label}`, params: variant.params })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// cutoff — 1.2 A8: die Transparenzschwelle auf die neue Verteilung nachziehen
+//
+//   npm run cutoff -- --limit 150
+// ---------------------------------------------------------------------------
+
+async function runCutoff(args: Args): Promise<number> {
+  const duration = num(args, 'duration', 3)
+  const limit = args.limit ? num(args, 'limit', 0) : 150
+  const sets = typeof args.fixtures === 'string'
+    ? ALPHA_SETS.filter((entry) => (args.fixtures as string).split(',').includes(entry.setName))
+    : ALPHA_SETS
+
+  console.log(`Transparenzschwelle nachziehen — Regel: derselbe **Anteil** der Karte bleibt verdeckt.`)
+  for (const set of sets) {
+    let last = 0
+    const result = await measureCutoff({
+      setName: set.setName,
+      duration,
+      limit,
+      onProgress: (done, total) => {
+        if (done - last >= 25 || done === total) {
+          last = done
+          process.stdout.write(`\r  ${set.setName}: ${done}/${total} Bilder …   `)
+        }
+      },
+    })
+    process.stdout.write(`\r  ${set.setName}: ${result.imageCount} Bilder                \n`)
+    console.log(
+      `    alte Schwelle ${result.oldCutoff} verdeckte ${(result.hiddenShare.mean * 100).toFixed(1)} % der Karte, ` +
+        `Rampenende ${result.oldRampEnd.toFixed(2)} bei ${(result.rampedShare.mean * 100).toFixed(1)} %`,
+    )
+    console.log(
+      `    dieselbe Schwelle verdeckt auf der neuen Karte ${(result.hiddenShareUnchanged.mean * 100).toFixed(1)} %`,
+    )
+    console.log(
+      `    gleicher Anteil ⇒ neue Schwelle ${result.newCutoff.mean.toFixed(3)} ± ${result.newCutoff.se.toFixed(4)}, ` +
+        `neues Rampenende ${result.newRampEnd.mean.toFixed(3)} ± ${result.newRampEnd.se.toFixed(4)}`,
+    )
+  }
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// side-effects — 1.2 A5: Feuerraten der ausgelieferten Regeln vor und nach
+// einer Änderung an blendAlpha
+//
+//   npm run side-effects -- --before 0.3 --after 0.5
+// ---------------------------------------------------------------------------
+
+async function runSideEffects(args: Args): Promise<number> {
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+  const ruleIds = args.rules === 'all' ? ALL_RULE_IDS : SHIPPED_RULES
+
+  // Zwei Wege, eine Seite zu beschreiben: ein Alpha-Wert (`--before/--after`)
+  // oder eine Varianten-Id aus dem Schärfe-Sweep (`--before-variant` …). Beides
+  // landet in demselben `EngineParams` — die Messung kennt nur Parameter.
+  const sideFor = (alphaKey: string, variantKey: string, fallbackAlpha: number): { label: string; params: EngineParams } => {
+    if (typeof args[variantKey] === 'string') {
+      const id = args[variantKey]
+      if (id === 'basis') return { label: 'Ist-Zustand', params: baseParams() }
+      const variant = [...stageOneVariants(), beforeSharpnessVariant()].find((entry) => entry.id === id)
+      if (!variant) throw new Error(`Unbekannte Variante "${id}"`)
+      return { label: `${variant.lever} ${variant.label}`, params: variant.params }
+    }
+    const alpha = num(args, alphaKey, fallbackAlpha)
+    const params = baseParams()
+    params.blendAlpha = alpha
+    return { label: `α = ${String(alpha).replace('.', ',')}`, params }
+  }
+
+  const before = sideFor('before', 'before-variant', 0.3)
+  const after = sideFor('after', 'after-variant', 0.5)
+
+  console.log(`Feuerraten: ${before.label} gegen ${after.label}, ${ruleIds.length} Regeln.`)
+  const result = await measureSideEffects({
+    before,
+    after,
+    ruleIds,
+    ...(args['mobile-viewport'] ? { mobileViewport: num(args, 'mobile-viewport', 400) } : {}),
+    ...(limit ? { limit } : {}),
+    onProgress: (message) => console.log(`  ${message} …`),
+  })
+
+  console.log('')
+  for (const ruleId of ruleIds) {
+    console.log(`${ruleId}`)
+    for (const entry of result.before.entries.filter((item) => item.ruleId === ruleId)) {
+      const other = result.after.entries.find((item) => item.ruleId === ruleId && item.population === entry.population)
+      const rate = (value: number | null): string => (value === null ? '     —' : `${(value * 100).toFixed(1).padStart(6)}%`)
+      console.log(
+        `  ${entry.population.padEnd(46)} ${rate(entry.rate)} → ${rate(other?.rate ?? null)}` +
+          `   (${entry.evaluated} bewertet, ${entry.blocked} blockiert)`,
+      )
+    }
+  }
+
+  const notes: string[] = []
+  if (limit) notes.push(`Auf ${limit} Bilder je echter Population begrenzt (\`--limit\`) — keine Abnahmezahl.`)
+  const reportPath = str(args, 'report', 'out/a5-nebenwirkungen.md')
+  writeFile(reportPath, buildSideEffectReport(result, timestamp(), notes))
+  console.log('')
+  console.log(`Report: ${reportPath}`)
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// band-gate — verändert eine Inhaltsschwelle im Renderer echte Screens?
+//
+//   npm run band-gate
+// ---------------------------------------------------------------------------
+
+async function runBandGate(args: Args): Promise<number> {
+  const candidates: ThresholdCandidate[] = typeof args.candidates === 'string'
+    ? args.candidates.split(',').map((entry) => {
+        const [cutoff, ramp] = entry.split('/').map(Number)
+        return { cutoff, ramp: ramp ?? cutoff }
+      })
+    : [
+        { cutoff: 0.005, ramp: 0.01 },
+        { cutoff: 0.01, ramp: 0.02 },
+        { cutoff: 0.02, ramp: 0.04 },
+        { cutoff: 0.05, ramp: 0.05 },
+      ]
+
+  console.log('Inhaltsschwelle im Renderer — verändert sie die Ausgabe auf echten Screens?')
+  console.log('Das ist eine Falsifikation: wenn ja, ist der Vorschlag erledigt.')
+  const allContentLevels: number[] = []
+  for (const set of [{ setName: 'gate-web', priorAsset: 'web' as const }, { setName: 'gate-mobile', priorAsset: 'mobile' as const }]) {
+    const result = await measureBandGate({ ...set, candidates })
+    console.log('')
+    console.log(`${result.setName}: ${result.imageCount} Bilder`)
+    console.log(`  Bildanteil, Quantile p1/p5/p10/p25/p50: ${result.imageTermQuantiles.map((v) => v.toFixed(4)).join(' / ')}`)
+    console.log(`  ${'Schwelle'.padEnd(16)}${'Pixel verändert'.padStart(17)}${'sichtbar verloren'.padStart(19)}${'max Δ'.padStart(9)}${'Bilder'.padStart(9)}`)
+    for (const entry of result.candidates) {
+      console.log(
+        `  ${`${entry.candidate.cutoff} / ${entry.candidate.ramp}`.padEnd(16)}` +
+          `${(entry.changedShare * 100).toFixed(3).padStart(15)} %` +
+          `${(entry.lostVisibleShare * 100).toFixed(3).padStart(17)} %` +
+          `${entry.maxDelta.toFixed(3).padStart(9)}` +
+          `${String(entry.imagesAffected).padStart(7)}/${result.imageCount}`,
+      )
+    }
+    allContentLevels.push(...result.contentLevels)
+    console.log(
+      `  Frame-Mittelwert des Bildanteils: min ${Math.min(...result.contentLevels).toFixed(4)}, ` +
+        `p25 ${result.contentLevels[Math.floor(result.contentLevels.length * 0.25)].toFixed(4)}, ` +
+        `Median ${result.contentLevels[Math.floor(result.contentLevels.length * 0.5)].toFixed(4)}`,
+    )
+  }
+
+  // Der Gegenpol: ein Frame ohne jeden Inhalt. Ohne diesen Wert sagt die
+  // Verteilung oben nichts darüber, ob eine Schwelle überhaupt trennt.
+  const grey = solidImage(720, 2000, [180, 180, 180])
+  const greyAnalysis = await analyzeFrame(new HeuristicAttentionEngine(), nodeImageOps, {
+    source: grey,
+    signals: [],
+    frameWidth: 1440,
+    frameHeight: 4000,
+  })
+  console.log('')
+  console.log(`Grauer Testframe (1440 x 4000, ohne Inhalt): ${greyAnalysis?.contentLevel.toFixed(6)}`)
+  console.log(`Niedrigster Wert unter den 40 Gate-Bildern:  ${Math.min(...allContentLevels).toFixed(6)}`)
+  console.log(`Ausgelieferte Schwelle:                      ${ENGINE_CONFIG.findings.lowContentLevel}`)
+  const wouldFire = allContentLevels.filter((value) => value < ENGINE_CONFIG.findings.lowContentLevel).length
+  console.log(
+    wouldFire === 0
+      ? `Der Hinweis erscheint auf keinem der ${allContentLevels.length} Gate-Bilder. Bedingung erfüllt.`
+      : `ACHTUNG: der Hinweis erschiene auf ${wouldFire} der ${allContentLevels.length} Gate-Bilder.`,
+  )
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// cold-fold — 1.2 B: die Schwelle je UI-Typ
+//
+//   npm run cold-fold
+// ---------------------------------------------------------------------------
+
+async function runColdFold(): Promise<number> {
+  // Die Referenz, gegen die die Verteilungen gelesen werden: der web-Wert. Er
+  // ist der einzige, der je an Daten geschätzt wurde.
+  const shippedMargin = ENGINE_CONFIG.findings.coldFoldMargin.web
+  console.log('cold-fold: Verteilung der Entscheidungsgröße je UI-Typ.')
+  console.log('Kalibriert wird auf Vergleichbarkeit, nicht gegen eine Wahrheit — es gibt keine.')
+  const result = await measureColdFold({ onProgress: (message) => console.log(`  ${message} …`) })
+
+  console.log('')
+  for (const measurement of result.measurements) {
+    console.log(
+      `${measurement.population.id}: ${measurement.evaluated} bewertet, ${measurement.blocked} blockiert, ` +
+        `Rate heute ${(measurement.currentRate * 100).toFixed(1)} %`,
+    )
+    console.log(`  Dezile: ${measurement.deciles.map((v) => v.toFixed(3)).join(' ')}`)
+    console.log(
+      `  die ausgelieferte Schwelle ${shippedMargin} sitzt bei p${(measurement.currentThresholdQuantile * 100).toFixed(0)}`,
+    )
+  }
+
+  console.log('')
+  console.log(`Anker: p${(result.anchorQuantile * 100).toFixed(0)} — die Stelle, an der die heutige Schwelle in web sitzt.`)
+  console.log(`${'UI-Typ'.padEnd(10)}${'Schwelle'.padStart(10)}${'Rate'.padStart(9)}`)
+  for (const id of Object.keys(result.proposed)) {
+    console.log(`${id.padEnd(10)}${result.proposed[id].toFixed(3).padStart(10)}${`${(result.proposedRate[id] * 100).toFixed(1)} %`.padStart(9)}`)
+  }
+  console.log('')
+  console.log('Das Perzentil selbst ist NICHT kalibriert — es ist aus dem ausgelieferten Zustand übernommen.')
+  console.log('Ob ein Befund auf so vielen Screens erscheinen soll, ist eine Produktfrage.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// finding-load — wie viele Befunde bekommt ein Screen, und warum ist cta-rank
+// der Ausreißer?
+//
+//   npm run finding-load
+// ---------------------------------------------------------------------------
+
+async function runFindingLoad(args: Args): Promise<number> {
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log('Befunde pro Screen — gezählt wird, was das Panel zeigt: nur ausgelieferte Regeln.')
+  console.log('')
+  console.log('MIT Layer-Baum (konstruiert) — die einzigen Populationen, auf denen der')
+  console.log('vollständige Regelsatz laufen kann. Eine Figma-Datei hat immer Ebenen.')
+  const withLayers = await measureFindingLoad({
+    populations: LOAD_POPULATIONS_WITH_LAYERS,
+    onProgress: (m) => console.log(`  ${m} …`),
+  })
+  printLoad(withLayers)
+
+  const onboarding = await onboardingFindings()
+  console.log('')
+  console.log(`Onboarding-Nachbau (393 x 852, ${onboarding.candidateCount} Kandidaten): ${onboarding.findings.length} Befunde`)
+  for (const finding of onboarding.findings) console.log(`    ${finding}`)
+
+  console.log('')
+  console.log('OHNE Layer-Baum (UEyes) — dieselbe Messung ohne cta-rank, die Regel braucht')
+  console.log('Kandidaten. Diese Zahlen UNTERSCHÄTZEN die Befundlast systematisch.')
+  const results = await measureFindingLoad({ populations: LOAD_POPULATIONS, ...(limit ? { limit } : {}), onProgress: (m) => console.log(`  ${m} …`) })
+
+  printLoad(results)
+
+  console.log('')
+  console.log('cta-rank: was macht die Regel so häufig?')
+  console.log('Der Verdacht ist der Generator — `layoutFor` stellt den CTA in 2 von 3 Varianten nach unten.')
+  await printAgainstConstruction('cta-rank')
+
+  console.log('')
+  console.log('cta-below-fold nach dem Umbau auf localMean — dieselbe bekannte Antwort.')
+  console.log('Die Regel meldet jetzt den Kandidaten, der SEINEN Ausschnitt anführt.')
+  await printAgainstConstruction('cta-below-fold')
+  return 0
+}
+
+async function printAgainstConstruction(ruleId: string): Promise<void> {
+  for (const analysis of await analyseAgainstConstruction(ruleId)) {
+    const m = analysis.matrix
+    console.log('')
+    console.log(`  ${analysis.shapeLabel} — Rate ${(analysis.rate * 100).toFixed(1)} %`)
+    console.log(`    CTA unten,  Regel feuert   ${String(m.bottomFired).padStart(3)}`)
+    console.log(`    CTA unten,  Regel schweigt ${String(m.bottomSilent).padStart(3)}`)
+    console.log(`    CTA oben,   Regel feuert   ${String(m.topFired).padStart(3)}`)
+    console.log(`    CTA oben,   Regel schweigt ${String(m.topSilent).padStart(3)}`)
+    console.log(`    Übereinstimmung mit dem Aufbau: ${(analysis.agreement * 100).toFixed(1)} %`)
+  }
+}
+
+function printLoad(results: Awaited<ReturnType<typeof measureFindingLoad>>): void {
+  for (const result of results) {
+    console.log('')
+    console.log(`${result.population.label} — ${result.imageCount} Screens, Ø ${result.mean.toFixed(2)} Befunde`)
+    const width = Math.max(result.histogram.length, 1)
+    console.log(`  ${'Befunde'.padEnd(10)}${Array.from({ length: width }, (_, i) => String(i).padStart(8)).join('')}`)
+    console.log(`  ${'Screens'.padEnd(10)}${result.histogram.map((count) => String(count).padStart(8)).join('')}`)
+    console.log(
+      `  ${'Anteil'.padEnd(10)}${result.histogram
+        .map((count) => `${((count / result.imageCount) * 100).toFixed(1)} %`.padStart(8))
+        .join('')}`,
+    )
+    const rules = Object.keys(result.perRule).sort((a, b) => result.perRule[b] - result.perRule[a])
+    for (const rule of rules) {
+      console.log(
+        `    ${rule.padEnd(16)} auf ${((result.perRule[rule] / result.imageCount) * 100).toFixed(1).padStart(5)} % der Screens sichtbar`,
+      )
+    }
+    for (const [rule, count] of Object.entries(result.blockedPerRule)) {
+      if (count === result.imageCount) console.log(`    ${rule.padEnd(16)} auf allen Screens strukturell blockiert`)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// competition — 1.2 B1: nach der Umstellung des Abstandsmaßes neu kalibrieren
+//
+//   npm run competition
+// ---------------------------------------------------------------------------
+
+async function runCompetition(args: Args): Promise<number> {
+  const distances = typeof args.distances === 'string'
+    ? args.distances.split(',').map(Number).filter(Number.isFinite)
+    : [0.15, 0.2, 0.25, 0.3, 0.35]
+  const limit = args.limit ? num(args, 'limit', 0) : undefined
+
+  console.log('competition — Abstand jetzt als Anteil der DIAGONALE. Alle alten Quoten sind ungültig.')
+  console.log(`Ausgeliefert: Abstand ${ENGINE_CONFIG.findings.competitionMinDistanceDiagonal}, Tal ${ENGINE_CONFIG.findings.competitionValleyRatio}, Intensität ${ENGINE_CONFIG.findings.competitionIntensity}`)
+  const results = await sweepCompetition({ distances, ...(limit ? { limit } : {}), onProgress: (m) => console.log(`  ${m} …`) })
+
+  for (const result of results) {
+    console.log('')
+    console.log(`${result.population.label} — ${result.frameCount} Frames`)
+    console.log(`  ${'Abstand'.padEnd(9)}${'2. Max'.padStart(9)}${'Tal p5'.padStart(9)}${'Median'.padStart(9)}${'p95'.padStart(9)}${'Schwelle'.padStart(10)}${'Rate'.padStart(9)}`)
+    for (const point of result.points) {
+      console.log(
+        `  ${String(point.distance).padEnd(9)}` +
+          `${point.secondPeakQuantiles[2].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[0].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[2].toFixed(3).padStart(9)}` +
+          `${point.valleyQuantiles[4].toFixed(3).padStart(9)}` +
+          `${`p${(point.valleyThresholdQuantile * 100).toFixed(0)}`.padStart(10)}` +
+          `${`${(point.rate * 100).toFixed(1)} %`.padStart(9)}`,
+      )
+    }
+  }
+  console.log('')
+  console.log('„Schwelle" ist die Stelle, an der competitionValleyRatio in der Talverteilung sitzt.')
+  console.log('Liegt sie bei p0 oder p100, kann die Regel nur nie oder immer feuern.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// contrast-check — 1.2 C: die Contrastmap auf zwei Frames
+//
+//   npm run contrast-check
+// ---------------------------------------------------------------------------
+
+function runContrastCheckCommand(args: Args): number {
+  console.log('Contrastmap auf zwei Frames. Diese Werte sind nachmessbar — keine Vorhersage.')
+  for (const result of runContrastCheck()) {
+    console.log('')
+    console.log(`${result.label} — ${result.results.length} Textelemente gemessen, ${result.skipped.length} übersprungen`)
+    // Angezeigt **und** roh: die angezeigte Zahl ist das, was der Nutzer sieht
+    // und wonach er das Urteil beurteilt; der Rohwert ist das, was er beim
+    // Nachrechnen bekommt. Beide zu zeigen ist der Sinn dieses Werkzeugs.
+    console.log(
+      `  ${'Status'.padEnd(15)}${'angezeigt'.padStart(11)}${'roh'.padStart(11)}${'gefordert'.padStart(11)}` +
+        `${'Grund ~'.padStart(10)}${'Näherung'.padStart(10)}   Text`,
+    )
+    for (const entry of result.results) {
+      // Die gemessene Hintergrundfarbe steht dabei: ohne sie ist „dieser Wert
+      // kann nicht stimmen" nicht entscheidbar.
+      const grey = Math.round(Math.pow(entry.backgroundLuminance, 1 / 2.2) * 255)
+      console.log(
+        `  ${entry.status.padEnd(15)}${formatRatio(entry.ratio).padStart(11)}${entry.ratio.toFixed(4).padStart(11)}` +
+          `${entry.required.toFixed(1).padStart(11)}${`~${grey.toString(16).padStart(2, '0').repeat(3)}`.padStart(10)}` +
+          `${(entry.approximate ? 'ja' : '—').padStart(10)}   ${entry.text.slice(0, 36)}`,
+      )
+    }
+    for (const entry of result.skipped) console.log(`  übersprungen: ${entry.nodeId} — ${entry.reason}`)
+    if (result.nonText.length > 0) {
+      console.log('')
+      console.log(`  WCAG 1.4.11 — ${result.nonText.length} Elemente im Prüfumfang, ${result.nonTextReported.length} gemeldet`)
+      console.log(`  ${'Grund'.padEnd(14)}${'ausgeliefert'.padStart(13)}${'Wert'.padStart(8)}${'Label?'.padStart(8)}   Element`)
+      for (const entry of result.nonText) {
+        console.log(
+          `  ${entry.reason.padEnd(14)}${(entry.shipped ? 'ja' : 'nein').padStart(13)}` +
+            `${entry.ratio.toFixed(2).padStart(8)}${(entry.identifiableByText ? 'ja' : '—').padStart(8)}   ${entry.name.slice(0, 32)}`,
+        )
+      }
+    }
+
+    const target = `${str(args, 'out', 'out/contrast')}-${result.id}.png`
+    writeFile(target, result.png)
+    console.log(`  Bild: ${target}`)
+    const failed = result.results.filter((entry) => entry.status === 'durchgefallen')
+    if (failed.length > 0) {
+      console.log('  Befunde, wie sie im Panel stehen:')
+      for (const entry of failed) console.log(`    ${contrastText(result, entry.nodeId)}`)
+    }
+  }
+  return 0
+}
+
+function contrastText(result: ReturnType<typeof runContrastCheck>[number], nodeId: string): string {
+  const index = result.results.findIndex((entry) => entry.nodeId === nodeId)
+  return index >= 0 ? result.findings[index] : ''
+}
+
+// ---------------------------------------------------------------------------
+// header-weight — 1.2 B2, Schritt 1: taugt die Größe überhaupt?
+//
+//   npm run header-weight
+//
+// Prüft VOR jeder Kalibrierung an Fällen mit bekannter Antwort. Stimmt die
+// Ordnung nicht, wird die Regel nicht gebaut.
+// ---------------------------------------------------------------------------
+
+async function runHeaderWeight(): Promise<number> {
+  console.log(`B2, Schritt 1 — „Kopfbereich stärker als Inhalt", Band = obere ${(HEADER_BAND * 100).toFixed(0)} %.`)
+  console.log('Gemessen auf dem BILDANTEIL, nicht auf der fertigen Karte und nicht auf sectionSalience.')
+  console.log('Diese Messung entscheidet, ob die Regel gebaut wird — vor jeder Schwelle.')
+  console.log('')
+
+  const measurements = await measureKnownCases()
+  console.log(`  ${'Fall'.padEnd(38)}${'erwartet'.padStart(13)}${'Bildanteil'.padStart(12)}${'fertige Karte'.padStart(15)}`)
+  for (const entry of measurements) {
+    const format = (value: number | null): string => (value === null ? '—' : value.toFixed(3))
+    console.log(
+      `  ${entry.case.label.padEnd(38)}${entry.case.expect.padStart(13)}` +
+        `${format(entry.onImageTerm).padStart(12)}${format(entry.onAttention).padStart(15)}`,
+    )
+  }
+
+  const verdict = judgeOrder(measurements)
+  console.log('')
+  console.log(`  Trennung hoch/niedrig:        ${verdict.separated ? 'ja' : 'NEIN'}`)
+  console.log(`  neutrale Fälle dazwischen:    ${verdict.neutralBetween ? 'ja' : 'NEIN'}`)
+  console.log(`  Klassenabstand:               ${verdict.classGap.toFixed(3)}`)
+  console.log(`  Drift durch reine Inhaltsmenge: ${verdict.contentDrift.toFixed(3)}`)
+  console.log(`  Drift kleiner als Abstand:    ${verdict.driftSmallerThanGap ? 'ja' : 'NEIN'}`)
+  console.log('')
+  console.log(
+    verdict.usable
+      ? 'BEFUND: die Größe bringt die bekannten Fälle in die richtige Ordnung. Kalibrierung ist zulässig.'
+      : 'BEFUND: die Größe bringt die bekannten Fälle NICHT in die richtige Ordnung. Die Regel wird nicht gebaut.',
+  )
+  return 0
+}
+
+// ---------------------------------------------------------------------------
+// gate-fixtures — das eingecheckte Referenz-Set des Gates neu bauen
+//
+//   npm run gate-fixtures            20 je Kategorie, wie ausgeliefert
+// ---------------------------------------------------------------------------
+
+function runGateFixtures(args: Args): number {
+  const count = num(args, 'count', 20)
+  const pairs: Array<{ source: string; target: string }> = [
+    { source: 'ueyes-web', target: 'gate-web' },
+    { source: 'ueyes-mobile', target: 'gate-mobile' },
+  ]
+
+  let bytes = 0
+  for (const pair of pairs) {
+    console.log(`${pair.source} → eval/fixtures/${pair.target}, ${count} Bilder aus dem quick-Split:`)
+    const summary = buildGateFixtures({ ...pair, count })
+    bytes += summary.bytes
+    console.log(`  ${summary.count} Bilder, ${(summary.bytes / 1024 / 1024).toFixed(1)} MB`)
+  }
+  console.log('')
+  console.log(`Gesamt: ${(bytes / 1024 / 1024).toFixed(1)} MB — dieses Set wird eingecheckt.`)
+  console.log('UEyes steht unter CC BY 4.0. Die Nennung steht in NOTICE.md und im index.json jedes Sets.')
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // crossval — k-fold over the whole category, both data-dependent parts refit
 // ---------------------------------------------------------------------------
 
@@ -716,7 +1699,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     console.log(
       [
         'npm run eval -- [options]',
-        '  --engine <id>       heuristic | heuristic-v1 | <config>[:glance|scan|read] | all   (default: heuristic)',
+        '  --engine <id>       heuristic | heuristic-v1 | <config>[:glance|scan|read] | all',
+        '                      (default: die ausgelieferte Konfiguration)',
         '  --set <split>       tuning | test | quick                                          (default: test)',
         '  --fixtures <name>   Referenz-Set unter eval/fixtures/                              (default: ueyes-web)',
         '  --duration <s>      Betrachtungsdauer der Ground Truth: 1 | 3 | 7                  (default: 3)',
@@ -724,6 +1708,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         '  --report <path>     Zielpfad des Markdown-Reports',
         '  --limit <n>         nur die ersten n Bilder (Rauchtest)',
         '  --gate --baseline <file> [--max-cc-drop 0.02] [--write]   Regressions-Gate (A-7)',
+        '  --blend-gamma <x>   verstellt die Tonkurve — nur für den Selbsttest des Gates',
         '',
         'npm run diagnose -- [options]     nur Diagnose, kein Tuning, nur Tuning-Split',
         '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
@@ -733,6 +1718,36 @@ export async function main(argv: readonly string[]): Promise<number> {
         '',
         'npm run epic-d -- [options]      misst, ob Betrachtungsdauer ein Prior-Effekt ist',
         '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
+        '',
+        'npm run alpha -- [options]       1.2 A — Alpha-Kurve, Tuning-Split, kreuzvalidiert',
+        '  --alphas <liste>    Kommaliste der Alpha-Werte                        (default: 0.3,0.5,0.8,1.2)',
+        '  --fixtures <liste>  Kommaliste der Sets                (default: ueyes-web,ueyes-mobile)',
+        '  --no-extend         nicht verlängern, auch wenn die Kurve am Ende noch steigt',
+        '  --confirm           danach EINMAL den Test-Split, mit dem gewählten Wert',
+        '  --confirm-only      nur den Test-Split, ohne den Sweep zu wiederholen',
+        '  --chosen <α>        überschreibt, welcher Wert bestätigt wird',
+        '  --reference <α>     Vergleichswert für --confirm-only              (default: 0.3)',
+        '',
+        'npm run sharpness -- [options]   1.2 A6 — Nachbearbeitung: Blur, Gamma, Clip, blendGamma',
+        '  --stage 1           nur die Einzelhebel, ohne die Kombinationen',
+        '  --fixtures <liste>  Kommaliste der Sets                (default: ueyes-web,ueyes-mobile)',
+        '',
+        'npm run groups -- [options]      1.2 A7 — blendGamma getrennt für Gewinner und Verlierer',
+        '  --gammas <liste>    Kommaliste der blendGamma-Werte              (default: 0.3,1.6,2.0)',
+        '',
+        'npm run cutoff -- [options]      1.2 A8 — Transparenzschwelle auf die neue Verteilung ziehen',
+        '',
+        'npm run visual-check -- [options]  1.2 A4 — der Onboarding-Prüffall, je Alpha ein Bild',
+        '  --alphas <liste>    Kommaliste der Alpha-Werte                    (default: 0.3,0.5,0.8,1.2)',
+        '  --sharp <ids>       statt Alphas: Varianten-Ids aus dem Schärfe-Sweep, kommagetrennt',
+        '  --out <pfad>        Zielpfad des PNG                        (default: out/a4-onboarding.png)',
+        '',
+        'npm run side-effects -- [options]  1.2 A5 — Feuerraten vor und nach einer Alpha-Änderung',
+        '  --before <α> --after <α>   die beiden verglichenen Alpha-Werte        (default: 0.3 / 0.5)',
+        '  --before-variant <id> --after-variant <id>   stattdessen Varianten aus dem Schärfe-Sweep',
+        '  --rules all         auch die stillgelegten Regeln berichten',
+        '  --mobile-viewport <px>   Telefon-Screens zusätzlich segmentiert messen (für cold-fold)',
+        '  --limit <n>         Bilder je echter Population begrenzen',
         '',
         'npm run crossval -- [options]    k-fache Kreuzvalidierung über Tuning + Test',
         '  --fixtures <name>   Referenz-Set                                                  (default: ueyes-web)',
@@ -752,6 +1767,19 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   try {
     if (args['findings-audit']) return await runFindingsAudit(args)
+    if (args.alpha) return await runAlpha(args)
+    if (args.sharpness) return await runSharpness(args)
+    if (args.groups) return await runGroups(args)
+    if (args.cutoff) return await runCutoff(args)
+    if (args['gate-fixtures']) return runGateFixtures(args)
+    if (args['band-gate']) return await runBandGate(args)
+    if (args['cold-fold']) return await runColdFold()
+    if (args['finding-load']) return await runFindingLoad(args)
+    if (args.competition) return await runCompetition(args)
+    if (args['contrast-check']) return runContrastCheckCommand(args)
+    if (args['header-weight']) return await runHeaderWeight()
+    if (args['visual-check']) return await runVisualCheckCommand(args)
+    if (args['side-effects']) return await runSideEffects(args)
     if (args['epic-d']) return await runEpicD(args)
     if (args.crossval) return await runCrossval(args)
     if (args['build-prior']) return runBuildPrior(args)

@@ -187,13 +187,21 @@ function hasValleyBetween(
  * unten und in 2 von 8 direkt unter den Hero (`layoutFor`, `variant % 3 === 2`).
  * Die Regel soll also in genau 6 Fällen feuern und in 2 schweigen:
  *
- *   Desktop scrollend   6/8 — feuert auf genau den 6 „CTA unten"-Varianten
- *   Telefon 1 Viewport  6/8 — dieselbe Aufteilung, keine Abweichung
- *   Telefon scrollend   7/8 — eine Fehlmeldung (v5, CTA oben)
+ *   Desktop scrollend   16/24 — feuert auf genau den 16 „CTA unten"-Varianten
+ *   Telefon 1 Viewport  16/24 — dieselbe Aufteilung, keine Abweichung
+ *   Telefon scrollend   16/24 — dieselbe Aufteilung, keine Abweichung
  *
- * 23 von 24 Urteilen stimmen mit der Konstruktion überein. Die Quote von rund
- * 79 % ist hoch, aber sie ist die Quote, die der Aufbau vorgibt — nicht das
- * Zeichen einer Regel, die immer feuert.
+ * **24 von 24 Urteilen stimmen in jeder Frame-Form mit der Konstruktion
+ * überein** (`npm run finding-load`). Keine Fehlmeldung, kein Versäumnis. Die
+ * einzige Abweichung, die hier früher stand — eine Fehlmeldung auf „Telefon
+ * scrollend" —, ist mit den Engine-Änderungen aus 1.2 A verschwunden.
+ *
+ * **Die 66,7 % sind die Quote des Generators, nicht die der Regel.**
+ * `constructed.ts` → `layoutFor` setzt `ctaAtBottom = variant % 3 !== 2`,
+ * stellt den CTA also in genau zwei Dritteln der Varianten nach unten. Wer
+ * diese Zahl als Eigenschaft der Regel liest, liest eine Eigenschaft von
+ * `layoutFor`. Auf echten Screens ist die Quote unbekannt und mit UEyes nicht
+ * messbar — ohne Layer-Baum gibt es keine Kandidaten.
  *
  * Solange der Flächenanteil im Score steckte, war das anders: er addierte 0,20
  * auf jede Ergebniskarte (230.400 px² gegen 17.784 px² beim CTA) und schob die
@@ -233,11 +241,15 @@ const ctaRank: Rule = {
  * seltener, als der Name vermuten lässt.
  */
 /**
- * NICHT AUSGELIEFERT — strukturell blockiert, nicht falsch kalibriert.
+ * NICHT AUSGELIEFERT — und seit 1.2 B4 aus einem **gemessenen** Grund statt aus
+ * einem strukturellen. Das ist der eigentliche Fortschritt dieser Runde, auch
+ * wenn der Schalter am Ende auf derselben Stellung steht.
  *
- * Die Regel liest `candidates[0]`, also den stärksten Kandidaten der
- * komponierten Karte, und meldet, wenn der unterhalb des ersten Folds liegt.
- * Zwei Eigenschaften der Vorhersage arbeiten dagegen, und beide sind
+ * ── Der Zustand vor 1.2 ────────────────────────────────────────────────────
+ *
+ * Die Regel las `candidates[0]`, also den stärksten Kandidaten der
+ * komponierten Karte, und meldete, wenn der unterhalb des ersten Folds liegt.
+ * Zwei Eigenschaften der Vorhersage arbeiteten dagegen, und beide sind
  * beabsichtigt:
  *
  *   1. Der Ortsprior ist **oben-lastig** — er ist aus Einzel-Viewports
@@ -259,34 +271,89 @@ const ctaRank: Rule = {
  * Was die Regel stattdessen bräuchte: eine Größe, die den Kandidaten **innerhalb
  * seines eigenen Abschnitts** bewertet statt auf der gedämpften Gesamtkarte.
  *
- * **Die gibt es schon.** `localMean` liest genau das — die mittlere
+ * **Die gab es schon.** `localMean` liest genau das — die mittlere
  * Aufmerksamkeit eines Kandidaten auf der *ungedämpften* Karte seines eigenen
  * Viewports — und wurde für `dead-cta` gebaut, aus demselben Grund: dort machte
- * die Dämpfung jeden Fußzeilen-Knopf rechnerisch leise. In 1.2 ist das damit
- * **eine Änderung für zwei Regeln**, nicht zwei Aufgaben: beide steigen von der
- * komponierten Karte auf die Abschnittskarte um.
+ * die Dämpfung jeden Fußzeilen-Knopf rechnerisch leise.
  *
- * Was dabei mitentschieden werden muss: die Aussage ändert sich. „Der stärkste
- * Kandidat des Screens liegt unter dem Fold" wird zu „der Kandidat, der seinen
- * eigenen Viewport dominiert, sitzt nicht im ersten" — der Satz muss neu
- * geschrieben werden, nicht nur die Zahl. Siehe README, „Offen für 1.2".
+ * ── Der Umbau, und was er ergeben hat ──────────────────────────────────────
+ *
+ * Umgesetzt ist er: die Rangfolge läuft über `localMean`, und der Satz ist neu
+ * geschrieben, weil sich die Aussage ändert — aus „der stärkste Kandidat des
+ * Screens liegt unter dem Fold" wird „der Kandidat, der seinen eigenen
+ * Viewport anführt, sitzt nicht im ersten".
+ *
+ * **Er behebt den Defekt nicht.** Gemessen mit `npm run finding-load`, gegen
+ * die bekannte Antwort des Generators (`layoutFor` stellt den primären CTA in
+ * genau zwei Dritteln der Varianten nach unten), je 24 Frames:
+ *
+ * | Frame-Form | Rate | CTA unten → feuert | CTA **oben** → feuert | Übereinstimmung |
+ * |---|---:|---:|---:|---:|
+ * | Desktop, scrollend  |   4,2 % |  0/16 | 1/8 | 29,2 % |
+ * | Telefon, scrollend  | 100,0 % | 16/16 | 8/8 | 66,7 % |
+ * | Telefon, 1 Viewport |       — | keine Folds, also keine Frage | | |
+ *
+ * Beide Zeilen sind für sich genommen wertlos, und zwar aus entgegengesetzten
+ * Richtungen. Auf Desktop meldet die Regel genau **einmal**, und dieser eine
+ * Fall ist einer mit CTA oben — die einzige Aussage, die sie macht, ist
+ * falsch. Auf Telefon meldet sie **immer**, auch auf allen acht Frames mit CTA
+ * oben; die 66,7 % Übereinstimmung sind der Sockel des Generators, den eine
+ * Regel, die ausnahmslos „ja" sagt, gratis bekommt.
+ *
+ * **Warum, und das ist die verwertbare Erkenntnis.** Der Umbau nimmt die
+ * Dämpfung *zwischen* den Abschnitten heraus, lässt den oben-lastigen Prior
+ * aber *innerhalb* jedes Abschnitts stehen. Der Vergleich über die Abschnitte
+ * hinweg wird damit zu „wer sitzt am dichtesten am oberen Rand seines eigenen
+ * Viewports" — eine Frage, die mit dem Fold nichts zu tun hat. Und weil ein
+ * 390 × 3000-Frame vier Ausschnitte hat, von denen drei unter dem Fold liegen,
+ * gewinnt dort fast zwangsläufig einer von den dreien.
+ *
+ * Was die Regel bräuchte, ist keine dritte Karte, sondern eine **relative**
+ * Größe: nicht „dieser Kandidat führt seinen Ausschnitt an", sondern „er führt
+ * ihn deutlicher an, als der Anführer des ersten Ausschnitts den seinen". Das
+ * ist ein Verhältnis zweier Dominanzen und damit unabhängig davon, wie viele
+ * Ausschnitte es gibt. Gemessen ist es nicht, und ohne das Set mit echten
+ * Layer-Bäumen (PRD Set 2) auch nicht kalibrierbar.
+ *
+ * **Der Messcode bleibt trotzdem stehen.** Die alte Fassung war an
+ * `sectionAttenuation` blockiert und konnte deshalb über ihre eigene
+ * Entscheidungsgröße nichts aussagen. Diese hier kann es — sie feuert, und man
+ * sieht, dass sie das Falsche trifft. Ein Rückbau auf die komponierte Karte
+ * würde diese Beobachtung wegwerfen und den nächsten Anlauf wieder bei der
+ * Dämpfung anfangen lassen.
  */
 const ctaBelowFold: Rule = {
   id: 'cta-below-fold',
   shipped: false,
   evaluate(input) {
     if (input.plan.folds.length === 0) return null
-    const leader = input.candidates[0]
+    if (input.candidates.length === 0) return null
+
+    // Rangfolge auf den **ungedämpften** Abschnittskarten. Auf der komponierten
+    // Karte gewönne den Vergleich, wer weit oben steht — `sectionAttenuation^i`
+    // entscheidet ihn vor dem Entwurf.
+    let leader: { candidate: ClickCandidate; mean: number } | null = null
+    for (const candidate of input.candidates) {
+      const mean = localMean(candidate, input)
+      if (!leader || mean > leader.mean) leader = { candidate, mean }
+    }
     if (!leader) return null
 
     const firstFold = input.plan.folds[0]
-    if (leader.y < firstFold) return null
+    if (leader.candidate.y < firstFold) return null
 
+    // Der Satz muss beides tragen: **worin** das Element führt (im eigenen
+    // Ausschnitt) und **wo** es sitzt (nicht im ersten). Ohne den ersten Teil
+    // liest sich der Befund als „stärkstes Element des Screens", und das ist
+    // nach dem Umbau nicht mehr, was gemessen wurde.
     return {
       id: 'cta-below-fold',
       severity: 'problem',
-      text: `Das interaktive Element mit der höchsten vorhergesagten Klickwahrscheinlichkeit, ${describe(leader, input)}, liegt unterhalb des ersten Folds.`,
-      nodeIds: [leader.id],
+      text:
+        `${describe(leader.candidate, input)} führt die vorhergesagte Aufmerksamkeit innerhalb seines eigenen ` +
+        `Bildschirmausschnitts an — dieser Ausschnitt ist aber nicht der erste: das Element liegt unterhalb des ` +
+        `ersten Folds.`,
+      nodeIds: [leader.candidate.id],
     }
   },
 }
@@ -294,30 +361,67 @@ const ctaBelowFold: Rule = {
 /**
  * Two far-apart regions both reach near-maximum predicted attention.
  *
- * Auf echten Bildern nicht entartet: 3,3 % (Webseite, segmentiert) und 10,0 %
- * (Telefon, ein Viewport), Schwelle bei p3 bzw. p10. Die selektivste Regel,
- * wie beabsichtigt.
+ * Auf echten Bildern nicht entartet: 2,2 % (Webseite, segmentiert) und 10,3 %
+ * (Telefon, ein Viewport) bei α = 0,3. Die selektivste Regel, wie beabsichtigt.
  *
- * **ACHTUNG — diese Quoten sind die einzige positive Evidenz dieser Regel, und
- * sie wurden mit genau dem Abstandsmaß gemessen, das unten als falsch skaliert
- * dokumentiert ist.** „Weit auseinander" bedeutete bei jeder der beiden
- * Messungen etwas anderes (48,0 % bzw. 13,9 % der Kartenhöhe), die 3,3 % und
- * 10,0 % sind also nicht dieselbe Frage, zweimal beantwortet. Sobald der
- * Abstand in 1.2 auf die Diagonale oder auf getrennte x/y-Schwellen umgestellt
- * wird, ist die Feuerrate **neu zu messen** — die alten Zahlen dürfen nicht
- * übernommen werden, auch nicht als Plausibilitätsanker.
+ * **ALLE DIESE QUOTEN SIND ZWEIFACH VERALTET, UND ZWAR AUS ZWEI UNABHÄNGIGEN
+ * GRÜNDEN.** Beide sind Gründe, sie nicht als Anker zu benutzen:
  *
- * Offen bleibt `competitionMinDistance`: der Mindestabstand ist ein Anteil der
- * Karten**breite** und wird auf Karten angewandt, deren Seitenverhältnis um
- * eine Größenordnung schwankt. Derselbe Wert 0,3 bedeutet
+ * 1. *Das Abstandsmaß.* „Weit auseinander" ist ein Anteil der Karten**breite**
+ *    und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Höhe (Tabelle unten).
+ *    Die Zahlen beantworten also nicht dieselbe Frage zweimal.
+ * 2. *Die Karte selbst.* Mit dem Umstieg auf `blendAlpha` 0,5 (1.2 A) ist die
+ *    Rate ohne eine einzige Änderung an dieser Regel gestiegen — gemessen mit
+ *    `npm run side-effects`:
  *
- *   Desktop, ein Viewport   154 px = 48,0 % der Kartenhöhe
- *   Telefon, ein Viewport    71 px = 13,9 %
- *   Telefon, scrollend       77 px =  3,9 %
+ *                                 α 0,3     α 0,5    + Schärfe (Stand)
+ *      Webseite, segmentiert        2,2 %    11,9 %     10,3 %
+ *      Telefon, ein Viewport       10,3 %    31,1 %     22,4 %
+ *      Telefon, segmentiert           —       6,3 %      2,6 %
+ *      Desktop scrollend (konstr.)  0,0 %     8,3 %      4,2 %
+ *      Telefon scrollend (konstr.)  0,0 %    20,8 %      4,2 %
+ *      Telefon 1 VP (konstruiert)   0,0 %    20,8 %     12,5 %
  *
- * „weit auseinander" heißt also je nach Frame-Form etwas völlig anderes. Nicht
- * geändert, weil jede Änderung ohne neue Kalibrierung genau der Fehler wäre,
- * um den es hier geht.
+ *    Die dritte Spalte ist der ausgelieferte Stand nach 1.2 A6 (Blur 0,035,
+ *    `blendGamma` 2,0). Die Zuspitzung nimmt einen Teil des Anstiegs zurück —
+ *    sie senkt die Fläche *neben* den Blickfängen stärker als die zwischen
+ *    ihnen. Eine Verdopplung gegenüber 1.1 bleibt.
+ *
+ *    Der Grund steht in der Verteilung: das Tal zwischen den beiden Maxima
+ *    fällt, weil der stärker gewichtete Bildanteil die Fläche zwischen zwei
+ *    Blickfängen absenkt. Median Tal ÷ zweites Maximum auf Telefon-Screens
+ *    1,002 → 0,967, p5 0,848 → 0,703; die Schwelle 0,9 liegt damit plötzlich
+ *    mitten in der Verteilung statt an ihrem unteren Rand.
+ *
+ * **Nicht nachjustiert, mit Absicht.** 0,9 an die neue Verteilung anzupassen
+ * wäre eine weitere unkalibrierte Bewegung. Die Regel wird in 1.2 B1 ohnehin
+ * umgebaut (Abstand auf Diagonale oder getrennte x/y-Schwellen) und **danach**
+ * neu kalibriert — auf der ausgelieferten Karte, in jeder der drei Frame-Formen
+ * getrennt. Bis dahin gilt: 10,3 % / 22,4 % ist der Stand, nicht 3,3 % / 10,0 %.
+ *
+ * **Der Abstand ist in 1.2 B1 auf die Diagonale umgestellt und neu
+ * kalibriert.** Vorher war er ein Anteil der Karten*breite* und bedeutete je
+ * nach Frame-Form 3,9 % bis 48,0 % der Höhe — „weit auseinander" hieß auf einem
+ * Telefon etwas völlig anderes als auf einem Desktop. Gemessen mit dem neuen
+ * Maß, je 495 Bilder, die beiden Ein-Viewport-Populationen:
+ *
+ *   Abstand   Webseiten   Telefon
+ *   0,15        47,1 %     22,2 %
+ *   **0,25**    15,8 %     15,2 %
+ *   0,35         0,8 %      6,3 %
+ *
+ * Bei 0,25 sind die Raten praktisch gleich — genau die Formunabhängigkeit, die
+ * der Umstellung zugrunde lag. **Alle Quoten von vor 1.2 B1 sind ungültig**,
+ * auch die 3,3 % / 10,0 % aus 1.1: sie stammen vom alten Maß.
+ *
+ * **Auf segmentierten Telefon-Frames feuert die Regel gar nicht mehr** (0,0 %
+ * bei 0,25, ebenso auf beiden konstruierten Scroll-Formen). Der Grund ist
+ * strukturell und nicht der Abstand: auf der komponierten Karte ist jeder
+ * tiefere Abschnitt um `sectionAttenuation^i` gedämpft, das zweite Maximum
+ * erreicht `competitionIntensity` = 0,65 dort nicht mehr. Dieselbe Blockade wie
+ * bei `cta-below-fold`, und dieselbe Konsequenz: die Dämpfung wird dafür nicht
+ * angefasst. `competition` ist damit faktisch eine Ein-Viewport-Regel; auf
+ * Webseiten mit Segmentierung feuert sie noch (7,1 %).
  */
 const competition: Rule = {
   id: 'competition',
@@ -328,7 +432,10 @@ const competition: Rule = {
 
     const x1 = first % attention.width
     const y1 = Math.floor(first / attention.width)
-    const minDistance = cfg.competitionMinDistance * attention.width
+    // Anteil der **Diagonale**, nicht der Breite — siehe `config.ts`. Der alte
+    // Bezug auf die Breite machte „weit auseinander" auf einem Telefon zu etwas
+    // anderem als auf einem Desktop.
+    const minDistance = cfg.competitionMinDistanceDiagonal * Math.hypot(attention.width, attention.height)
 
     const second = argmax(attention.values, (index) => {
       const dx = (index % attention.width) - x1
@@ -364,14 +471,45 @@ const competition: Rule = {
  *
  * Anders als `flat` und `dead-cta` liest diese Regel die **ungedämpften**
  * Abschnittskarten, ist also von der Komposition unabhängig. Auf echten Bildern
- * ist sie gutmütig: UEyes-Webseiten, Viewport 500 erzwungen — Verteilung
- * −0,179 bis 0,276, Schwelle 0,08 bei p70, Rate 29,8 %.
+ * ist sie gutmütig: UEyes-Webseiten, Viewport 500 erzwungen — Rate 27,7 %
+ * bei α = 0,3.
  *
  * Auf konstruierten Frames mit einem farbigen Fuß oder Hero weiter unten
- * feuert sie dagegen in 83–100 % der Fälle (Schwelle bei p17 bzw. unter dem
- * Minimum). 0,08 ist keine falsche, aber eine sehr durchlässige Grenze; ob sie
- * trägt, entscheidet sich an echten Designs, nicht an Screenshots einzelner
- * Viewports.
+ * feuert sie dagegen in 83–100 % der Fälle. 0,08 ist keine falsche, aber eine
+ * sehr durchlässige Grenze; ob sie trägt, entscheidet sich an echten Designs,
+ * nicht an Screenshots einzelner Viewports.
+ *
+ * **Auch diese Rate hängt an `blendAlpha`**, obwohl die Regel abschnittsweise
+ * misst: die Konzentration eines Abschnitts steigt mit dem Gewicht des
+ * Bildanteils, und tiefere Abschnitte haben mehr Inhalt als der Kopfbereich.
+ * Gemessen beim Umstieg auf 0,5 (`npm run side-effects`):
+ *
+ *                                      α 0,3     α 0,5    + Schärfe   + Schwelle je Typ
+ *   Webseite, Viewport 500 erzwungen   27,7 %   34,9 %     40,0 %      40,0 %
+ *   Telefon, Viewport 400 erzwungen       —     58,6 %     61,6 %      39,8 %
+ *   Desktop scrollend (konstruiert)    83,3 %   95,8 %    100,0 %
+ *   Telefon scrollend (konstruiert)   100,0 %  100,0 %    100,0 %
+ *
+ * Auf beiden konstruierten Formen feuert sie damit **immer** und sagt dort
+ * nichts mehr.
+ *
+ * **DER BEFUND STAND NICHT IN DER RATE, SONDERN IN DER VERTEILUNG — und ist
+ * behoben.** Der relative Vorsprung des stärksten Abschnitts lag
+ *
+ *   auf Webseiten       im Median bei 0,037  — die Schwelle 0,08 darüber, p60
+ *   auf Telefon-Screens im Median bei 0,131  — die Schwelle **darunter**, p38
+ *
+ * Auf Telefon-Screens sagte die Regel damit häufiger ja als nein. Seit 1.2 B
+ * hat `coldFoldMargin` eine Schwelle je UI-Typ, beide am selben Perzentil
+ * ihrer eigenen Verteilung (p60): web 0,080, mobile 0,189. Die Begründung und
+ * die Grenzen der Kalibrierung stehen in `config.ts` — insbesondere, dass das
+ * Perzentil selbst nicht kalibriert ist.
+ *
+ * Auf Webseiten bleibt die Regel mit 40,0 % im brauchbaren Bereich; die
+ * konstruierten Frames stellen den Hero absichtlich weiter unten auf, ihre
+ * Quote ist die des Aufbaus. Die Richtung ist über beide Schritte eindeutig,
+ * und 0,08 ist damit endgültig nachzumessen — an echten Designs mit Layer-Baum
+ * (PRD Set 2).
  */
 const coldFold: Rule = {
   id: 'cold-fold',
@@ -387,7 +525,11 @@ const coldFold: Rule = {
     // Relative: the concentration measure lives in a narrow band, so an
     // absolute margin would either never fire or fire always.
     if (!(aboveFold > 0)) return null
-    if (input.sectionSalience[bestIndex] / aboveFold - 1 < cfg.coldFoldMargin) return null
+    // Schwelle je UI-Typ, wie bei `flat`: „der stärkste Abschnitt liegt nicht
+    // oben" soll auf einer Webseite und auf einem Telefon-Screen dasselbe
+    // heißen. Mit einer Zahl für beide hieß es das nicht — siehe `config.ts`.
+    const margin = cfg.coldFoldMargin[input.priorCategory] ?? cfg.coldFoldMargin.web
+    if (input.sectionSalience[bestIndex] / aboveFold - 1 < margin) return null
 
     return {
       id: 'cold-fold',
@@ -421,8 +563,8 @@ const coldFold: Rule = {
  * Inhalt.
  *
  * **Zweiter Anlauf: den Prior raus.** Unter `hybrid-v1` ist die fertige Karte
- * `norm(Prior) + 0,3 · Bild`, also weitgehend der Prior — und der ist auf jedem
- * Screen derselbe. Gemessen auf dem **Bildanalyse-Anteil** (`aboveFoldImageTerm`)
+ * `norm(Prior) + α · Bild` (α = 0,5 seit 1.2, davor 0,3), also weitgehend der
+ * Prior — und der ist auf jedem Screen derselbe. Gemessen auf dem **Bildanalyse-Anteil** (`aboveFoldImageTerm`)
  * stimmt die Ordnung:
  *
  *   leer                       0,000     3 gleich starke Blöcke   0,096

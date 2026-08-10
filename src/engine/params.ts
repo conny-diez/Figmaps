@@ -52,6 +52,20 @@ export type EngineParams = {
    * attention usually goes, the image analysis says how this screen deviates.
    */
   blendAlpha?: number
+  /**
+   * Exponent über der **fertigen**, gemischten Karte — `map^blendGamma`.
+   *
+   * Nur im Hybrid-Pfad wirksam. `undefined` oder 1 heißt „kein zweites Gamma",
+   * also das Verhalten von 1.1; Werte über 1 spitzen zu (schwache Werte fallen
+   * stärker als starke), Werte darunter glätten.
+   *
+   * Getrennt von `post.gamma`: das sitzt **innerhalb** des Bildanteils, vor der
+   * Mischung mit dem Ortsprior, und formt damit nur, was die Bildanalyse
+   * beiträgt. `blendGamma` formt die Verteilung, die am Ende gezeichnet wird —
+   * inklusive des Priors, der den Sockel stellt. Für die Konzentration der
+   * ausgelieferten Karte ist das der wirksamere der beiden.
+   */
+  blendGamma?: number
 }
 
 /** Epic D — viewing duration the prediction is calibrated for. */
@@ -89,6 +103,7 @@ function cloneParams(params: EngineParams): EngineParams {
     post: { ...params.post },
     ...(params.priorSource ? { priorSource: params.priorSource } : {}),
     ...(params.blendAlpha !== undefined ? { blendAlpha: params.blendAlpha } : {}),
+    ...(params.blendGamma !== undefined ? { blendGamma: params.blendGamma } : {}),
   }
 }
 
@@ -156,16 +171,52 @@ const BASE_CONFIG: EngineConfigEntry = {
 /**
  * The share the image analysis is mixed in with, on top of the data prior.
  *
- * Read off the diagnosis sweep on the tuning split — not a tuned parameter in
- * the S-3 sense.
+ * **0,5 seit 1.2, vorher 0,3.** Der alte Wert stammte aus dem Diagnose-Sweep,
+ * war *in-sample* auf dem Tuning-Split abgelesen und an einem einzigen
+ * Kriterium entschieden: bei 0,5 verlor KL gegen die Mean Map (1,092 gegen
+ * 1,088), und S-2 verlangte einen Sieg in allen vier Metriken.
  *
- * 0,5 maximises CC (web 0,448 vs 0,444 here) but **loses KL against the mean
- * map on the webpage set** (1,092 vs 1,088), and S-2 requires beating the
- * baseline in all four metrics. At 0,3 all four win in both UI categories, and
- * the CC given up is 0,004. The stricter criterion wins over the single
- * headline number.
+ * Nachgemessen mit `npm run alpha` — 5-fache Kreuzvalidierung auf dem
+ * Tuning-Split, Ortsprior **und** Mean Map je Fold neu geschätzt, jedes Bild
+ * out-of-sample, 468 Bilder je Kategorie:
+ *
+ *   α      AUC     CC      NSS     KL      Konzentration
+ *   0      0,768   0,420   0,991   1,088   0,164     (nur Prior)
+ *   0,3    0,780   0,443   1,049   1,078   0,141
+ *   0,5    0,783   0,447   1,061   1,091   0,133
+ *   0,8    0,782   0,444   1,055   1,111   0,127
+ *   1,2    0,777   0,431   1,028   1,133   0,124
+ *                                                    (Webpage; Mobile identisch
+ *                                                     im Verlauf, Optimum ebenso
+ *                                                     bei 0,5)
+ *
+ * AUC, CC und NSS haben ihr Maximum bei 0,5 — einstimmig, in beiden
+ * Kategorien, jede gepaarte Differenz gegen 0,3 mit einem 95-%-Intervall ohne
+ * Null (web +0,0025 / +0,0040 / +0,0117, mobile +0,0018 / +0,0061 / +0,0149).
+ * Die Kurve fällt danach, verlängert wurde deshalb nicht.
+ *
+ * **KL ist ausdrücklich nicht das Kriterium** und das ist eine begründete
+ * Ausnahme, keine Nachlässigkeit: KL bestraft eine Karte dafür, dass sie Masse
+ * von den Rändern abzieht — also genau für Zuspitzung, und Zuspitzung ist die
+ * geprüfte Eigenschaft. Der Preis steht in der Tabelle: KL wird von 1,078 auf
+ * 1,091 schlechter.
+ *
+ * Der historische Grund für 0,3 hält der Nachmessung übrigens nicht stand.
+ * Gepaart je Bild und out-of-sample ist KL bei 0,5 gegen die Mean Map **kein
+ * Verlust, sondern ein Unentschieden** (web −0,0014, Intervall über die Null;
+ * mobile +0,0112, ebenfalls). Der alte Vergleich war in-sample und über
+ * Mittelwerte statt gepaart.
+ *
+ * **Was 0,5 nicht behebt.** Der Verdacht, unsere Karten seien systematisch zu
+ * weich, ist bestätigt und wird von diesem Parameter *nicht* behoben: die
+ * Ground Truth hält 48,2 % ihrer Masse in den stärksten 5 % der Pixel
+ * (Webpage; Mobile 38,3 %), unsere Vorhersage 14,1 % bei α = 0,3. Ein höheres
+ * α macht das **schlechter**, nicht besser — 0,133 bei 0,5 und 0,124 bei 1,2 —,
+ * weil der Bildanteil eine breite, weichgezeichnete Fläche ist und den Sockel
+ * überall anhebt. Schärfe ist an anderer Stelle zu holen; siehe README,
+ * „Alpha-Kurve".
  */
-export const HYBRID_BLEND_ALPHA = 0.3
+export const HYBRID_BLEND_ALPHA = 0.5
 
 /**
  * `hybrid-v1` — data-estimated prior plus additive image analysis.
@@ -187,8 +238,14 @@ function imageOnlyWeights(base: FeatureWeights): FeatureWeights {
 const HYBRID_PARAMS: EngineParams = {
   ...cloneParams(HEURISTIC_V1),
   weights: imageOnlyWeights(HEURISTIC_V1.weights),
+  // Die Nachbearbeitung weicht seit 1.2 A6 von 1.0 ab — aber nur hier, nicht in
+  // `ENGINE_CONFIG.post`: `HEURISTIC_V1` ist die eingefrorene Referenz des
+  // Harness und darf sich nicht mitbewegen, wenn die aktive Konfiguration
+  // gemessen wird.
+  post: { ...HEURISTIC_V1.post, blurSigmaRatio: ENGINE_CONFIG.hybrid.blurSigmaRatio },
   priorSource: 'data',
   blendAlpha: HYBRID_BLEND_ALPHA,
+  blendGamma: ENGINE_CONFIG.hybrid.blendGamma,
 }
 
 const HYBRID_CONFIG: EngineConfigEntry = {

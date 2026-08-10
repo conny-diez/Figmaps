@@ -44,8 +44,8 @@ export interface AttentionEngine {
    * Exists because the two answer different questions and one of the findings
    * rules needs the second: „does this screen have a pronounced hierarchy" is a
    * property of the design, while the finished map is prior-dominated
-   * (`blendAlpha` 0,3) and therefore says as much about where attention usually
-   * goes. An engine that cannot separate the two simply omits this.
+   * (`blendAlpha` 0,5 seit 1.2) and therefore says as much about where attention
+   * usually goes. An engine that cannot separate the two simply omits this.
    */
   predictParts?(input: AttentionInput): Promise<AttentionParts>
 }

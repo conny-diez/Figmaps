@@ -13,135 +13,27 @@
  *
  * Every rule gets two: one frame where it must fire, one where it must not.
  * A rule that cannot be made to fire here is not shipped, it is decoration.
+ *
+ * Die Fälle selbst stehen seit 1.2 in `scenarios.ts`, weil
+ * `robustness.test.ts` dieselben noch einmal unter verstellten
+ * Engine-Parametern durchlaufen lässt. Zwei Kopien wären zwei Definitionen
+ * dessen, was „der Fall" ist.
  */
 import { describe, expect, it } from 'vitest'
-import { analyzeFrame } from '../../engine/analyze'
-import { HeuristicAttentionEngine } from '../../engine/heuristic'
-import { ImageOpsNode } from '../../platform/imageops-node'
-import type { Bitmap } from '../../engine/ops'
-import type { NodeSignal } from '../../messages'
-import { deriveFindings } from '../derive'
 import { ALL_RULES, RULES } from '../rules'
-
-const ops = new ImageOpsNode()
-const engine = new HeuristicAttentionEngine()
-
-type Rgb = [number, number, number]
-
-/** A blank canvas in *source* pixels; frame coordinates are separate. */
-function canvas(width: number, height: number, colour: Rgb = [244, 245, 247]): Bitmap {
-  const data = new Uint8ClampedArray(width * height * 4)
-  for (let p = 0; p < data.length; p += 4) {
-    data[p] = colour[0]
-    data[p + 1] = colour[1]
-    data[p + 2] = colour[2]
-    data[p + 3] = 255
-  }
-  return { width, height, data }
-}
-
-function box(image: Bitmap, x: number, y: number, w: number, h: number, colour: Rgb): void {
-  for (let py = Math.max(0, y); py < Math.min(image.height, y + h); py++) {
-    for (let px = Math.max(0, x); px < Math.min(image.width, x + w); px++) {
-      const p = (py * image.width + px) * 4
-      image.data[p] = colour[0]
-      image.data[p + 1] = colour[1]
-      image.data[p + 2] = colour[2]
-    }
-  }
-}
-
-let nextId = 0
-function signal(overrides: Partial<NodeSignal>): NodeSignal {
-  nextId++
-  return {
-    id: `n${nextId}`,
-    parentId: null,
-    name: `node-${nextId}`,
-    type: 'RECTANGLE',
-    x: 0,
-    y: 0,
-    width: 100,
-    height: 40,
-    zIndex: nextId,
-    opacity: 1,
-    isText: false,
-    isImage: false,
-    hasFill: true,
-    hasReactions: false,
-    nameHints: [],
-    ...overrides,
-  }
-}
-
-/**
- * Runs the shipped path and returns the ids of the findings it produced.
- *
- * `includeUnshipped` widens the rule set to everything implemented. A rule that
- * is switched off (see `flat`) still has to be provably reachable — otherwise
- * switching it back on later is a guess, which is exactly how `cold-fold` got
- * to be inert.
- */
-async function run(options: {
-  source: Bitmap
-  signals: NodeSignal[]
-  frameWidth: number
-  frameHeight: number
-  viewportOverride?: number
-  includeUnshipped?: boolean
-}): Promise<string[]> {
-  const analysis = await analyzeFrame(engine, ops, {
-    source: options.source,
-    signals: options.signals,
-    frameWidth: options.frameWidth,
-    frameHeight: options.frameHeight,
-    ...(options.viewportOverride ? { viewportOverride: options.viewportOverride } : {}),
-  })
-  expect(analysis).not.toBeNull()
-
-  const findings = deriveFindings(
-    {
-      analysis: analysis!,
-      signals: options.signals,
-      frameWidth: options.frameWidth,
-      frameHeight: options.frameHeight,
-    },
-    options.includeUnshipped ? ALL_RULES : undefined,
-  )
-  return findings.map((finding) => finding.id)
-}
-
-// ---------------------------------------------------------------------------
-// Frame builders — realistic enough that the rules see what they expect
-// ---------------------------------------------------------------------------
-
-/** A conventional desktop landing page: nav, hero, headline, two buttons. */
-function landingPage(): { source: Bitmap; signals: NodeSignal[]; frameWidth: number; frameHeight: number } {
-  const source = canvas(720, 450)
-  box(source, 0, 0, 720, 36, [255, 255, 255]) // nav
-  box(source, 40, 90, 300, 48, [22, 22, 28]) // headline
-  box(source, 40, 160, 260, 60, [110, 110, 120]) // copy
-  box(source, 40, 250, 140, 34, [20, 110, 220]) // primary button
-  box(source, 200, 250, 110, 34, [225, 227, 232]) // secondary button
-  box(source, 400, 80, 280, 200, [205, 120, 90]) // hero image
-
-  // Frame coordinates are 2x the source, as a real export would be.
-  const signals = [
-    signal({ name: 'Headline', isText: true, fontSize: 44, fontWeight: 700, charCount: 28, x: 80, y: 180, width: 600, height: 96 }),
-    signal({ name: 'Fließtext', isText: true, fontSize: 16, charCount: 160, x: 80, y: 320, width: 520, height: 120 }),
-    signal({ name: 'Primary CTA Button', nameHints: ['button', 'cta'], hasReactions: true, x: 80, y: 500, width: 280, height: 68 }),
-    signal({ name: 'Alle Angebote', nameHints: ['button'], x: 400, y: 500, width: 220, height: 68 }),
-    signal({ name: 'Hero-Bild', isImage: true, x: 800, y: 160, width: 560, height: 400 }),
-  ]
-  return { source, signals, frameWidth: 1440, frameHeight: 900 }
-}
+import { runScenario } from './run-scenario'
+import { SCENARIOS } from './scenarios'
 
 describe('end-to-end reachability of every rule', () => {
-  it('every implemented rule is covered by a firing test below', () => {
+  it('every implemented rule is covered by both a firing and a silent case', () => {
     // Guards against a rule being added without a reachability test.
     expect(ALL_RULES.map((rule) => rule.id).sort()).toEqual(
       ['cold-fold', 'competition', 'cta-below-fold', 'cta-rank', 'dead-cta', 'flat'].sort(),
     )
+    for (const rule of ALL_RULES) {
+      const own = SCENARIOS.filter((scenario) => scenario.rule === rule.id)
+      expect(own.map((scenario) => scenario.expect).sort()).toEqual(['fires', 'silent'])
+    }
   })
 
   it('does not ship `flat` — its threshold sits below the whole realistic range', () => {
@@ -168,151 +60,11 @@ describe('end-to-end reachability of every rule', () => {
     expect(RULES.map((rule) => rule.id)).not.toContain('dead-cta')
   })
 
-  // --- cta-rank ------------------------------------------------------------
-
-  it('cta-rank fires when the primary button is out-ranked', async () => {
-    // The competitor wins on *attention*, not on area: the score has no size
-    // term any more, so „huge" is no longer a way to out-rank anything.
-    const source = canvas(720, 450, [248, 249, 250])
-    box(source, 60, 40, 300, 150, [10, 10, 20]) // strong block, top left
-    const signals = [
-      signal({ name: 'Alle Angebote entdecken', nameHints: ['button'], hasReactions: true, x: 120, y: 80, width: 560, height: 280 }),
-      // Same reaction bonus, but sitting in the quiet lower right.
-      signal({ name: 'Jetzt anfragen', nameHints: ['button', 'cta'], hasReactions: true, x: 1000, y: 760, width: 380, height: 110 }),
-    ]
-    expect(await run({ source, signals, frameWidth: 1440, frameHeight: 900 })).toContain('cta-rank')
-  })
-
-  it('cta-rank stays silent when the primary button leads', async () => {
-    const page = landingPage()
-    // Primary CTA is the biggest interactive element and carries the reaction.
-    page.signals = page.signals.filter((s) => !s.nameHints.includes('button'))
-    page.signals.push(
-      signal({ name: 'Primary CTA', nameHints: ['button', 'cta'], hasReactions: true, x: 80, y: 200, width: 600, height: 200 }),
-      signal({ name: 'Kleiner Link', nameHints: ['link'], x: 1200, y: 800, width: 120, height: 30 }),
-    )
-    expect(await run(page)).not.toContain('cta-rank')
-  })
-
-  // --- dead-cta ------------------------------------------------------------
-
-  it('dead-cta fires for a button far quieter than its peers', async () => {
-    const source = canvas(720, 450)
-    box(source, 40, 60, 240, 60, [10, 10, 200]) // busy button, top
-    const signals = [
-      signal({ name: 'Jetzt starten', nameHints: ['button'], hasReactions: true, x: 80, y: 120, width: 480, height: 120 }),
-      // Same size, but in the darkest corner of the map.
-      signal({ name: 'Jetzt anfragen', nameHints: ['button'], x: 900, y: 800, width: 480, height: 90 }),
-    ]
-    expect(
-      await run({ source, signals, frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
-    ).toContain('dead-cta')
-  })
-
-  it('dead-cta stays silent when the buttons sit close together', async () => {
-    const source = canvas(720, 450)
-    box(source, 40, 120, 240, 60, [10, 10, 200])
-    box(source, 320, 120, 240, 60, [10, 10, 200])
-    const signals = [
-      signal({ name: 'Jetzt starten', nameHints: ['button'], hasReactions: true, x: 80, y: 240, width: 480, height: 120 }),
-      signal({ name: 'Mehr erfahren', nameHints: ['button'], x: 640, y: 240, width: 480, height: 120 }),
-    ]
-    expect(
-      await run({ source, signals, frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
-    ).not.toContain('dead-cta')
-  })
-
-  // --- competition ---------------------------------------------------------
-
-  it('competition fires for two separated hotspots in the same band', async () => {
-    // Both hotspots must sit where the prior is already high — the image term
-    // is added at 0.3, so it cannot lift a low-prior region into contention.
-    const source = canvas(720, 450, [248, 249, 250])
-    box(source, 40, 50, 150, 130, [0, 0, 0]) // block inside the prior's peak
-    box(source, 420, 50, 150, 130, [0, 0, 0]) // second block, past the min distance
-    // No signals: this rule reads the attention map only, and structural
-    // signals would add a third bright region.
-    expect(await run({ source, signals: [], frameWidth: 1440, frameHeight: 900 })).toContain('competition')
-  })
-
-  it('competition stays silent for a single hotspot', async () => {
-    const source = canvas(720, 450)
-    box(source, 260, 170, 200, 120, [0, 0, 0]) // one central block
-    const signals = [signal({ name: 'Headline', isText: true, fontSize: 56, fontWeight: 700, charCount: 24, x: 520, y: 340, width: 400, height: 240 })]
-    expect(await run({ source, signals, frameWidth: 1440, frameHeight: 900 })).not.toContain('competition')
-  })
-
-  // --- flat ----------------------------------------------------------------
-
-  it('flat fires on a screen without visual hierarchy', async () => {
-    // Evenly distributed, equally strong content over the *whole* canvas: no
-    // element is more salient than any other. Filling only the lower two thirds
-    // would not do it any more — the rule reads the image-analysis term, and an
-    // empty upper third is itself a contrast (measured: 0,099 against 0,057).
-    const source = canvas(720, 450)
-    for (let y = 10; y < 444; y += 10) {
-      for (let x = 4; x < 714; x += 12) box(source, x, y, 8, 7, [0, 0, 0])
-    }
-    expect(
-      await run({ source, signals: [], frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
-    ).toContain('flat')
-  })
-
-  it('flat stays silent on a screen with one dominant element', async () => {
-    const source = canvas(720, 450)
-    box(source, 240, 140, 240, 170, [0, 0, 0])
-    expect(
-      await run({ source, signals: [], frameWidth: 1440, frameHeight: 900, includeUnshipped: true }),
-    ).not.toContain('flat')
-  })
-
-  // --- cta-below-fold ------------------------------------------------------
-
-  it('cta-below-fold fires when the strongest button sits past fold 1', async () => {
-    // Reachable, but only just — and that is the finding, not a test detail.
-    // Every section is attenuated by `sectionAttenuation^i`, so a candidate
-    // below the fold starts at half the attention of one above it. It takes a
-    // prototype reaction *and* a strong block behind it, against a competitor
-    // that has neither, for the deeper one to lead. On the constructed frames
-    // that combination does not occur, and the rule fires 0 of 24 times — see
-    // `rules.ts` for why it is not shipped.
-    const source = canvas(720, 1000, [248, 249, 250])
-    box(source, 40, 470, 620, 200, [0, 0, 0]) // just past fold 1
-    const signals = [
-      signal({ name: 'Impressum', nameHints: ['link'], x: 80, y: 500, width: 160, height: 40 }),
-      signal({ name: 'Jetzt anfragen', nameHints: ['button', 'cta'], hasReactions: true, x: 100, y: 1000, width: 1200, height: 380 }),
-    ]
-    const ids = await run({ source, signals, frameWidth: 1440, frameHeight: 2000, includeUnshipped: true })
-    expect(ids).toContain('cta-below-fold')
-  })
-
-  it('cta-below-fold stays silent when the strongest button is above fold 1', async () => {
-    const source = canvas(720, 2000)
-    box(source, 40, 100, 400, 120, [20, 110, 220])
-    const signals = [
-      signal({ name: 'Jetzt anfragen', nameHints: ['button', 'cta'], hasReactions: true, x: 80, y: 200, width: 800, height: 240 }),
-      signal({ name: 'Fußzeilen-Link', nameHints: ['link'], x: 80, y: 3800, width: 120, height: 40 }),
-    ]
-    expect(
-      await run({ source, signals, frameWidth: 1440, frameHeight: 4000, includeUnshipped: true }),
-    ).not.toContain('cta-below-fold')
-  })
-
-  // --- cold-fold -----------------------------------------------------------
-
-  it('cold-fold fires when a later section concentrates attention more', async () => {
-    // Busy, evenly textured first viewport; one strong focal point far down.
-    const source = canvas(720, 2000)
-    for (let y = 20; y < 440; y += 40) for (let x = 20; x < 700; x += 60) box(source, x, y, 40, 24, [150, 150, 158])
-    box(source, 250, 1450, 220, 160, [0, 0, 0])
-    const ids = await run({ source, signals: [], frameWidth: 1440, frameHeight: 4000 })
-    expect(ids).toContain('cold-fold')
-  })
-
-  it('cold-fold stays silent when the first section is the most focused', async () => {
-    const source = canvas(720, 2000)
-    box(source, 250, 120, 220, 160, [0, 0, 0])
-    for (let y = 1000; y < 1980; y += 40) for (let x = 20; x < 700; x += 60) box(source, x, y, 40, 24, [150, 150, 158])
-    expect(await run({ source, signals: [], frameWidth: 1440, frameHeight: 4000 })).not.toContain('cold-fold')
-  })
+  for (const scenario of SCENARIOS) {
+    it(scenario.id, async () => {
+      const ids = await runScenario(scenario.build())
+      if (scenario.expect === 'fires') expect(ids).toContain(scenario.rule)
+      else expect(ids).not.toContain(scenario.rule)
+    })
+  }
 })

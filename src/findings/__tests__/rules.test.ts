@@ -158,12 +158,15 @@ describe('cold-fold', () => {
   })
 
   it('stays silent inside the relative margin', () => {
-    const margin = ENGINE_CONFIG.findings.coldFoldMargin
+    // Die Schwelle hängt seit 1.2 B am UI-Typ; `input()` sagt „web", also gilt
+    // der web-Wert. Das ist kein Testdetail, sondern die Regel selbst — eine
+    // Schwelle für alle Typen war der Fehler.
+    const margin = ENGINE_CONFIG.findings.coldFoldMargin.web
     expect(evaluateRule('cold-fold', input({ plan: tall, sectionSalience: [0.16, 0.16 * (1 + margin / 2)] }))).toBeNull()
   })
 
   it('fires just past the relative margin', () => {
-    const margin = ENGINE_CONFIG.findings.coldFoldMargin
+    const margin = ENGINE_CONFIG.findings.coldFoldMargin.web
     expect(evaluateRule('cold-fold', input({ plan: tall, sectionSalience: [0.16, 0.16 * (1 + margin * 1.5)] }))).not.toBeNull()
   })
 

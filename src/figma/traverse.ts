@@ -170,8 +170,21 @@ export function collectSignals(root: AnalysableNode): TraverseResult {
       if (text.length > 0) signal.text = text
     }
 
+    // Nur, wenn die Farbe auch wirklich so auf dem Bildschirm landet.
+    //
+    // `fillLuminance` ist die Grundlage der Kontrastmessung, und die tritt als
+    // überprüfbare Tatsache auf. Eine Deckkraft unter 1 — am Paint oder am
+    // Knoten — mischt die Farbe mit dem, was dahinter liegt; der Wert aus dem
+    // Layer-Baum wäre dann **besser** als das, was man sieht. Lieber gar kein
+    // Wert und ein „nicht messbar" im Report als eine geschönte Zahl.
+    //
+    // Gefunden beim systematischen Abgleich, was die Testframes nicht erzeugen
+    // (siehe README, „Was die Generatoren nicht erzeugen"): sie setzen Deckkraft
+    // nie unter 1, also konnte kein Test das finden.
     const solid = paints.find((paint) => paint.type === 'SOLID')
-    if (solid) signal.fillLuminance = relativeLuminance(solid.color)
+    if (solid && (solid.opacity ?? 1) >= 1 && opacity >= 1) {
+      signal.fillLuminance = relativeLuminance(solid.color)
+    }
 
     signals.push(signal)
   }

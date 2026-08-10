@@ -5,6 +5,13 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import esbuild from 'esbuild'
 
+/**
+ * Die Plugin-Version kommt aus `package.json` und nirgendwo sonst her —
+ * `src/version.ts` liest sie als Build-Zeit-Konstante. `vitest.config.ts`
+ * definiert dieselbe Konstante, damit die Tests denselben Wert sehen.
+ */
+const packageVersion = JSON.parse(await readFile('package.json', 'utf8')).version
+
 const watch = process.argv.includes('--watch')
 const dev = watch || process.argv.includes('--dev')
 
@@ -37,7 +44,10 @@ const common = {
   logLevel: 'info',
   minify: !dev,
   sourcemap: dev ? 'inline' : false,
-  define: { 'process.env.NODE_ENV': dev ? '"development"' : '"production"' },
+  define: {
+    'process.env.NODE_ENV': dev ? '"development"' : '"production"',
+    __PACKAGE_VERSION__: JSON.stringify(packageVersion),
+  },
 }
 
 const mainOptions = {

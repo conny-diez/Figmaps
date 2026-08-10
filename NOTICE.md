@@ -25,6 +25,34 @@ Darstellung, nicht für die Vorhersagegüte.
 **Wie es überprüfbar würde:** Eye-Tracking oder Scroll-Analytics auf gescrollten
 Seiten. Das eigene First-Click-Set könnte den Anfang liefern.
 
+### Rückfall der `cold-fold`-Schwelle auf den web-Wert (`ENGINE_CONFIG.findings.coldFoldMargin`)
+
+`cold-fold` hat seit 1.2 eine Schwelle je UI-Typ. Gemessen sind **zwei** davon:
+`web` 0,080 und `mobile` 0,189, beide am 60. Perzentil ihrer eigenen Verteilung
+über je rund 500 UEyes-Bilder mit erzwungener Segmentierung.
+
+**Begründung:** Die Schwelle war vorher eine Zahl für alle Typen, geschätzt an
+Webseiten, und lag auf Telefon-Screens unter dem Median der
+Entscheidungsgröße — die Regel sagte dort häufiger ja als nein (61,6 % gegen
+40,0 %).
+
+**Was nicht gemessen ist:** die Werte für `desktop` und `poster`. Beide
+Kategorien sind importierbar, aber für Figmaps nicht die relevanten UI-Typen;
+sie fallen auf den `web`-Wert zurück. Dass eine Desktop-Anwendung oder ein
+Poster dieselbe Verteilung hat wie eine Webseite, ist eine **Annahme** — und
+zwar dieselbe Art Annahme, die bei `flat` schon einmal schiefging, als eine in
+einer Population geschätzte Schwelle in einer anderen angewandt wurde.
+
+**Nicht gemessen ist auch die Höhe der Schwelle selbst.** Das 60. Perzentil ist
+aus dem ausgelieferten Zustand übernommen, nicht hergeleitet: 0,08 lag in der
+Webseiten-Verteilung dort. Ob ein Befund auf 40 % der Screens erscheinen soll,
+ist eine Produktfrage. Was 1.2 entschieden hat, ist nur, dass die Regel in
+beiden gemessenen Typen dieselbe Frage stellt.
+
+**Wie es überprüfbar würde:** `npm run eval:fixtures -- --category desktop`
+bzw. `poster`, dann `npm run cold-fold`. Die Messung selbst ist billig; was
+fehlt, ist die Entscheidung, ob diese UI-Typen für Figmaps überhaupt zählen.
+
 ### Was inzwischen doch gemessen ist
 
 Die **Betrachtungsdauer** (Epic D) stand hier ursprünglich als Hypothese. Sie
@@ -109,6 +137,18 @@ Der Datensatz selbst (`eval/fixtures/`) ist **nicht** Teil des Repos und wird
 nicht verteilt — siehe `eval/fixtures/README.md`. Er wird lokal zum Messen
 verwendet.
 
+### Seit 1.2 liegen 40 UEyes-Bilder im Repository
+
+`eval/fixtures/gate-web/` und `gate-mobile/` enthalten je 20 Bilder aus dem
+Test-Split von UEyes, samt Heatmaps und Fixationskarten für 3 s, verkleinert auf
+das Analyseraster. Sie sind die Datengrundlage des Regressions-Gates.
+
+CC BY 4.0 erlaubt die Weitergabe ausdrücklich, auch verändert und auch
+kommerziell, solange die Nennung erfolgt und Änderungen kenntlich sind. Beides
+ist erfüllt: die Nennung steht hier, im `index.json` beider Sets und in jedem
+Report; die Verkleinerung und das Maximum-Pooling der Fixationskarten sind im
+`index.json` als Änderung vermerkt.
+
 ### Für die Rechtsabteilung
 
 Zwei Punkte, die eine technische Entscheidung überschreiten und vor einer
@@ -119,9 +159,9 @@ Veröffentlichung zu klären sind:
    abgeleitetes Werk gilt und die Namensnennung tragen müsste, ist eine
    juristische Bewertung. Technisch wäre es umsetzbar (die Fußzeile jeder Map
    ließe sich um eine Zeile ergänzen); ob es nötig ist, entscheiden wir nicht.
-2. **Interne vs. öffentliche Nutzung.** Für die interne Verwendung bei
-   meinestadt.de gelten dieselben CC-BY-Pflichten; beim Publishing in die
-   Figma Community kommt die Sichtbarkeit in der Store-Beschreibung hinzu.
+2. **Interne vs. öffentliche Nutzung.** Für die rein interne Verwendung gelten
+   dieselben CC-BY-Pflichten; beim Publishing in die Figma Community kommt die
+   Sichtbarkeit in der Store-Beschreibung hinzu.
 
 ## Manrope und JetBrains Mono — Schriften in `assets/fonts/`
 

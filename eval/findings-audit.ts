@@ -24,6 +24,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { analyzeFrame, type AnalyzeResult } from '../src/engine/analyze'
 import { HeuristicAttentionEngine } from '../src/engine/heuristic'
+import { resolveParams, type EngineParams } from '../src/engine/params'
 import { sectionSalience } from '../src/engine/segments'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import type { NodeSignal } from '../src/messages'
@@ -37,6 +38,20 @@ import type { Bitmap } from '../src/engine/ops'
 import type { PriorAssetId } from '../src/engine/priors'
 
 export type RuleOutcome = 'fired' | 'silent' | 'blocked'
+
+/**
+ * Kurzbeschreibung eines Parametersatzes, für die Kopfzeile jeder Quote.
+ *
+ * Nur die Größen, die die Karte formen — Gewichte und Prior stehen ohnehin in
+ * der Konfiguration. Eine Quote ohne diese Zeile ist eine Zahl ohne Bezug.
+ */
+export function describeParams(params: EngineParams): string {
+  const parts = [`α ${params.blendAlpha ?? '—'}`]
+  if (params.blendGamma !== undefined && params.blendGamma !== 1) parts.push(`blendGamma ${params.blendGamma}`)
+  parts.push(`Blur ${params.post.blurSigmaRatio}`, `Gamma ${params.post.gamma}`)
+  parts.push(`Clip p${params.post.clipLowPercentile}/p${params.post.clipHighPercentile}`)
+  return parts.join(', ')
+}
 
 export type RuleStats = {
   id: string
@@ -60,6 +75,15 @@ export type RuleStats = {
 export type AuditResult = {
   setName: string
   imageCount: number
+  /**
+   * Wie die Karte erzeugt wurde, auf der gemessen wurde.
+   *
+   * Steht hier, weil eine Feuerrate **nur für ihre Karte gilt**. `blendAlpha`,
+   * `blendGamma` und die Nachbearbeitung ändern genau diese Karte, ohne eine
+   * Zeile in `rules.ts` anzufassen — und die Schwellen der Regeln sind auf
+   * einer bestimmten Fassung kalibriert. Wer hier etwas verstellt, misst neu.
+   */
+  configuration: string
   viewportOverride: number | undefined
   /** The configuration the rates below are valid for — never leave it implicit. */
   priorAsset: PriorAssetId | 'aus der Geometrie abgeleitet'
@@ -115,7 +139,9 @@ export function decisionVariable(id: string, input: FindingsInput): number | nul
       for (let i = 0; i < map.values.length; i++) if (map.values[i] > peak) { peak = map.values[i]; peakIndex = i }
       const x1 = peakIndex % map.width
       const y1 = Math.floor(peakIndex / map.width)
-      const minDistance = 0.3 * map.width
+      // Dasselbe Maß wie in der Regel — sonst misst der Audit eine andere Größe
+      // als die, die entscheidet.
+      const minDistance = ENGINE_CONFIG.findings.competitionMinDistanceDiagonal * Math.hypot(map.width, map.height)
       let second = 0
       let secondIndex = -1
       for (let i = 0; i < map.values.length; i++) {
@@ -210,7 +236,7 @@ export function thresholdOf(id: string, category: string): { value: number; fire
     case 'competition':
       return { value: cfg.competitionValleyRatio, firesBelow: true }
     case 'cold-fold':
-      return { value: cfg.coldFoldMargin, firesBelow: false }
+      return { value: cfg.coldFoldMargin[category] ?? cfg.coldFoldMargin.web, firesBelow: false }
     case 'dead-cta':
       return { value: cfg.deadCtaRelativeToBest, firesBelow: true }
     default:
@@ -259,6 +285,10 @@ export type AuditOptions = {
    * otherwise.
    */
   segment?: boolean
+  /** Overrides the engine parameters — see `AuditResult.configuration`. */
+  params?: EngineParams
+  /** Wie diese Konfiguration im Report heißt. */
+  configuration?: string
 }
 
 /** One frame to score, whatever it came from. */
@@ -272,6 +302,8 @@ type AuditCase = {
   category?: string
   viewportOverride?: number
   segment?: boolean
+  /** Overrides the engine parameters — see `AuditResult.configuration`. */
+  params?: EngineParams
 }
 
 const VARIABLE_NAMES: Record<string, string> = {
@@ -319,7 +351,13 @@ async function tally(
 
   for await (const item of cases) {
     if (item.signals.length > 0) withSignals++
-    const engine = new HeuristicAttentionEngine(item.priorAsset ? { priorAsset: item.priorAsset } : {})
+    // A rate belongs to the map it was measured on — so an override goes
+    // through the same parameter object the plugin resolves, not through a
+    // second code path.
+    const engine = new HeuristicAttentionEngine({
+      ...(item.priorAsset ? { priorAsset: item.priorAsset } : {}),
+      ...(item.params ? { params: item.params } : {}),
+    })
 
     const analysis: AnalyzeResult | null = await analyzeFrame(engine, nodeImageOps, {
       source: item.image,
@@ -379,6 +417,7 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
         ...(options.priorAsset ? { priorAsset: options.priorAsset, category: options.priorAsset } : {}),
         ...(options.viewportOverride ? { viewportOverride: options.viewportOverride } : {}),
         ...(options.segment === false ? { segment: false } : {}),
+        ...(options.params ? { params: options.params } : {}),
       }
     }
   }
@@ -397,6 +436,7 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
   return {
     setName,
     imageCount: count,
+    configuration: options.configuration ?? describeParams(options.params ?? resolveParams()),
     viewportOverride: options.viewportOverride,
     priorAsset: options.priorAsset ?? 'aus der Geometrie abgeleitet',
     // Read off the plans, not off the option: `--viewport` only *requests*
@@ -410,6 +450,10 @@ export async function auditFindings(options: AuditOptions): Promise<AuditResult>
 export type ConstructedAuditOptions = {
   /** Layout variants per shape. Each varies hierarchy, hero, CTA position, card count. */
   variants?: number
+  /** Overrides the engine parameters — see `AuditResult.configuration`. */
+  params?: EngineParams
+  /** Wie diese Konfiguration im Report heißt. */
+  configuration?: string
   onProgress?: (done: number, total: number) => void
 }
 
@@ -438,6 +482,7 @@ export async function auditConstructed(options: ConstructedAuditOptions = {}): P
           frameHeight: shape.frameHeight,
           priorAsset: shape.prior,
           category: shape.category,
+          ...(options.params ? { params: options.params } : {}),
         }
       }
     }
@@ -446,6 +491,7 @@ export async function auditConstructed(options: ConstructedAuditOptions = {}): P
     out.push({
       setName: shape.label,
       imageCount: result.count,
+      configuration: options.configuration ?? describeParams(options.params ?? resolveParams()),
       viewportOverride: undefined,
       priorAsset: shape.prior,
       segmented: result.segmented > 0,
