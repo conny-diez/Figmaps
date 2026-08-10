@@ -29,6 +29,7 @@
     "competition": "node scripts/eval.mjs --competition",
     "contrast-check": "node scripts/eval.mjs --contrast-check",
     "measurable": "node scripts/eval.mjs --measurable",
+    "contrast-gate": "node scripts/eval.mjs --contrast-gate",
     "header-weight": "node scripts/eval.mjs --header-weight",
     "visual-check": "node scripts/eval.mjs --visual-check",
     "side-effects": "node scripts/eval.mjs --side-effects",

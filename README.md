@@ -1868,6 +1868,7 @@ Code, der Rest ist das Set.
 ```bash
 npm run contrast-check      # die Karte auf drei Frames, Bild und Befunde
 npm run measurable          # 1.3: wie viele Elemente verwirft die Plausibilitätsprüfung?
+npm run contrast-gate       # 1.3: Regressions-Gate — je Frame gemessen/durchgefallen/nicht messbar
 ```
 
 **Die dritte Karte, und die einzige, die keine Vorhersage ist.** Sie hat keinen
@@ -3522,6 +3523,108 @@ Sprachregeln (C-2), von den Tests erzwungen:
 
 ---
 
+## Das zweite Gate: die Contrastmap (1.3)
+
+```bash
+npm run contrast-gate              # prüft gegen die eingecheckte Erwartung
+npm run contrast-gate -- --write   # schreibt sie neu (bewusste Änderung)
+```
+
+**Das Gate aus A-7 deckt die Contrastmap nicht ab, und das lässt sich nicht
+beheben.** Es bewertet 40 UEyes-Bilder; ein Screenshot hat keine Ebenen, also
+keinen Textknoten, keine Textfarbe und keine Schriftgröße. Auf dem Gate-Set misst
+die Contrastmap **null** Elemente. Die belastbarste Ausgabe des Plugins — die
+einzige, die als überprüfbare Tatsache auftritt — hatte damit keinen
+Regressionsschutz.
+
+**Und das ist nicht theoretisch.** Alle drei Messfehler von 1.2 saßen nicht in
+der Rechnung, sondern in der Pipeline auf echten Frames:
+
+| Fehler | Wirkung | Unit-Tests |
+|---|---|---|
+| Textfarbe fehlte in den Fixtures | **jeder** Knoten wurde übersprungen | grün |
+| Kantenglättung fehlte in den Fixtures | **jeder** Wert war falsch, alles auf 3–4:1 gestaucht | grün |
+| Messung lief auf dem Analysebild | zwischen den Glyphen kein reiner Hintergrund mehr | grün |
+
+Die Unit-Tests prüfen die Rechnung. Was fehlte, war eine Zahl über den ganzen
+Weg.
+
+### Drei abzählbare Zahlen je Frame
+
+| Spalte | was sie zählt |
+|---|---|
+| `measured` | gemessene Textelemente |
+| `failed` | davon durchgefallen |
+| `notMeasurable` | nicht messbar |
+
+Bewegt sich eine davon, wird das Gate rot. **Keine Toleranz**, anders als beim
+ersten Gate: dort steht ein CC-Mittelwert über 20 Bilder, und ein Rauschband von
+0,02 ist dort sinnvoll. Hier stehen abzählbare Elemente. „Ein Element mehr
+durchgefallen" ist eine Verbesserung oder ein Fehler, aber nie Rauschen.
+
+Der Korpus sind die 19 Frames mit Layer-Baum **plus die Gegenprobe**. Die gehört
+dazu, obwohl sie in keine Quote gehört: sie ist der einzige Frame mit Drehung und
+Verdeckung, und ohne sie stünde in `notMeasurable` überall bis auf die
+Statusleiste eine Null — das Gate könnte dann nicht merken, wenn die Erkennung aus
+1a stillschweigend aufhört zu greifen.
+
+Stand bei Einführung: **371 gemessen, 222 durchgefallen, 4 nicht messbar** über
+20 Frames. Die Zahl der Durchgefallenen ist hoch, weil die Generatoren graue
+Sekundärtexte auf Weiß zeichnen — für ein Gate ist das gleichgültig, es vergleicht
+zwei Läufe auf demselben Korpus.
+
+### Warum die Erwartung im Repo liegt und nicht aus `main` gerechnet wird
+
+Zwei Gründe, der zweite ist der stärkere:
+
+1. **Derselbe wie beim ersten Gate.** Ein Vergleichswert, der woanders liegt,
+   kann still ausfallen — das Referenz-Set lag in einem Actions-Cache, und das
+   Gate meldete monatelang „übersprungen".
+2. **Der Korpus ist Code, nicht Daten.** Ein Baseline-Lauf im `main`-Worktree
+   würde `main`s Generatoren gegen `main`s Messung stellen und wäre immer grün.
+   Eine eingecheckte Erwartung macht dagegen jede Bewegung der Zahlen zu einer
+   **Zeile im Diff**, die ein Mensch im PR sieht. Ein Vergleich, der nur im Log
+   stattfindet, zeigt sie niemandem.
+
+Die Erwartung zu aktualisieren ist erlaubt und manchmal richtig. Sie *still* zu
+aktualisieren ist es nicht: ein CI-Schritt weist eigens aus, wenn
+`eval/contrast-baseline.json` im PR verändert wurde, samt Diff in der
+Zusammenfassung. Er macht den Check nicht rot — er macht die Bewegung sichtbar.
+
+### Der Beweis, dass es rot werden kann
+
+Wie beim ersten Gate, und aus demselben Grund: das erste war dreimal grün, ohne
+zu messen. Zwei Erreichbarkeitstests, die verschiedene Hälften prüfen — beide
+laufen im CI **und** als Test:
+
+| Lauf | trifft | was passieren muss |
+|---|---|---|
+| `--limits-off` | 1a: Drehung und Verdeckung | die Gegenprobe wird wieder vollständig „gemessen", `notMeasurable 3 → 0` |
+| `--max-edge 200` | den historischen Fehler Nr. 3 | die Messung auf verkleinertem Bild, `measured … → 0` auf mehreren Frames |
+
+Passiert einer davon, ist der Schritt rot mit einer Meldung, die sagt, was das
+bedeutet: das Gate sieht etwas Falsches an.
+
+**Beim zweiten Selbsttest fällt etwas auf, das den Aufbau bestätigt.** Bei 200 px
+Kantenlänge meldet die Messung nicht falsche Werte, sondern **„Text im Rahmen
+nicht zu sehen"** — der Textkern ist verschwunden, und die Prüfung aus 1b fängt
+genau das. Der historische Fehler Nr. 3 wäre 2026 also nicht nur vom Gate
+gesehen, sondern von der Messung selbst gemeldet worden.
+
+### Das Gate läuft zweimal, und das ist keine Doppelung
+
+`eval/__tests__/contrast-gate.test.ts` gibt die Rückmeldung beim Entwickeln, in
+jedem `npm test`. Der CI-Schritt beweist, dass der ganze Weg bis zum Exit-Code
+rot wird. Beim ersten Gate hat genau diese Unterscheidung gefehlt: der Vergleich
+war richtig gerechnet und der Job trotzdem grün, weil davor etwas anderes
+schiefgegangen war.
+
+Der Test prüft zusätzlich, was ein Vergleich zweier Zahlenlisten leicht übersieht:
+einen Frame, der aus dem Korpus **fällt**. Das ist die gefährlichste Abweichung —
+die Summen sinken, und das sieht aus wie „weniger Befunde".
+
+---
+
 ## Das Text-Bindungs-Prinzip (1.3)
 
 **Jede Herkunftsangabe muss aus dem stammen, was tatsächlich gelaufen ist, nicht
@@ -3629,9 +3732,9 @@ weitere, davon vier behoben:
 | Panel, Zusammenfassung | „In 4 Abschnitten à 780 px analysiert, **mit Above-the-fold-Map**" | die Fold-Map entsteht im Rumpf des Heatmap-Zweigs. Heatmap aus ⇒ keine Fold-Map, Satz unverändert | **behoben** — aus `outcome.maps` |
 | Panel, Ergebniszeile | „2 Maps für **2 Frames** erstellt" | gezählt wurde `outcomes.length`, und darin steckt auch ein Frame mit `maps: []` | **behoben** — nur Frames mit Karten |
 | Panel, Klick-Rangliste | die Liste stand da | `if (ranking.length > 0) setRanking(…)` ließ sie bei einem Batch aus einem **früheren** Frame stehen, neben Befunden eines anderen | **behoben** — immer gesetzt |
-| Ausgabe-Frame „Befunde" | „Keine der geprüften Auffälligkeiten trifft zu." | der Rahmen enthält **nur** die Vorhersage-Regeln. `contrastFindings` reist in `PLACE_RESULT` mit und wird in `main.ts` nicht gelesen — wer die Karten in eine Präsentation kopierte, nahm „nichts gefunden" mit, während im Panel drei Texte durchgefallen waren | **Umfang benannt** — „keine der geprüften **vorhergesagten** Auffälligkeiten", plus „Gemessene Kontrastwerte stehen im Panel". Die Lücke selbst bleibt, siehe unten |
+| Ausgabe-Frame „Befunde" | „Keine der geprüften Auffälligkeiten trifft zu." | der Rahmen enthält **nur** die Vorhersage-Regeln. `contrastFindings` reist in `PLACE_RESULT` mit und wird in `main.ts` nicht gelesen — der Satz stand also neben einer Contrastmap mit roten Rahmen und Werten unter 4,5:1. **Ein falsches Bestanden in einer Barrierefreiheitsprüfung**, und beides wanderte zusammen in jede Präsentation | **behoben** — Rahmen und Überschrift heißen `Vorhersage-Befunde`, der Leerzustand lautet „Keine Vorhersage-Auffälligkeiten. Kontrastwerte siehe Contrastmap." Die Lücke bleibt, siehe unten |
 | Contrastmap ohne Textknoten | eine Karte mit dem Titel „Contrastmap — gemessen" | in einem Frame aus reinen Bildebenen gibt es nichts zu messen, und weil dann auch `skipped` leer ist, war die Warnung stumm. Eine Karte, die nichts zu messen hatte, sieht aus wie eine, die nichts gefunden hat | **behoben** — eigene Warnung |
-| Panel bei mehreren Frames | „Befunde", „Kontrast (gemessen)" ohne Frame-Namen | die Sektionen zeigen den **letzten** Frame, die Ergebniszeile darüber den ganzen Lauf | **offen**, siehe unten |
+| Panel bei mehreren Frames | „Befunde", „Kontrast (gemessen)" ohne Frame-Namen | die Sektionen zeigen den **letzten** Frame, die Ergebniszeile darüber den ganzen Lauf | **behoben** — Frame-Name als Präfix, wie bei den Warnungen; der Name liegt im selben Zustand wie der Inhalt |
 
 Was **nicht** betroffen ist, und warum das die interessantere Hälfte ist: der
 Map-Titel (`mapTitle(kind)`), die Ebenennamen der Karten-Spalten, die
@@ -3650,12 +3753,21 @@ strukturell dicht ist.
   bereits mit (`PLACE_RESULT.contrastFindings`), sie wird nur nicht gelesen. Das
   ist eine sichtbare Änderung an der Ausgabe und gehört in einen eigenen Schritt;
   bis dahin sagt der Rahmen, worüber er spricht.
-- **Das Panel zeigt bei mehreren Frames den letzten.** Befunde, Kontrastwerte
-  und die Abschnitts-Zusammenfassung werden je Frame überschrieben, während die
-  Ergebniszeile über ihnen den ganzen Lauf zählt. Die Warnungen machen es
-  richtig — sie tragen bei mehr als einem Frame den Frame-Namen als Präfix. Die
-  Behebung ist ein Umbau der Ergebnis-Sektion auf eine Gliederung je Frame, keine
-  Textänderung.
+#### Der Frame-Name gehört an den Inhalt, nicht daneben
+
+Die Ergebnis-Sektionen des Panels zeigen **einen** Frame — den letzten, der
+fertig wurde —, während die Ergebniszeile darüber den ganzen Lauf zählt. Die
+Antwort stand schon im Code: die Warnungen tragen bei mehr als einem Frame
+`${frameName}: ` als Präfix. Dieselbe Regel gilt jetzt für „Befunde", „Kontrast
+(gemessen)", „Kontrast von Bedienelementen", das Klick-Ranking und die
+Abschnittszeile.
+
+Dazu eine Änderung an der Form, nicht nur am Text: die vier getrennten States
+(`findings`, `contrastFindings`, `nonTextFindings`, `segments`) sind ein Objekt
+geworden, das den Frame-Namen **enthält**. Eine Beschriftung, die getrennt vom
+Inhalt gesetzt wird, kann von ihm abweichen — und genau das ist die Fehlerklasse
+dieses Kapitels. Vier `setState`-Aufrufe nebeneinander waren die Bauform, die sie
+möglich gemacht hat.
 
 ---
 
@@ -3866,7 +3978,7 @@ blockiert (NFR-3).
 npm test
 ```
 
-414 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
+500 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
 Bild ⇒ flache Feature-Map, schwarzes Quadrat ⇒ Peak an dessen Position,
 Prototype-Hotspot schlägt Namens-Treffer, gleiche Eingabe ⇒ identische Ausgabe.
 Echte Screens haben keine bekannte Wahrheit und eignen sich nicht für
@@ -3886,6 +3998,9 @@ Die für 1.1 tragenden Gruppen:
 | `src/findings/__tests__/end-to-end.test.ts` | C-1 — jede Regel ist über den **echten** Analysepfad auslösbar *und* zum Schweigen zu bringen |
 | `src/findings/__tests__/robustness.test.ts` | 1.2 — dieselben zwölf Fälle noch einmal unter verstellten Engine-Parametern |
 | `eval/__tests__/alpha.test.ts` | 1.2 — die Abkürzung im Alpha-Sweep rechnet dasselbe wie `combineFeatureParts` |
+| `src/contrast/__tests__/measurable.test.ts` | 1.3, 1a/1b — Drehung, Verdeckung und fehlender Textkern werden erkannt; die Textkern-Prüfung ist eine Anwesenheits- und keine Kontrastprüfung |
+| `src/ui/__tests__/map-meta.test.ts` | 1.3 — eine lückenhafte Asset-Tabelle erzeugt keine Kopfzeile, die von der intakten nicht zu unterscheiden ist. Kategorie und Dauer je einzeln |
+| `eval/__tests__/contrast-gate.test.ts` | 1.3 — das zweite Regressions-Gate, samt Beweis, dass es rot werden kann |
 
 ### Die Erreichbarkeitsfälle halten auch, wenn jemand an der Engine dreht
 

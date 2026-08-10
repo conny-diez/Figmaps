@@ -294,7 +294,7 @@ function assertNothingClipped(root: StubNode): void {
 
 function mapColumns(wrapper: StubNode): StubNode[] {
   const row = wrapper.children.find((child) => child.name === 'Maps')!
-  return row.children.filter((child) => !child.name.startsWith('Befunde'))
+  return row.children.filter((child) => !child.name.startsWith('Vorhersage-Befunde'))
 }
 
 describe('placeMaps', () => {
@@ -393,17 +393,60 @@ describe('placeMaps', () => {
     // A missing block reads as a missing feature — and on a single-viewport
     // phone screen an empty result is the common case.
     const wrapper = (await placeMaps(sourceNode, maps, { mapMeta })) as unknown as StubNode
-    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Befunde'))
+    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Vorhersage-Befunde'))
     expect(findingsFrame).not.toBeNull()
     const texts = findingsFrame!.children.map((child) => child.characters as string)
-    // 1.3: der Satz nennt seinen Umfang. Der Rahmen enthält nur die
-    // Vorhersage-Regeln, nicht die Kontrastmessung — „keine Auffälligkeiten"
-    // ohne dieses Wort behauptete einen Umfang, den er nicht hat.
-    expect(texts.some((text) => text.includes('Keine der geprüften vorhergesagten Auffälligkeiten trifft zu'))).toBe(
-      true,
-    )
-    expect(texts.some((text) => text.includes('Gemessene Kontrastwerte stehen im Panel'))).toBe(true)
+    expect(texts.some((text) => text.includes('Keine Vorhersage-Auffälligkeiten'))).toBe(true)
     assertNothingClipped(wrapper)
+  })
+
+  /**
+   * 1.3 — der Leerzustand darf nicht behaupten, geprüft zu haben, was der
+   * Rahmen nicht enthält.
+   *
+   * **Das ist kein Formulierungstest.** Der Satz „Keine der geprüften
+   * Auffälligkeiten trifft zu" stand neben einer Contrastmap mit roten Rahmen
+   * und Werten unter 4,5:1 — ein falsches Bestanden in einer
+   * Barrierefreiheitsprüfung, und beides wanderte zusammen in jede
+   * Präsentation, in die jemand die Frames kopiert hat.
+   *
+   * Geprüft wird die **Eigenschaft**, nicht der Wortlaut: kein Textknoten des
+   * Rahmens darf von „geprüft" oder „Auffälligkeiten" sprechen, ohne den Umfang
+   * zu nennen, und der Rahmen muss sagen, wo die Messwerte stehen. Ein Test auf
+   * einen festen Satz würde beim nächsten Umformulieren mitwandern und nichts
+   * mehr halten.
+   */
+  it('der Leerzustand behauptet keinen Umfang, den der Rahmen nicht hat', async () => {
+    const wrapper = (await placeMaps(sourceNode, maps, { mapMeta, findings: [] })) as unknown as StubNode
+    const frame = findNode(wrapper, (node) => node.name.startsWith('Vorhersage-Befunde'))
+    expect(frame).not.toBeNull()
+    const texts = frame!.children.map((child) => child.characters as string)
+    const all = texts.join(' | ')
+
+    // Der Rahmen enthält die Kontrastmessung nicht — kein Satz darin darf
+    // klingen, als hätte er sie geprüft.
+    for (const text of texts) {
+      if (/geprüft|Auffälligkeit/i.test(text)) {
+        expect(text, `„${text}" nennt seinen Umfang nicht`).toMatch(/Vorhersage|vorhergesagt/i)
+      }
+    }
+    // Und er sagt, wo die Messwerte stehen, statt sie zu verschweigen.
+    expect(all).toMatch(/Contrastmap/)
+    // Der Umfang steht auch im Ebenennamen — der reist mit, wenn jemand nur den
+    // Rahmen kopiert.
+    expect(frame!.name.startsWith('Vorhersage-Befunde')).toBe(true)
+  })
+
+  it('nennt den Umfang auch, wenn Vorhersage-Befunde vorliegen', async () => {
+    // Nicht nur im Leerzustand: ein Rahmen mit drei Regelbefunden lässt genauso
+    // offen, ob die Kontrastprüfung dabei war. Die Überschrift trägt es.
+    const wrapper = (await placeMaps(sourceNode, maps, {
+      mapMeta,
+      findings: [{ id: 'r1', severity: 'problem', text: 'Ein Befund.' }],
+    })) as unknown as StubNode
+    const frame = findNode(wrapper, (node) => node.name.startsWith('Vorhersage-Befunde'))
+    const texts = frame!.children.map((child) => child.characters as string)
+    expect(texts[0]).toBe('Vorhersage-Befunde')
   })
 
   it('never writes the word „Ortsprior" into any text node', async () => {
@@ -443,7 +486,7 @@ describe('placeMaps', () => {
     // Regression: layoutSizingHorizontal was set before appendChild, so Figma
     // rejected it and the whole placement failed with PLACE_FAILED.
     const wrapper = (await placeMaps(sourceNode, maps, { findings, segments })) as unknown as StubNode
-    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Befunde'))
+    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Vorhersage-Befunde'))
     expect(findingsFrame).not.toBeNull()
 
     const texts = findingsFrame!.children.map((child) => child.characters as string)
@@ -458,7 +501,7 @@ describe('placeMaps', () => {
 
   it('omits the segmentation note for an unsegmented frame', async () => {
     const wrapper = (await placeMaps(sourceNode, maps, { findings })) as unknown as StubNode
-    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Befunde'))!
+    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Vorhersage-Befunde'))!
     expect(findingsFrame.children).toHaveLength(2 + findings.length)
   })
 
@@ -466,7 +509,7 @@ describe('placeMaps', () => {
     // The reported bug: 520 x 90 px, second finding cut in half. The height has
     // to follow the text, and the text has to wrap.
     const wrapper = (await placeMaps(sourceNode, maps, { findings, segments, mapMeta })) as unknown as StubNode
-    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Befunde'))!
+    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Vorhersage-Befunde'))!
 
     expect(findingsFrame.primaryAxisSizingMode).toBe('AUTO')
     expect(findingsFrame.counterAxisSizingMode).toBe('FIXED')
@@ -495,7 +538,7 @@ describe('placeMaps', () => {
       segments,
       mapMeta,
     })) as unknown as StubNode
-    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Befunde'))!
+    const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Vorhersage-Befunde'))!
 
     // Every finding wrapped over several lines, and the frame is tall enough
     // for all of them plus padding.
@@ -518,7 +561,7 @@ describe('placeMaps', () => {
       const wrapper = (await placeMaps(sourceNode, maps, { findings })) as unknown as StubNode
       // Maps intact, and no empty findings box left standing next to them.
       expect(mapColumns(wrapper)).toHaveLength(maps.length)
-      expect(findNode(wrapper, (node) => node.name.startsWith('Befunde'))).toBeNull()
+      expect(findNode(wrapper, (node) => node.name.startsWith('Vorhersage-Befunde'))).toBeNull()
       expect(notices.some((message) => message.includes('Maps sind erstellt'))).toBe(true)
     } finally {
       figmaStub.createText = original

@@ -129,3 +129,92 @@ jobs:
             gate-pr-*.md
             gate-pr-*-kontaktbogen.png
           if-no-files-found: ignore
+
+  contrast-gate:
+    # 1.3 — das ZWEITE Regressions-Gate, für die Contrastmap.
+    #
+    # WARUM ES EIN ZWEITES BRAUCHT. Das Gate darüber bewertet 40 UEyes-Bilder
+    # und schützt damit genau eine Ausgabe: die Vorhersage. Die Contrastmap
+    # kommt darin überhaupt nicht vor, und zwar aus einem Grund, der sich nicht
+    # beheben lässt — ein Screenshot hat keine Ebenen, also keinen Textknoten,
+    # keine Textfarbe und keine Schriftgröße. Auf dem Gate-Set misst die
+    # Contrastmap NULL Elemente.
+    #
+    # Die belastbarste Ausgabe des Plugins — die einzige, die als überprüfbare
+    # Tatsache auftritt — hatte damit keinen Regressionsschutz. Und das ist
+    # nicht theoretisch: alle drei Messfehler von 1.2 (fehlende Textfarbe,
+    # Kantenglättung, Auflösung) saßen nicht in der Rechnung, sondern in der
+    # Pipeline auf echten Frames. Alle drei Male waren die Unit-Tests grün.
+    #
+    # WARUM KEIN BASELINE-LAUF AUF `main`. Der Korpus ist Code (die
+    # Generatoren), nicht Daten — ein Lauf im `main`-Worktree würde `main`s
+    # Generatoren gegen `main`s Messung stellen und wäre immer grün. Die
+    # Erwartung liegt deshalb als `eval/contrast-baseline.json` im Repo: jede
+    # Bewegung der Zahlen ist dann eine Zeile im Diff, die ein Mensch im PR
+    # sieht. Ein Vergleich, der nur im Log stattfindet, zeigt sie niemandem.
+    name: Contrast regression gate
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/ci-lockfile.mjs
+      - run: npm ci
+
+      - name: Gate
+        run: npm run contrast-gate
+
+      - name: Wurde die Erwartung selbst verändert?
+        # Die Zahlen zu aktualisieren ist erlaubt und manchmal richtig. Es STILL
+        # zu tun ist es nicht — eine Erwartung, die im selben Commit mitwandert,
+        # ist kein Gate. Der Schritt macht den Check nicht rot; er stellt die
+        # Bewegung in die Zusammenfassung, wo sie ein Reviewer sieht.
+        if: github.event_name == 'pull_request'
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" || true
+          if git diff --quiet "$base" -- eval/contrast-baseline.json; then
+            echo "Erwartung unverändert." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Die Contrastmap-Erwartung hat sich bewegt"
+              echo ""
+              echo 'Das ist erlaubt — aber es muss im PR-Text begründet sein.'
+              echo ""
+              echo '```diff'
+              git diff "$base" -- eval/contrast-baseline.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=Contrast-Erwartung geändert::Die Zahlen der Contrastmap haben sich bewegt. Begründung gehört in den PR-Text."
+          fi
+
+      - name: Das Gate muss rot werden können
+        # Zwei Erreichbarkeitstests, und sie prüfen verschiedene Hälften:
+        #
+        #   --limits-off   schaltet die Erkennung von Drehung und Verdeckung ab
+        #                  (1.3, 1a). Die Gegenprobe wird dann wieder vollständig
+        #                  „gemessen" — mit Werten über Fremdpixel.
+        #   --max-edge 200 lässt die Messung auf einem verkleinerten Bild laufen.
+        #                  Das ist der historische Fehler Nr. 3 in Reinform, und
+        #                  genau der Grund, aus dem dieses Gate existiert.
+        #
+        # Passiert einer davon, sieht das Gate etwas Falsches an — und das würde
+        # sonst erst auffallen, wenn eine echte Regression durchrutscht.
+        run: |
+          fail=0
+          for flag in "--limits-off" "--max-edge 200"; do
+            if npm run contrast-gate -- $flag > /tmp/selftest.log 2>&1; then
+              echo "::error title=Contrast-Gate-Selbsttest::Ein absichtlich verschlechterter Lauf ($flag) hat das Gate PASSIERT."
+              echo "Das Gate misst nicht, was es messen soll. Siehe .github/workflows/eval-gate.yml."
+              cat /tmp/selftest.log
+              fail=1
+            else
+              echo "Selbsttest bestanden: $flag wurde abgelehnt." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          exit $fail

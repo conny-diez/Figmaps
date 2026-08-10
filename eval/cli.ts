@@ -58,6 +58,14 @@ import {
 import { sweepCompetition } from './competition'
 import { runContrastCheck } from './contrast-check'
 import { auditCorpus, auditMeasurable, controlDetail, percentiles, worstBy } from './measurable-audit'
+import {
+  compareContrastGate,
+  CONTRAST_BASELINE_PATH,
+  NO_LIMITS,
+  runContrastGate,
+  serialiseContrastGate,
+  type ContrastGateReport,
+} from './contrast-gate'
 import { SKIP_LABELS, SKIP_TEXT, type SkipReason } from '../src/contrast/measurable'
 import { judgeOrder, measureKnownCases, HEADER_BAND } from './header-weight'
 import { formatRatio } from '../src/contrast/wcag'
@@ -1481,6 +1489,78 @@ function runMeasurable(args: Args): number {
 }
 
 // ---------------------------------------------------------------------------
+// contrast-gate — 1.3: das zweite Regressions-Gate, für die Contrastmap
+//
+//   npm run contrast-gate                  prüft gegen die eingecheckte Erwartung
+//   npm run contrast-gate -- --write       schreibt sie neu (bewusste Änderung)
+//   npm run contrast-gate -- --limits-off  Selbsttest: MUSS rot werden
+//   npm run contrast-gate -- --max-edge 200
+//
+// Das erste Gate (A-7) kann die Contrastmap nicht abdecken: UEyes-Bilder haben
+// keinen Layer-Baum, dort misst sie null Elemente. Die belastbarste Ausgabe des
+// Plugins hatte damit keinen Regressionsschutz — und alle drei Messfehler von
+// 1.2 saßen in der Pipeline auf echten Frames, nicht in der Rechnung.
+// ---------------------------------------------------------------------------
+
+function runContrastGateCommand(args: Args): number {
+  const limitsOff = args['limits-off'] === true
+  const maxEdge = args['max-edge'] !== undefined ? num(args, 'max-edge', 0) : undefined
+  const report = runContrastGate({
+    ...(limitsOff ? { limits: NO_LIMITS } : {}),
+    ...(maxEdge ? { maxEdge } : {}),
+  })
+
+  console.log('Contrastmap-Gate — Frames MIT Layer-Baum, je Frame drei abzählbare Zahlen.')
+  console.log('Keine Toleranz: „ein Element mehr durchgefallen" ist Verbesserung oder Fehler, nie Rauschen.')
+  if (limitsOff || maxEdge) {
+    console.log('')
+    console.log(
+      `SELBSTTEST-LAUF (${[limitsOff ? 'Prüfungen aus' : '', maxEdge ? `Auflösung ${maxEdge}` : '']
+        .filter(Boolean)
+        .join(', ')}) — dieser Lauf MUSS abweichen.`,
+    )
+  }
+  console.log('')
+  console.log(`  ${'Frame'.padEnd(44)}${'gemessen'.padStart(10)}${'durchgef.'.padStart(11)}${'n. messbar'.padStart(12)}`)
+  for (const frame of report.frames) {
+    console.log(
+      `  ${frame.label.slice(0, 43).padEnd(44)}${String(frame.measured).padStart(10)}` +
+        `${String(frame.failed).padStart(11)}${String(frame.notMeasurable).padStart(12)}`,
+    )
+  }
+  console.log(
+    `  ${'SUMME'.padEnd(44)}${String(report.totals.measured).padStart(10)}` +
+      `${String(report.totals.failed).padStart(11)}${String(report.totals.notMeasurable).padStart(12)}`,
+  )
+  console.log('')
+
+  if (args.write) {
+    writeFile(CONTRAST_BASELINE_PATH, serialiseContrastGate(report))
+    console.log(`Erwartung geschrieben: ${CONTRAST_BASELINE_PATH}`)
+    console.log('Diese Datei gehört in den Commit — jede Bewegung der Zahlen wird damit eine Zeile im Diff.')
+    return 0
+  }
+
+  if (!existsSync(CONTRAST_BASELINE_PATH)) {
+    console.error(`${CONTRAST_BASELINE_PATH} fehlt. Mit \`npm run contrast-gate -- --write\` erzeugen.`)
+    return 2
+  }
+  const reference = JSON.parse(readFileSync(CONTRAST_BASELINE_PATH, 'utf8')) as ContrastGateReport
+  const differences = compareContrastGate(reference, report)
+  if (differences.length === 0) {
+    console.log('Keine Abweichung gegen die eingecheckte Erwartung.')
+    return 0
+  }
+
+  console.error(`${differences.length} Abweichung(en) gegen ${CONTRAST_BASELINE_PATH}:`)
+  for (const line of differences) console.error(`  ${line}`)
+  console.error('')
+  console.error('Wenn die Änderung gewollt ist: `npm run contrast-gate -- --write` und die neuen Zahlen im')
+  console.error('PR-Text begründen. Eine still aktualisierte Erwartung ist kein Gate.')
+  return 1
+}
+
+// ---------------------------------------------------------------------------
 // header-weight — 1.2 B2, Schritt 1: taugt die Größe überhaupt?
 //
 //   npm run header-weight
@@ -1886,6 +1966,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args.competition) return await runCompetition(args)
     if (args['contrast-check']) return runContrastCheckCommand(args)
     if (args.measurable) return runMeasurable(args)
+    if (args['contrast-gate']) return runContrastGateCommand(args)
     if (args['header-weight']) return await runHeaderWeight()
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)
