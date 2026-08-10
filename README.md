@@ -2047,6 +2047,63 @@ Fixture-Variante, sondern eine Plausibilitätsprüfung in der Messung selbst —
 die dominante Fläche überhaupt groß genug ist, um der Hintergrund *dieses*
 Elements zu sein. Nicht in diesem Schritt gebaut.
 
+### Der Kopf der Contrastmap läuft nicht durch die Vorhersage-Vorlage
+
+Über jeder Karte stehen ein Titel und eine Zeile mit dem Disclaimer, dem
+Blickverhalten, der Betrachtungsdauer und der Engine-Version; unter allen Karten
+die UEyes-Datengrundlage. Für die Contrastmap ist **jedes einzelne davon
+falsch**: sie sagt nichts vorher, benutzt keinen Ortsprior, und keine der drei
+Größen geht in ein Kontrastverhältnis ein.
+
+| | Vorhersage-Karten | Contrastmap |
+|---|---|---|
+| Titel | „Heatmap — vorhergesagt" | **„Contrastmap — gemessen"** |
+| Zeile | „Algorithmische Vorhersage, keine Messdaten · Blickverhalten … · Betrachtungsdauer … · hybrid-v1" | **„Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage"** |
+| Ebenenname | `Heatmap · Blick (1 s) · hybrid-v1` | `Contrastmap · gemessen` |
+| Datengrundlage darunter | ja | **nur, wenn auch eine Vorhersage-Karte erzeugt wurde** |
+
+Die Datengrundlage hängt am Wrapper, nicht an der einzelnen Karte — sie
+verschwindet jetzt, wenn **ausschließlich** gemessene Karten entstehen. Sie
+belegt eine Abhängigkeit, und eine Contrastmap hat keine. (Die CC-BY-Pflicht
+selbst bleibt davon unberührt: sie greift für den Ortsprior, und der steckt in
+keiner Contrastmap.)
+
+Abgesichert wie der Ortsprior-Test: **kein Textknoten und kein Ebenenname in der
+Karten-Spalte** darf „vorhergesagt", „Vorhersage", „Betrachtungsdauer",
+„Blickverhalten", „UEyes" oder die Engine-Version enthalten. Ausgenommen sind
+genau die beiden freigegebenen Zeichenketten — die Zeile enthält „Vorhersage" in
+ihrer Verneinung —, und deren Wortlaut steht in einem eigenen Test.
+
+### Die Wertfahnen verdecken keinen Text mehr
+
+Dritter Anlauf mit diesen Fahnen: zuletzt lag eine über dem Wort „Hier" eines
+**anderen** Elements — rechts neben Element A war Platz, aber genau dort begann
+Element B. Die Platzierung probiert jetzt sechs Positionen um das Element herum
+(rechts, links, oben, unten, jeweils auch bündig) und nimmt die erste, die
+weder ein markiertes Element noch eine bereits gesetzte Fahne trifft und ins
+Bild passt. Findet keine Platz, gewinnt die mit der **kleinsten überlappten
+Fläche** — im Zweifel der kleinste Schaden statt einer willkürlichen Wahl.
+
+Fünf Tests halten das fest, darunter der Fall aus dem Bericht (zwei
+nebeneinanderliegende Textelemente) und der Rand des Bildes. Das Prüfbild aus
+`npm run contrast-check` benutzt dieselbe Platzierungsfunktion wie das Plugin —
+sonst zeigte es etwas anderes als das, was ausgeliefert wird.
+
+### Die gemessene Hintergrundfarbe steht im Ergebnis
+
+`npm run contrast-check` weist zu jedem Element aus, **gegen welche Farbe**
+gerechnet wurde. Das macht einen Verdacht überprüfbar statt ihn Verdacht bleiben
+zu lassen: wer einen Wert für falsch hält, hält diese Farbe gegen den Fill in
+der Datei.
+
+Der Anlass: ein weißer Text auf einer dunklen Kachel wurde mit 15,9:1 gemeldet,
+und das sah zu hoch aus. Nachgerechnet entspricht 15,9:1 **exakt #222222** — die
+Messung ist also in sich stimmig. Ob die Kachel wirklich so dunkel ist oder ob
+etwas Dunkleres darunter liegt (Schatten, Scrim, Overlay), zeigt jetzt die
+ausgewiesene Farbe. Zusätzlich sind **weiß auf #222222** (15,91:1) und **weiß
+auf #4D4D4D** (8,45:1) in den Test mit bekannten Farbpaaren aufgenommen — mit
+Kantenglättung, auf 0,05 genau.
+
 ### Grenzen, ehrlich benannt (C5)
 
 Über einem Foto oder einem Verlauf gibt es kein „das" Kontrastverhältnis,

@@ -21,6 +21,9 @@ import { nodeImageOps } from '../src/platform/imageops-node'
 import { measureContrast, type ContrastResult } from '../src/contrast/measure'
 import { contrastFindingText } from '../src/contrast/measure'
 import { measureNonTextContrast, reportableNonText, type NonTextResult } from '../src/contrast/non-text'
+import { __testing } from '../src/render/contrastmap'
+
+const { placeTag } = __testing
 import { buildOnboardingFrame } from './onboarding'
 import { buildFrame, SHAPES } from './constructed'
 
@@ -61,17 +64,34 @@ function strokeRect(image: Bitmap, rect: { x: number; y: number; width: number; 
   }
 }
 
-/** Eine Wertfahne als Balken — die Ziffern kann diese Umgebung nicht setzen. */
-function valueTag(image: Bitmap, rect: { x: number; y: number; width: number; height: number }, colour: Rgb, size: number): void {
-  const tagWidth = Math.round(size * 3.2)
-  const tagHeight = Math.round(size * 1.6)
-  let x = Math.round(rect.x + rect.width + size * 0.4)
-  let y = Math.round(rect.y + rect.height / 2 - tagHeight / 2)
-  if (x + tagWidth > image.width) {
-    x = Math.max(0, Math.round(rect.x))
-    y = Math.max(0, Math.round(rect.y - tagHeight - size * 0.3))
+/**
+ * Eine Wertfahne als Balken — die Ziffern kann diese Umgebung nicht setzen.
+ *
+ * Die **Platzierung** kommt aus dem ausgelieferten Renderer (`placeTag`), damit
+ * das Prüfbild nicht etwas anderes zeigt als das Plugin. Nur der Textsatz
+ * fehlt hier.
+ */
+function valueTag(
+  image: Bitmap,
+  rect: { x: number; y: number; width: number; height: number },
+  colour: Rgb,
+  size: number,
+  blocked: ReadonlyArray<{ x: number; y: number; width: number; height: number }>,
+  placed: Array<{ x: number; y: number; width: number; height: number }>,
+): void {
+  const ctx = {
+    save() {},
+    restore() {},
+    font: '',
+    measureText: (text: string) => ({ width: text.length * size * 0.55 }),
+  } as unknown as CanvasRenderingContext2D
+  const tag = placeTag(ctx, rect, '00,0:1', size, { width: image.width, height: image.height }, blocked, placed)
+  placed.push(tag)
+  const x = Math.round(tag.x)
+  const y = Math.round(tag.y)
+  for (let py = y; py < y + Math.round(tag.height); py++) {
+    for (let px = x; px < x + Math.round(tag.width); px++) blend(image, px, py, colour, 1)
   }
-  for (let py = y; py < y + tagHeight; py++) for (let px = x; px < x + tagWidth; px++) blend(image, px, py, colour, 1)
 }
 
 export type ContrastCheckCase = {
@@ -169,16 +189,17 @@ export function runContrastCheck(options: { tileWidth?: number } = {}): Contrast
     }
 
     const labelSize = Math.max(9, tileWidth * 0.026)
-    for (const result of results) {
-      const rect = {
-        x: result.rect.x * scaleX,
-        y: result.rect.y * scaleY,
-        width: Math.max(1, result.rect.width * scaleX),
-        height: Math.max(1, result.rect.height * scaleY),
-      }
-      strokeRect(canvas, rect, STATUS_RGB[result.status], STATUS_WIDTH[result.status])
-      valueTag(canvas, rect, STATUS_RGB[result.status], labelSize)
-    }
+    const boxes = results.map((result) => ({
+      x: result.rect.x * scaleX,
+      y: result.rect.y * scaleY,
+      width: Math.max(1, result.rect.width * scaleX),
+      height: Math.max(1, result.rect.height * scaleY),
+    }))
+    const placedTags: Array<{ x: number; y: number; width: number; height: number }> = []
+    results.forEach((result, index) => {
+      strokeRect(canvas, boxes[index], STATUS_RGB[result.status], STATUS_WIDTH[result.status])
+      valueTag(canvas, boxes[index], STATUS_RGB[result.status], labelSize, boxes, placedTags)
+    })
 
     const nonText = measureNonTextContrast({
       image: pixels,

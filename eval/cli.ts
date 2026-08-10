@@ -1321,12 +1321,16 @@ function runContrastCheckCommand(args: Args): number {
     // Nachrechnen bekommt. Beide zu zeigen ist der Sinn dieses Werkzeugs.
     console.log(
       `  ${'Status'.padEnd(15)}${'angezeigt'.padStart(11)}${'roh'.padStart(11)}${'gefordert'.padStart(11)}` +
-        `${'Näherung'.padStart(10)}   Text`,
+        `${'Grund ~'.padStart(10)}${'Näherung'.padStart(10)}   Text`,
     )
     for (const entry of result.results) {
+      // Die gemessene Hintergrundfarbe steht dabei: ohne sie ist „dieser Wert
+      // kann nicht stimmen" nicht entscheidbar.
+      const grey = Math.round(Math.pow(entry.backgroundLuminance, 1 / 2.2) * 255)
       console.log(
         `  ${entry.status.padEnd(15)}${formatRatio(entry.ratio).padStart(11)}${entry.ratio.toFixed(4).padStart(11)}` +
-          `${entry.required.toFixed(1).padStart(11)}${(entry.approximate ? 'ja' : '—').padStart(10)}   ${entry.text.slice(0, 40)}`,
+          `${entry.required.toFixed(1).padStart(11)}${`~${grey.toString(16).padStart(2, '0').repeat(3)}`.padStart(10)}` +
+          `${(entry.approximate ? 'ja' : '—').padStart(10)}   ${entry.text.slice(0, 36)}`,
       )
     }
     for (const entry of result.skipped) console.log(`  übersprungen: ${entry.nodeId} — ${entry.reason}`)

@@ -16,7 +16,9 @@
  * The CC BY notice sits once at the bottom of the wrapper, not on every map.
  */
 import { ENGINE_CONFIG, ENGINE_VERSION } from '../engine/config'
-import { MAP_LABELS, type FindingPayload, type MapMeta, type RenderedMap, type SegmentInfo } from '../messages'
+import { MAP_LABELS, type FindingPayload, type MapMeta, type RenderedMap, type SegmentInfo,
+  type MapKind,
+} from '../messages'
 import type { AnalysableNode } from './selection'
 
 /** Preferred title fonts, tried in order — the first that loads wins. */
@@ -40,8 +42,30 @@ const SEVERITY_MARKERS: Record<FindingPayload['severity'], string> = {
   info: 'Hinweis',
 }
 
-/** The one sentence that must never be separable from a map. */
+/** The one sentence that must never be separable from a *predicted* map. */
 const DISCLAIMER = 'Algorithmische Vorhersage, keine Messdaten'
+
+/**
+ * Die Contrastmap ist die eine Ausgabe, für die der Disclaimer **falsch** wäre.
+ *
+ * Sie sagt keine Aufmerksamkeit vorher, sie rechnet ein Kontrastverhältnis aus.
+ * Wer den Vorhersage-Satz darunter setzt, entwertet die einzige Messung im
+ * Plugin — und zwar gegen die eigene Faktenlage.
+ *
+ * Aus demselben Grund fehlen hier Blickverhalten, Betrachtungsdauer und
+ * Engine-Version: keiner dieser Werte geht in ein Kontrastverhältnis ein, der
+ * Ortsprior wird nicht benutzt. Eine Zeile, die sie trotzdem nennt, behauptet
+ * eine Abhängigkeit, die es nicht gibt.
+ */
+const MEASURED_MAPS: ReadonlySet<MapKind> = new Set<MapKind>(['contrast'])
+
+const MEASURED_TITLE_SUFFIX = 'gemessen'
+const MEASURED_LINE = 'Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage'
+
+/** Trägt diese Karte eine Messung statt einer Vorhersage? */
+export function isMeasuredMap(kind: MapKind): boolean {
+  return MEASURED_MAPS.has(kind)
+}
 
 /**
  * What the findings frame says when no rule fired.
@@ -108,13 +132,22 @@ function timestamp(now: Date): string {
  * it was compared against, which viewing duration, which engine. „Ortsprior" is
  * gone — it named the mechanism, not the thing.
  */
-export function metaLine(meta: MapMeta | undefined): string {
+export function metaLine(meta: MapMeta | undefined, kind?: MapKind): string {
+  // Gemessene Karten bekommen ihre eigene Zeile und **nichts** aus der
+  // Vorhersage-Vorlage — siehe `MEASURED_MAPS`.
+  if (kind && isMeasuredMap(kind)) return MEASURED_LINE
+
   const parts = [DISCLAIMER]
   if (meta) {
     parts.push(`Blickverhalten: ${meta.screenBehaviour}`, `Betrachtungsdauer: ${meta.duration}`)
   }
   parts.push(ENGINE_VERSION)
   return parts.join(' · ')
+}
+
+/** Die Überschrift über einer Karte. */
+export function mapTitle(kind: MapKind): string {
+  return `${MAP_LABELS[kind]} — ${isMeasuredMap(kind) ? MEASURED_TITLE_SUFFIX : 'vorhergesagt'}`
 }
 
 /**
@@ -231,13 +264,17 @@ export async function placeMaps(
         : node.height
 
     const child = column(node.width, Math.round(cfg.titleFontSize * 0.5), 0)
-    child.name = `${MAP_LABELS[map.kind]}${meta ? ` · ${meta.duration}` : ''} · ${ENGINE_VERSION}`
+    // Auch der Ebenenname trägt bei einer gemessenen Karte keine
+    // Vorhersage-Parameter — er wandert mit, wenn jemand den Frame kopiert.
+    child.name = isMeasuredMap(map.kind)
+      ? `${MAP_LABELS[map.kind]} · ${MEASURED_TITLE_SUFFIX}`
+      : `${MAP_LABELS[map.kind]}${meta ? ` · ${meta.duration}` : ''} · ${ENGINE_VERSION}`
     row.appendChild(child)
 
     paragraph(child, {
       font,
       size: cfg.titleFontSize,
-      text: `${MAP_LABELS[map.kind]} — vorhergesagt`,
+      text: mapTitle(map.kind),
       colour: INK.title,
     })
     // The disclaimer lives in the image area, not only in the layer name: a
@@ -245,7 +282,7 @@ export async function placeMaps(
     paragraph(child, {
       font: bodyFont,
       size: Math.round(cfg.titleFontSize * 0.58),
-      text: metaLine(meta),
+      text: metaLine(meta, map.kind),
       colour: INK.quiet,
       lineHeightFactor: 1.5,
     })
@@ -277,7 +314,13 @@ export async function placeMaps(
   // CC BY 4.0 requires naming the source wherever the derived asset travels —
   // once per run is enough, and three identical lines next to each other read
   // as noise. See NOTICE.md.
-  if (meta?.attribution) {
+  // Die Datengrundlage steht unter den Karten, die sie benutzen. Werden **nur**
+  // gemessene Karten erzeugt, ist kein Wert daraus in die Ausgabe eingegangen —
+  // dann wäre die Zeile eine Behauptung über eine Abhängigkeit, die es nicht
+  // gibt. (Die CC-BY-Pflicht selbst bleibt davon unberührt: sie greift für den
+  // Ortsprior, und der steckt in keiner Contrastmap.)
+  const usesPrediction = maps.some((map) => !isMeasuredMap(map.kind))
+  if (meta?.attribution && usesPrediction) {
     const footer = figma.createFrame()
     footer.layoutMode = 'HORIZONTAL'
     footer.primaryAxisSizingMode = 'AUTO'

@@ -214,6 +214,16 @@ export type ContrastResult = {
    * Messwert.
    */
   approximate: boolean
+  /**
+   * Die **gemessene** Hintergrundluminanz — die Zahl, gegen die gerechnet wurde.
+   *
+   * Steht im Ergebnis, damit ein Verdacht überprüfbar wird statt Verdacht zu
+   * bleiben: wer einen Wert für falsch hält, kann diese Luminanz gegen den Fill
+   * in der Datei halten. Ohne sie ist „das kann nicht stimmen" nicht
+   * entscheidbar — und genau dieser Fall ist einmal aufgetreten
+   * (weiß auf dunkler Kachel, gemeldet 15,9:1, entspricht #222222).
+   */
+  backgroundLuminance: number
   /** Wie viele Hintergrundpixel die Messung tragen. */
   sampleCount: number
   /** Wurde außerhalb des Rahmens abgetastet, weil innen zu wenig Grund war? */
@@ -322,6 +332,7 @@ export function measureContrast(options: MeasureOptions): { results: ContrastRes
       ratio: worst,
       bestRatio: best,
       status: statusOf(worst, required),
+      backgroundLuminance: background.worstLuminance,
       // Nur wenn der Hintergrund **wirklich** wechselt. Vorher stand hier eine
       // Spanne über alle Pixel, und die war durch die Kantenglättung immer
       // groß — jede Messung trug das „~", und damit sagte es nichts.

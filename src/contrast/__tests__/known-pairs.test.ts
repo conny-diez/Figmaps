@@ -68,6 +68,10 @@ const PAIRS: Array<[string, Rgb, Rgb, number]> = [
   ['weiß auf schwarz', [255,255,255], [0,0,0], 21],
   ['schwarz auf weiß', [0,0,0], [255,255,255], 21],
   ['weiß auf #767676', [255,255,255], [118,118,118], 4.54],
+  // Weiß auf dunkel ist der Fall, an dem die Methode vorher am deutlichsten
+  // gescheitert ist — dort meldete sie 1,1:1 statt zweistellig.
+  ['weiß auf #222222', [255,255,255], [34,34,34], 15.91],
+  ['weiß auf #4D4D4D', [255,255,255], [77,77,77], 8.45],
 ]
 
 describe('bekannte Farbpaare, mit Kantenglättung', () => {
