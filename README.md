@@ -99,6 +99,45 @@ npm run side-effects -- --before 0.3 --after 0.5  # Feuerraten vorher/nachher
 Die `id` in `manifest.json` ist ein lokaler Platzhalter. Beim Publishing in die
 Community vergibt Figma eine echte ID, die dann eingetragen wird.
 
+### Ein Release bauen
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+`.github/workflows/release.yml` baut daraufhin, prüft und hängt
+`figmaps-1.2.0.zip` an ein **Release im Entwurfsstatus** — der Text
+(`RELEASE.md`) wird vor der Veröffentlichung gelesen. Ein Zip, das schon
+jemand geladen hat, lässt sich nicht zurückziehen.
+
+Im Zip liegt `manifest.json` neben `build/`, sodass „Import plugin from
+manifest…" direkt greift, dazu `NOTICE.md` und eine dreizeilige
+`LIESMICH.txt`.
+
+**Warum zwischen Bau und Zip eine eigene Prüfung steht
+(`scripts/check-release.mjs`).** Der Ortsprior ist das einzige Stück dieses
+Plugins, dessen Fehlen **still** bleibt: ohne Asset fällt die Engine auf die
+analytische F-Muster-Glocke zurück — keine Meldung im Panel, kein Fehler im
+Log, nur schlechtere Karten. Ein Release, das den Prior verliert, sieht
+funktionierend aus. Geprüft werden deshalb die **Nutzdaten**, nicht die
+Dateinamen: für jeden der zwölf Schlüssel eine Karte mit 32 × 32 dekodierten
+Bytes und einem Maximum, das kein Nullfeld verrät. Dazu die CC-BY-4.0-Nennung
+(über beide Realms zusammen — die Daten liegen im Hauptthread, der
+Nennungstext entsteht im Panel) und die eingebetteten Schriften, die ohne
+Netzzugriff sonst genauso lautlos ausfallen.
+
+Danach wird das Zip an einem anderen Ort **wieder ausgepackt** und dort
+geprüft, was Figma prüfen würde: zeigen `manifest.main` und `manifest.ui` auf
+Dateien, die es gibt. Gepackt ist nicht installierbar.
+
+Der Tag muss zur Version in `package.json` passen; ein Schritt im Workflow
+bricht sonst ab. Sonst wäre die eine Stelle, an der die Version steht, wieder
+zwei — und das Panel zeigte etwas anderes an, als das Release heißt.
+
+`package-lock.json` trägt die alte Version weiter und bleibt unangetastet;
+`npm ci` stört das nicht (nachgemessen, nicht angenommen). Die offene Frage am
+Lockfile ist eine andere und steht unter den offenen Punkten.
+
 ---
 
 ## Bedienung

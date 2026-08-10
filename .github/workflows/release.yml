@@ -1,0 +1,156 @@
+name: Release
+
+# Baut das Plugin bei einem Versions-Tag und hängt ein installierbares Zip an
+# das Release.
+#
+# WARUM EIN ZIP UND NICHT „klont euch das Repo". Figmas „Import plugin from
+# manifest…" erwartet einen Ordner, in dem `manifest.json` **neben** den
+# gebauten Dateien liegt. Wer das Repo klont, muss vorher `npm ci && npm run
+# build` laufen lassen — und wer das vergisst, bekommt ein Plugin, das nicht
+# startet. Das Zip enthält genau die vier Dinge, die Figma liest.
+#
+# WAS DABEI SCHIEFGEHEN KANN, OHNE DASS ES JEMAND MERKT: der Ortsprior. Fehlt er
+# im Bundle, fällt die Engine still auf die analytische F-Muster-Glocke zurück —
+# keine Meldung, kein Fehler, nur schlechtere Karten. Deshalb steht
+# `scripts/check-release.mjs` zwischen Bau und Zip und prüft die **Nutzdaten**,
+# nicht die Dateinamen.
+
+on:
+  push:
+    tags: ['v*']
+  # Ohne Tag baubar, um den Workflow selbst zu prüfen, ohne ein Release
+  # anzulegen. Das Zip landet dann nur als Artefakt.
+  workflow_dispatch:
+
+# Siehe eval-gate.yml — dieselbe Begründung, dieselbe Notwendigkeit.
+env:
+  NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build, prüfen, packen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: node scripts/ci-lockfile.mjs
+      - run: npm ci
+
+      # Ein Release ist kein Ort für ungeprüften Code. Derselbe Lauf wie in CI,
+      # nicht eine abgekürzte Fassung davon.
+      - run: npm run lint
+      - run: npm run verify
+
+      - name: Version gegen den Tag prüfen
+        if: startsWith(github.ref, 'refs/tags/v')
+        # Die Version steht laut Aufbau an **einer** Stelle (package.json, von
+        # dort als Build-Zeit-Konstante ins Panel). Ein Tag, der davon abweicht,
+        # würde diese eine Stelle wieder zu zweien machen: das Panel zeigte
+        # etwas anderes als das Release heißt.
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error title=Version::Tag v$tag, package.json $pkg — die beiden müssen übereinstimmen."
+            exit 1
+          fi
+          echo "Version $pkg stimmt mit dem Tag überein." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Ortsprior und Nennung im Bundle prüfen
+        run: node scripts/check-release.mjs
+
+      - name: Zip bauen
+        id: pack
+        # Struktur so, dass „Import plugin from manifest…" direkt auf die
+        # `manifest.json` im entpackten Ordner zeigen kann:
+        #
+        #   figmaps-1.2.0/
+        #     manifest.json
+        #     build/main.js
+        #     build/ui.html
+        #     LIESMICH.txt
+        #
+        # `manifest.json` verweist relativ auf `build/…`, also muss der
+        # Ordner mit ins Zip — eine flache Ablage würde Figma nicht finden.
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          dir="figmaps-$version"
+          mkdir -p "$dir/build"
+          cp manifest.json "$dir/manifest.json"
+          cp build/main.js build/ui.html "$dir/build/"
+          cp NOTICE.md "$dir/NOTICE.md"
+          cat > "$dir/LIESMICH.txt" <<'TXT'
+          Figmaps in Figma installieren
+          =============================
+
+          1. Diesen Ordner entpacken und an einen dauerhaften Ort legen —
+             Figma merkt sich den Pfad, ein Ordner im Download-Verzeichnis
+             verschwindet irgendwann.
+          2. In Figma: Menü → Plugins → Development → Import plugin from
+             manifest…  und die Datei manifest.json in diesem Ordner wählen.
+          3. Einen Frame auswählen und das Plugin über Plugins → Development →
+             Figmaps starten.
+
+          Die Heatmap und die Focusmap sind VORHERSAGEN, keine Messungen. Die
+          Contrastmap ist eine Messung nach WCAG 2.1 AA und nachrechenbar.
+
+          Datengrundlage der Vorhersage: UEyes (Jiang et al. 2023), CC BY 4.0 —
+          Einzelheiten in NOTICE.md.
+          TXT
+          zip -r "$dir.zip" "$dir" > /dev/null
+          echo "zip=$dir.zip" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Das Zip auspacken und prüfen
+        # Gepackt ist nicht installierbar. Dieser Schritt entpackt das Zip an
+        # einem anderen Ort und prüft dort, was Figma prüfen würde: liegt die
+        # `manifest.json` da, wo sie hingehört, und zeigen ihre Pfade auf
+        # Dateien, die es gibt. Ohne das wäre der vorige Schritt nur die
+        # Behauptung, ein Zip gebaut zu haben.
+        run: |
+          mkdir -p /tmp/verify && cd /tmp/verify
+          unzip -q "$GITHUB_WORKSPACE/${{ steps.pack.outputs.zip }}"
+          cd "figmaps-${{ steps.pack.outputs.version }}"
+          for field in main ui; do
+            path="$(node -p "require('./manifest.json').$field")"
+            if [ ! -s "$path" ]; then
+              echo "::error title=Zip::manifest.$field zeigt auf '$path' — dort liegt nichts."
+              exit 1
+            fi
+            echo "manifest.$field -> $path ($(wc -c < "$path") Bytes)"
+          done
+          # Und noch einmal die Prüfung der Nutzdaten, diesmal auf dem
+          # entpackten Stand: was hier fehlt, fehlt bei der Nutzerin.
+          node "$GITHUB_WORKSPACE/scripts/check-release.mjs"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.pack.outputs.zip }}
+          path: ${{ steps.pack.outputs.zip }}
+
+      - name: Release als Entwurf anlegen
+        if: startsWith(github.ref, 'refs/tags/v')
+        # `--draft` mit Absicht: der Text wird vor der Veröffentlichung gelesen.
+        # Ein Release, das sich selbst veröffentlicht, nimmt diese Entscheidung
+        # vorweg — und ein Zip zurückzuziehen, das schon jemand geladen hat,
+        # geht nicht.
+        #
+        # Mit `gh` statt mit einer Action von Dritten. Der Schritt macht einen
+        # API-Aufruf, den das vorinstallierte CLI ohnehin kann; eine externe
+        # Action dafür einzubinden hieße, für diese eine Zeile eine weitere
+        # Abhängigkeit in die Lieferkette zu nehmen — in einem Repo, dessen
+        # Lockfile gerade deswegen bei Security liegt, die falsche Richtung.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "Figmaps ${GITHUB_REF_NAME#v}" \
+            --notes-file RELEASE.md \
+            "${{ steps.pack.outputs.zip }}"
