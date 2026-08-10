@@ -396,7 +396,13 @@ describe('placeMaps', () => {
     const findingsFrame = findNode(wrapper, (node) => node.name.startsWith('Befunde'))
     expect(findingsFrame).not.toBeNull()
     const texts = findingsFrame!.children.map((child) => child.characters as string)
-    expect(texts.some((text) => text.includes('Keine der geprüften Auffälligkeiten trifft zu'))).toBe(true)
+    // 1.3: der Satz nennt seinen Umfang. Der Rahmen enthält nur die
+    // Vorhersage-Regeln, nicht die Kontrastmessung — „keine Auffälligkeiten"
+    // ohne dieses Wort behauptete einen Umfang, den er nicht hat.
+    expect(texts.some((text) => text.includes('Keine der geprüften vorhergesagten Auffälligkeiten trifft zu'))).toBe(
+      true,
+    )
+    expect(texts.some((text) => text.includes('Gemessene Kontrastwerte stehen im Panel'))).toBe(true)
     assertNothingClipped(wrapper)
   })
 

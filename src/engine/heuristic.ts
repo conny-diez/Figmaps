@@ -4,7 +4,15 @@ import { luminanceContrast } from './features/luminance'
 import { positionPrior } from './features/prior'
 import { imageSalience, interactiveSalience, textSalience } from './features/structure'
 import { applyGamma, luminanceChannel, normalize01, percentileClipNormalize, weightedSum, yieldToUi } from './imageops'
-import { priorAssetIdFor, priorMap, type PriorAssetId, type PriorDuration } from './priors'
+import {
+  DEFAULT_PRIOR_DURATION,
+  priorAssetIdFor,
+  priorDurationFor,
+  priorMap,
+  resolvePriorAsset,
+  type PriorAssetId,
+  type PriorResolution,
+} from './priors'
 import { blurField } from './ops-pure'
 import { ACTIVE_CONFIG_ID, DEFAULT_PROFILE, PROFILE_DURATIONS, resolveParams, type EngineParams, type ProfileId } from './params'
 import type { AttentionEngine, AttentionInput, AttentionParts, FeatureMaps } from './types'
@@ -63,6 +71,38 @@ export class HeuristicAttentionEngine implements AttentionEngine {
     return this.configId
   }
 
+  /**
+   * Welcher Ortsprior für diesen Frame **tatsächlich** gerechnet wird.
+   *
+   * DIESELBE FUNKTION, DIE AUCH RECHNET — das ist der Punkt und nicht ein
+   * Detail. `computeFeatures` unten liest die Antwort aus genau diesem Aufruf;
+   * eine zweite Ableitung derselben Frage neben der Rechnung wäre wieder ein
+   * Text, der parallel zur Sache entsteht. Genau daran ist die Fußzeile bis 1.2
+   * gescheitert.
+   *
+   * `analytic` heißt: die F-Muster-Glocke von 1.0 hat gezeichnet, kein
+   * Referenzdatensatz ist eingegangen. Für die Beschriftung ist das der Fall,
+   * der bis 1.2 unsichtbar blieb — `priorMap(…) ?? positionPrior(…)`, ein `??`
+   * ohne Protokoll und ohne Rückgabewert.
+   */
+  priorResolution(frameWidth: number, frameHeight: number): PriorResolution {
+    const requested = this.priorAsset ?? priorAssetIdFor(frameWidth, frameHeight)
+    // Ohne `priorSource: 'data'` läuft der Datenprior gar nicht — dann ist die
+    // analytische Glocke keine Ersatzrechnung, sondern die Konfiguration.
+    if (this.params.priorSource !== 'data') {
+      return { source: 'analytic', asset: requested, requestedDuration: DEFAULT_PRIOR_DURATION }
+    }
+    const duration = priorDurationFor(PROFILE_DURATIONS[this.profile])
+    if (duration === null) {
+      // Ein Profil, dessen Dauer es als Prior nicht gibt. Heute unerreichbar,
+      // weil `PROFILE_DURATIONS` und `PRIOR_DURATIONS` übereinstimmen — und
+      // deshalb steht hier ein Zweig und kein `as`: die nächste Dauer, die
+      // jemand hinzufügt, soll nicht stumm auf 3 s landen.
+      return { source: 'analytic', asset: requested, requestedDuration: DEFAULT_PRIOR_DURATION }
+    }
+    return resolvePriorAsset(requested, duration)
+  }
+
   async predict(input: AttentionInput): Promise<Float32Array> {
     return (await this.predictParts(input)).attention
   }
@@ -93,17 +133,20 @@ export class HeuristicAttentionEngine implements AttentionEngine {
     // hybrid-v1 replaces the analytical bell with a map averaged over a
     // reference set. Falls back to the analytical prior when the asset is
     // missing, so a build without the generated priors still runs.
+    //
+    // Der Rückfall ist derselbe wie in 1.2 — aber die Entscheidung, welcher
+    // Prior gilt, steht jetzt in `priorResolution()` und nicht in dieser
+    // `??`-Kette. Die Beschriftung liest dieselbe Funktion; damit kann sie nicht
+    // mehr etwas anderes behaupten als das, was hier gerechnet hat.
+    const resolution = this.priorResolution(frameWidth, frameHeight)
     const prior =
       this.params.priorSource === 'data'
         ? (this.priorProvider?.(width, height) ??
           // Epic D: the profile picks the viewing duration the prior was
           // estimated from. Measured — a matched prior beats the 3 s one.
-          priorMap(
-            this.priorAsset ?? priorAssetIdFor(frameWidth, frameHeight),
-            width,
-            height,
-            PROFILE_DURATIONS[this.profile] as PriorDuration,
-          ) ??
+          (resolution.source === 'data'
+            ? priorMap(resolution.asset, width, height, resolution.duration)
+            : null) ??
           positionPrior(width, height, this.params.prior))
         : positionPrior(width, height, this.params.prior)
 

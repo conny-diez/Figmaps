@@ -32,8 +32,8 @@ import type {
   Settings,
 } from '../messages'
 import { elementCaption } from '../findings/label'
-import { priorAssetIdFor, PRIOR_ASSET_LABELS, PRIOR_ATTRIBUTION_SHORT, shipsPriorAsset } from '../engine/priors'
-import { PROFILE_LABELS } from '../engine/params'
+import { priorAssetIdFor } from '../engine/priors'
+import { mapMetaFor } from './map-meta'
 import { canvasImageOps } from '../platform/imageops-canvas'
 import { canvasToPngBytes, decodePng, fitWithin } from '../render/canvas'
 import { renderClickmap } from '../render/clickmap'
@@ -154,12 +154,27 @@ export async function generateMaps(
     // Two maps of the same screen can differ only in which reference population
     // and which viewing duration produced them, so both travel with the result
     // and are written next to the image (`figma/place.ts`).
+    //
+    // **AUS DEM, WAS GELAUFEN IST.** Bis 1.2 stand hier
+    // `priorAssetIdFor(data.width, data.height)` und `PROFILE_LABELS[profile]`:
+    // die Kategorie aus der Geometrie und die Dauer aus der Einstellung, also
+    // beides eine Aussage darüber, was **angefordert** war. Fehlte das Asset,
+    // wich die Engine stumm aus und die Zeile behauptete es weiterhin. Jetzt
+    // kommt beides aus `analysis.priorResolution` — der Auskunft derselben
+    // Funktion, die den Prior auch geladen hat.
+    const { meta: mapMeta, warnings: metaWarnings } = mapMetaFor({
+      resolution: analysis.priorResolution,
+      uiType: settings.uiType,
+      profile: settings.profile,
+    })
+    // Derselbe Kanal, in dem schon der Bänder-Hinweis steht. Er existierte die
+    // ganze Zeit; gefragt hat ihn niemand.
+    warnings.push(...metaWarnings)
+
+    // Die Kategorie, mit der die Befundregeln rechnen, ist eine andere Frage als
+    // die Beschriftung: `flat` hat eine Schwelle je Kategorie, und die hängt an
+    // der Geometrie des Frames und nicht daran, ob ein Asset geladen wurde.
     const resolvedPrior = settings.uiType === 'auto' ? priorAssetIdFor(data.width, data.height) : settings.uiType
-    const mapMeta: MapMeta = {
-      screenBehaviour: `${PRIOR_ASSET_LABELS[resolvedPrior]}${settings.uiType === 'auto' ? ' (automatisch)' : ''}`,
-      duration: PROFILE_LABELS[settings.profile],
-      ...(shipsPriorAsset() ? { attribution: PRIOR_ATTRIBUTION_SHORT } : {}),
-    }
 
     let ranking: ClickRanking[] = []
     let candidates: ClickCandidate[] = []
@@ -233,6 +248,17 @@ export async function generateMaps(
       required: result.required,
       approximate: result.approximate,
     }))
+    // Eine Karte, die nichts zu messen hatte, sieht aus wie eine, die nichts
+    // gefunden hat — dieselbe Verwechslung wie bei „Keine der geprüften
+    // Auffälligkeiten trifft zu" (`figma/place.ts`). Der Fall ist nicht
+    // theoretisch: ein Frame aus reinen Bildebenen hat keinen Textknoten, und
+    // dann ist auch `skipped` leer, die Warnung unten also stumm.
+    if (contrast.results.length === 0 && contrast.skipped.length === 0) {
+      warnings.push(
+        'Contrastmap: in diesem Frame ist kein Textknoten zu messen — die Karte zeigt keine Messung, ' +
+          'nicht ein Ergebnis ohne Befund.',
+      )
+    }
     if (contrast.skipped.length > 0) {
       // Nicht verschweigen: eine Messung, die Elemente auslässt, sagt „in
       // Ordnung", wo sie „ich weiß es nicht" meint.

@@ -1,5 +1,6 @@
 import type { NodeSignal } from '../messages'
 import type { Bitmap } from './ops'
+import type { PriorResolution } from './priors'
 
 /**
  * Structurally compatible with the DOM `ImageData`, but usable in a plain
@@ -48,6 +49,16 @@ export interface AttentionEngine {
    * usually goes. An engine that cannot separate the two simply omits this.
    */
   predictParts?(input: AttentionInput): Promise<AttentionParts>
+  /**
+   * Optional: welcher Ortsprior für diesen Frame **tatsächlich** gerechnet wird.
+   *
+   * Das Text-Bindungs-Prinzip von 1.3 in einer Signatur. Jede Herkunftsangabe
+   * über einer Karte muss aus dem stammen, was gelaufen ist, und nur die Engine
+   * weiß das — die Vorgabe aus den Einstellungen sagt bloß, was angefordert war.
+   * Eine Engine, die keinen Ortsprior kennt, lässt es weg; die Beschriftung
+   * nennt dann keine Kategorie, statt eine zu erfinden.
+   */
+  priorResolution?(frameWidth: number, frameHeight: number): PriorResolution
 }
 
 export type AttentionParts = {

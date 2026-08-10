@@ -447,7 +447,11 @@ function App(): preact.JSX.Element {
         isCancelled: () => cancelledRef.current,
         onStep: (label, fraction) => setProgress((prev) => ({ ...prev, label, fraction })),
       })
-      if (result.ranking.length > 0) setRanking(result.ranking)
+      // Ohne die Bedingung wäre die Liste leer, wenn der letzte Frame keine
+      // Kandidaten hatte — mit ihr stand sie aus einem FRÜHEREN Frame da, und
+      // eine Rangliste, die zu einem anderen Screen gehört als die Befunde
+      // darunter, ist schlimmer als keine.
+      setRanking(result.ranking)
       setFindings(result.findings)
       setContrastFindings(result.contrastFindings)
       setNonTextFindings(result.nonTextFindings)
@@ -584,6 +588,19 @@ function App(): preact.JSX.Element {
 
   const isFinished = phase === 'done' || phase === 'error'
   const createdCount = outcomes.reduce((sum, outcome) => sum + outcome.maps.length, 0)
+  // 1.3, Text-Bindungs-Prinzip: beides aus den Karten, die es gibt.
+  //
+  // Vorher zählte die Zeile `outcomes.length` — und darin steckt auch ein Frame,
+  // der gar keine Karte erzeugt hat (`maps: []` bei `RENDER_FAILED`). „2 Maps für
+  // 2 Frames erstellt" stand dann über einem Lauf, in dem ein Frame leer
+  // ausgegangen war.
+  const framesWithMaps = outcomes.filter((outcome) => outcome.maps.length > 0).length
+  // Und ob eine Above-the-fold-Map entstanden ist, hängt nicht an der
+  // Segmentierung, sondern daran, ob die Heatmap eingeschaltet war: die Fold-Map
+  // wird im Rumpf des Heatmap-Zweigs erzeugt (`ui/pipeline.ts`). Mit
+  // ausgeschalteter Heatmap versprach die Zusammenfassung eine Karte, die es
+  // nicht gab.
+  const hasFoldMap = outcomes.some((outcome) => outcome.maps.includes('fold'))
   const allWarnings = outcomes.flatMap((outcome) =>
     outcome.warnings.map((warning) => (outcomes.length > 1 ? `${outcome.frameName}: ${warning}` : warning)),
   )
@@ -819,15 +836,15 @@ function App(): preact.JSX.Element {
                 <span class="result__count">{createdCount}</span>
                 <span class="result__text">
                   {createdCount === 1 ? 'Map' : 'Maps'} für{' '}
-                  {outcomes.length === 1 ? '1 Frame' : `${outcomes.length} Frames`} erstellt
+                  {framesWithMaps === 1 ? '1 Frame' : `${framesWithMaps} Frames`} erstellt
                 </span>
               </div>
               {(segments?.segmented || errors.length > 0) && (
                 <ul class="summary">
                   {segments?.segmented && (
                     <li>
-                      In {segments.sectionCount} Abschnitten à {segments.viewportHeight} px analysiert, mit
-                      Above-the-fold-Map
+                      In {segments.sectionCount} Abschnitten à {segments.viewportHeight} px analysiert
+                      {hasFoldMap ? ', mit Above-the-fold-Map' : ''}
                     </li>
                   )}
                   {errors.length > 0 && <li>{errors.length} Frame(s) mit Fehlern</li>}

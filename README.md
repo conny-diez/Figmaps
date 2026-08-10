@@ -3471,50 +3471,45 @@ Was für beide gilt: nach dem Umbau ist neu zu kalibrieren, und dafür fehlt
 weiterhin das Set mit echten Layer-Bäumen (PRD Set 2). An UEyes ist keine der
 beiden messbar — ein Screenshot hat keine Ebenen.
 
-#### Für 1.3 vorgemerkt: der Rückfall auf die analytische Glocke ist unsichtbar
+#### In 1.3 behoben: der Rückfall auf die analytische Glocke sagt sich an
 
+Der Befund stand hier vollständig und ist es wert, in seiner Form zu bleiben:
 `check-release.mjs` bewacht die Nutzdaten des Ortspriors, weil sein Fehlen
-**still** bleibt. Der Prüfer steht aber im Build, nicht im Plugin. Zur Laufzeit
-sagt nichts, welcher Prior tatsächlich gerechnet hat.
+**still** bleibt — aber der Prüfer steht im Build, nicht im Plugin. Zur Laufzeit
+sagte nichts, welcher Prior tatsächlich gerechnet hat.
 
 **Der Rückfall selbst** (`engine/heuristic.ts`): `priorMap(…) ?? positionPrior(…)`
 — ein `??` ohne Protokoll, ohne Rückgabewert, ohne Warnung.
 
-**Was die Fußzeile sagt.** `metaLine` schreibt „Blickverhalten: Mobile App
-(automatisch)". Die Kategorie kommt aus `priorAssetIdFor(…)`, also aus der
-Geometrie des Frames. Sie ist eine Aussage darüber, welcher Prior **gewählt**
-wurde, nicht darüber, welcher **geladen** ist — `hasPriorAsset()` existiert und
-wird an dieser Stelle nicht gefragt. Fehlt das Asset, steht dieselbe Zeile mit
-denselben Worten unter einer Karte, die die 1.0-Glocke gezeichnet hat.
+**Was die Fußzeile sagte.** `metaLine` schrieb „Blickverhalten: Mobile App
+(automatisch)". Die Kategorie kam aus `priorAssetIdFor(…)`, also aus der
+Geometrie des Frames, und war damit eine Aussage darüber, welcher Prior
+**gewählt** wurde, nicht darüber, welcher **geladen** ist.
 
-Zwei Fälle, beide heute unsichtbar:
+Zwei Fälle, beide bis 1.2 unsichtbar:
 
-| Fall | was fehlt | was der Nutzer sieht |
+| Fall | was fehlt | was der Nutzer bis 1.2 sah |
 |---|---|---|
-| **Kategorie fehlt** | z. B. `mobile@3s` | „Blickverhalten: Mobile App (automatisch)", unverändert. Im Panel verschwindet „Mobile App" aus dem Dropdown (`availablePriorCategories`) — aber „Automatisch erkennen" ist die Voreinstellung und leitet weiter dorthin |
-| **Betrachtungsdauer fehlt** | z. B. `web@7s` | `priorMap` weicht stumm auf `web@3s` aus, die Kopfzeile behauptet weiter „Betrachtungsdauer: 7 s". Nach Epic D ist das ein **gemessener** Unterschied (+0,012 bis +0,021 CC) — die Zeile behauptet also genau die Eigenschaft, die gerade nicht gilt |
+| **Kategorie fehlt** | z. B. `mobile@3s` | „Blickverhalten: Mobile App (automatisch)", unverändert. Im Panel verschwand „Mobile App" aus dem Dropdown (`availablePriorCategories`) — aber „Automatisch erkennen" ist die Voreinstellung und leitete weiter dorthin |
+| **Betrachtungsdauer fehlt** | z. B. `web@7s` | `priorMap` wich stumm auf `web@3s` aus, die Kopfzeile behauptete weiter „Betrachtungsdauer: 7 s". Nach Epic D ist das ein **gemessener** Unterschied (+0,012 bis +0,021 CC) — die Zeile behauptete also genau die Eigenschaft, die gerade nicht galt |
 
-Sichtbar ist nur ein Grenzfall: fallen **alle zwölf** Assets weg, wird
-`shipsPriorAsset()` falsch und die Zeile „Datengrundlage: UEyes …" fehlt. Das
+Sichtbar war nur ein Grenzfall: fielen **alle zwölf** Assets weg, wurde
+`shipsPriorAsset()` falsch und die Zeile „Datengrundlage: UEyes …" fehlte. Das
 ist das Verschwinden einer Zeile, keine Meldung — und der Alles-oder-nichts-Fall
 ist der unwahrscheinlichste.
 
-**Warum es hierher gehört.** Das ist dieselbe Klasse wie die Textfarbe, die
+**Warum es hierher gehörte.** Dieselbe Klasse wie die Textfarbe, die
 Kantenglättung, die Deckkraft, `dead-cta` und B4: eine Größe ist falsch oder
-fehlt, und die Ausgabe sieht unverändert aus. Fünf Anläufe, fünfmal dasselbe
-Muster.
+fehlt, und die Ausgabe sieht unverändert aus.
 
-**Mögliche Richtung** — der Kanal existiert schon: `pipeline.ts` führt
-`warnings: string[]`, dort steht bereits der Bänder-Hinweis. Vor dem Lauf
-`hasPriorAsset(resolvedPrior, PROFILE_DURATIONS[profile])` fragen; ist die
-Antwort nein, eine Warnung setzen und die Kopfzeile qualifizieren, statt eine
-Kategorie zu nennen, die nicht gerechnet hat. Der Test dazu ist billig und
-fehlt heute ganz: eine leere Asset-Tabelle darf keine Kopfzeile erzeugen, die
-von der intakten nicht zu unterscheiden ist.
-
-Nicht gemessen, nicht gebaut — und anders als der Rest dieser Liste braucht es
-kein Set mit echten Layer-Bäumen, sondern nur die Entscheidung, dass ein
-Werkzeug seine eigene Ersatzrechnung ansagt.
+**Behoben in 1.3**, und nicht durch die naheliegende Abfrage. `hasPriorAsset()`
+vor dem Lauf zu fragen hätte eine zweite Ableitung derselben Frage erzeugt, eine
+für die Rechnung und eine für den Text. Stattdessen entscheidet
+`resolvePriorAsset()` einmal, `priorMap` und die Beschriftung lesen dieselbe
+Antwort. Der ganze Weg steht unter
+[„Das Text-Bindungs-Prinzip (1.3)"](#das-text-bindungs-prinzip-13) — samt dem
+Test, der hier als fehlend vermerkt war, und samt fünf weiteren Stellen
+derselben Art.
 
 Sprachregeln (C-2), von den Tests erzwungen:
 
@@ -3524,6 +3519,143 @@ Sprachregeln (C-2), von den Tests erzwungen:
 - Kein Ausrufezeichen, keine Warn-Emoji, **kein Gesamtscore** — ein Score von
   0–100 würde die Unsicherheit des Modells verstecken und zum Optimierungsziel
   werden
+
+---
+
+## Das Text-Bindungs-Prinzip (1.3)
+
+**Jede Herkunftsangabe muss aus dem stammen, was tatsächlich gelaufen ist, nicht
+aus dem, was angefordert wurde.**
+
+Der Satz ist keine Stilregel, sondern die Zusammenfassung von drei Fehlern in
+1.2, die dieselbe Form hatten: der Text, der eine Ausgabe beschreibt, entstand
+**parallel** zur Ausgabe, und niemand prüfte, ob er stimmt.
+
+| Fall | der Text | die Sache |
+|---|---|---|
+| „Contrastmap — vorhergesagt" | kam aus der Vorlage für Vorhersage-Karten | die Karte ist eine Messung |
+| vier README-Statuszeilen | standen auf dem Stand, an dem sie geschrieben wurden | der Code war weiter |
+| „Betrachtungsdauer: 7 s" | kam aus der Einstellung | `priorMap` war stumm auf 3 s ausgewichen |
+
+Alle drei sind einzeln behoben worden. Der gemeinsame Grund war es nicht — und
+solange er steht, entsteht die nächste solche Zeile beim nächsten Feature.
+
+### Die Fußzeile kommt aus dem geladenen Asset
+
+Der Fall aus der 1.3-Notiz unten. `metaLine` schrieb „Blickverhalten: Mobile App
+(automatisch) · Betrachtungsdauer: Lesen (7 s)". Die Kategorie kam aus
+`priorAssetIdFor(…)`, also aus der **Geometrie des Frames**; die Dauer aus der
+**Einstellung**. Beides sind Aussagen darüber, welcher Prior *gewählt* wurde.
+Welcher *gerechnet* hat, stand nirgends.
+
+**Die Behebung ist nicht die Abfrage, sondern der Ort der Antwort.** Man könnte
+vor dem Lauf `hasPriorAsset(…)` fragen und die Zeile danach bauen — dann gäbe es
+wieder zwei Ableitungen derselben Frage, eine für die Rechnung und eine für den
+Text, und sie könnten wieder auseinanderlaufen. Stattdessen:
+
+1. `resolvePriorAsset(id, duration)` in
+   [`src/engine/priors/index.ts`](src/engine/priors/index.ts) ist die **einzige**
+   Stelle, an der entschieden wird, welche Karte gilt. `priorMap` benutzt sie.
+   Der Rückfall auf 3 s stand vorher als `??`-Kette in derselben Funktion und
+   war von außen nicht zu sehen; jetzt hat er einen Rückgabewert.
+2. `HeuristicAttentionEngine.priorResolution()` beantwortet „was rechnet für
+   diesen Frame" — und `computeFeatures` liest die Antwort **aus genau diesem
+   Aufruf**. Es gibt also keine zweite Ableitung, die abweichen könnte.
+3. `AnalyzeResult.priorResolution` trägt sie zur Oberfläche.
+4. [`src/ui/map-meta.ts`](src/ui/map-meta.ts) baut Kopfzeile und Warnung daraus.
+
+Geprüft wird dabei die **Nutzlast** und nicht nur die Anwesenheit des Schlüssels
+— genau der Fall, den `check-release.mjs` im Build bewacht. Ein Eintrag mit
+leerem `data` wäre sonst „geladen", und die Zeile wieder eine Behauptung.
+
+Was jetzt in welchem Fall steht:
+
+| Fall | Kopfzeile | Warnung |
+|---|---|---|
+| Asset da, Dauer passt | „Blickverhalten: Mobile App (automatisch) · Betrachtungsdauer: Scan (3 s)" | — |
+| **Dauer fehlt** (`web@7s`) | nennt **Scan (3 s)** — die gerechnete | „Für Lesen (7 s) liegt kein Ortsprior im Build — gerechnet wurde mit Scan (3 s)." |
+| **Kategorie fehlt** (alle `mobile@*`) | nennt **keine** Kategorie und **keine** Dauer, sondern „ohne Referenzdaten, analytische Positionsannahme" | „… gerechnet hat die analytische Positionsannahme von 1.0." |
+| Engine ohne Auskunft | nennt weder Kategorie noch Dauer | — |
+
+Drei Folgeentscheidungen, jede mit einem Grund:
+
+- **`MapMeta.screenBehaviour` und `duration` sind optional geworden.** Ein
+  Pflichtfeld *erzwingt* eine Behauptung; ein optionales erlaubt Schweigen. Das
+  war die eigentliche Ursache: der Typ ließ die ehrliche Antwort nicht zu.
+- **Fällt der Referenzprior weg, fehlt auch die Betrachtungsdauer.** Keine
+  Auslassung, sondern eine Folge von Epic D: die Dauer ist ein Effekt des
+  *Ortspriors* und nicht der Gewichte. Ohne Prior ändert der Umschalter nichts
+  mehr, und eine Zeile, die ihn nennt, behauptet eine Abhängigkeit, die es
+  gerade nicht gibt.
+- **Die Datengrundlage („Datengrundlage: UEyes …") hängt daran, dass wirklich
+  ein Wert daraus eingegangen ist** — nicht daran, dass das Bundle einen trägt.
+  Dieselbe Begründung, mit der sie unter reinen Messkarten schon weggelassen
+  wird: sie belegt eine Abhängigkeit. Die CC-BY-Pflicht für die Weitergabe
+  bleibt davon unberührt, sie steht in [`NOTICE.md`](NOTICE.md).
+
+Der Warnkanal ist der, der schon da war: `pipeline.ts` führt
+`warnings: string[]`, dort steht auch der Bänder-Hinweis. Er musste nicht gebaut
+werden — er musste gefragt werden.
+
+### Der Test, der ganz fehlte — und warum er fehlte
+
+> Eine leere Asset-Tabelle darf keine Kopfzeile erzeugen, die von der intakten
+> nicht zu unterscheiden ist.
+
+`src/ui/__tests__/map-meta.test.ts`, **für Kategorie und Betrachtungsdauer
+getrennt**. Getrennt, weil die beiden verschieden ausfallen: fehlt die
+Kategorie, gibt es überhaupt keinen Datenprior und die analytische Glocke
+rechnet; fehlt nur die Dauer, weicht `priorMap` auf 3 s aus und rechnet weiter
+mit Daten — die Kategorie stimmt dann, die Dauer nicht. Ein Test, der bloß
+„irgendetwas ist anders" prüft, ließe den zweiten Fall durch.
+
+**Dass es diesen Test nicht gab, ist selbst Teil des Befunds.** Die Kopfzeile
+entstand in `ui/pipeline.ts`, und die dekodiert PNGs und zeichnet auf ein Canvas
+— im Node-Test nicht lauffähig. Der Fall war also nicht prüfbar, ohne einen
+Browser zu starten. Nicht Nachlässigkeit, sondern eine Zuständigkeit am falschen
+Ort: `ui/map-meta.ts` ist rein, und damit kostet der Test nichts. Die Tabelle
+wird als Parameter übergeben statt gemockt — dieselbe Injektion, die `blur` und
+`priorProvider` in der Engine schon tragen. Ein Mock prüft, dass eine Funktion
+gerufen wird; die übergebene Tabelle prüft, was dabei herauskommt.
+
+### Wo sonst eine Beschriftung parallel zu ihrer Sache entsteht
+
+Einmal durchsucht: Map-Titel, Ebenennamen, Panel-Header, Befundtexte, Fußzeile
+der Ausgabe-Frames. **Es sind mehr als die drei bekannten Stellen.** Fünf
+weitere, davon vier behoben:
+
+| Stelle | die Beschriftung sagt | tatsächlich | Stand |
+|---|---|---|---|
+| Panel, Zusammenfassung | „In 4 Abschnitten à 780 px analysiert, **mit Above-the-fold-Map**" | die Fold-Map entsteht im Rumpf des Heatmap-Zweigs. Heatmap aus ⇒ keine Fold-Map, Satz unverändert | **behoben** — aus `outcome.maps` |
+| Panel, Ergebniszeile | „2 Maps für **2 Frames** erstellt" | gezählt wurde `outcomes.length`, und darin steckt auch ein Frame mit `maps: []` | **behoben** — nur Frames mit Karten |
+| Panel, Klick-Rangliste | die Liste stand da | `if (ranking.length > 0) setRanking(…)` ließ sie bei einem Batch aus einem **früheren** Frame stehen, neben Befunden eines anderen | **behoben** — immer gesetzt |
+| Ausgabe-Frame „Befunde" | „Keine der geprüften Auffälligkeiten trifft zu." | der Rahmen enthält **nur** die Vorhersage-Regeln. `contrastFindings` reist in `PLACE_RESULT` mit und wird in `main.ts` nicht gelesen — wer die Karten in eine Präsentation kopierte, nahm „nichts gefunden" mit, während im Panel drei Texte durchgefallen waren | **Umfang benannt** — „keine der geprüften **vorhergesagten** Auffälligkeiten", plus „Gemessene Kontrastwerte stehen im Panel". Die Lücke selbst bleibt, siehe unten |
+| Contrastmap ohne Textknoten | eine Karte mit dem Titel „Contrastmap — gemessen" | in einem Frame aus reinen Bildebenen gibt es nichts zu messen, und weil dann auch `skipped` leer ist, war die Warnung stumm. Eine Karte, die nichts zu messen hatte, sieht aus wie eine, die nichts gefunden hat | **behoben** — eigene Warnung |
+| Panel bei mehreren Frames | „Befunde", „Kontrast (gemessen)" ohne Frame-Namen | die Sektionen zeigen den **letzten** Frame, die Ergebniszeile darüber den ganzen Lauf | **offen**, siehe unten |
+
+Was **nicht** betroffen ist, und warum das die interessantere Hälfte ist: der
+Map-Titel (`mapTitle(kind)`), die Ebenennamen der Karten-Spalten, die
+Fold-Beschriftungen (`Fold 1`, `Fold 2`), `elementCaption` und die Zählung
+`createdCount` — alle leiten aus dem Ergebnis ab, das sie beschreiben, und
+können deshalb nicht abweichen. Die Behebung von „Contrastmap — vorhergesagt" in
+1.2 hat genau das getan, und die Stelle ist seither die einzige der drei, die
+strukturell dicht ist.
+
+#### Zwei offene Punkte, ausdrücklich nicht in diesem Schritt
+
+- **Die Messwerte stehen nicht auf dem Canvas.** Die richtige Behebung des
+  „Befunde"-Rahmens ist nicht, seinen Satz einzuschränken, sondern die
+  Kontrastwerte mitzuschreiben — als **eigener Block**, denn eine Messung darf
+  nicht in derselben Liste stehen wie eine Vorhersage (C4). Die Nutzlast reist
+  bereits mit (`PLACE_RESULT.contrastFindings`), sie wird nur nicht gelesen. Das
+  ist eine sichtbare Änderung an der Ausgabe und gehört in einen eigenen Schritt;
+  bis dahin sagt der Rahmen, worüber er spricht.
+- **Das Panel zeigt bei mehreren Frames den letzten.** Befunde, Kontrastwerte
+  und die Abschnitts-Zusammenfassung werden je Frame überschrieben, während die
+  Ergebniszeile über ihnen den ganzen Lauf zählt. Die Warnungen machen es
+  richtig — sie tragen bei mehr als einem Frame den Frame-Namen als Präfix. Die
+  Behebung ist ein Umbau der Ergebnis-Sektion auf eine Gliederung je Frame, keine
+  Textänderung.
 
 ---
 

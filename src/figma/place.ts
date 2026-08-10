@@ -74,8 +74,28 @@ export function isMeasuredMap(kind: MapKind): boolean {
  * is simply absent — and on a single-viewport phone screen two of the four
  * shipped rules cannot fire at all, so an empty result is the common case, not
  * the exception.
+ *
+ * **1.3: der Satz nennt seinen Umfang.** Vorher stand hier „Keine der geprüften
+ * Auffälligkeiten trifft zu" — über einem Rahmen, der ausschließlich die
+ * *Vorhersage*-Regeln enthält. Die Kontrastmessung ist nicht darin: sie reist in
+ * `PLACE_RESULT.contrastFindings` mit und wird hier nicht gelesen. Wer also drei
+ * durchgefallene Texte im Panel hatte und die Karten in eine Präsentation
+ * kopierte, nahm einen Satz mit, der „nichts gefunden" sagte. Derselbe Satz mit
+ * dem Wort „vorhergesagt" darin sagt, worüber er spricht.
+ *
+ * Die Lücke selbst bleibt und ist eigens vermerkt: die richtige Behebung ist,
+ * die Messwerte **mit** auf den Canvas zu schreiben — als eigener Block, denn
+ * eine Messung darf nicht in derselben Liste stehen wie eine Vorhersage (C4).
  */
-const EMPTY_FINDINGS = 'Keine der geprüften Auffälligkeiten trifft zu.'
+const EMPTY_FINDINGS = 'Keine der geprüften vorhergesagten Auffälligkeiten trifft zu.'
+
+/**
+ * Der Hinweis, dass dieser Rahmen die Messwerte **nicht** enthält.
+ *
+ * Steht immer, nicht nur bei leerer Liste: auch ein Rahmen mit drei
+ * Vorhersage-Befunden lässt offen, ob die Kontrastprüfung dabei war.
+ */
+const FINDINGS_SCOPE = 'Gemessene Kontrastwerte stehen im Panel, nicht in diesem Rahmen.'
 
 const INK = { title: { r: 0.1, g: 0.1, b: 0.12 }, body: { r: 0.16, g: 0.16, b: 0.2 }, quiet: { r: 0.45, g: 0.45, b: 0.5 } }
 
@@ -138,9 +158,13 @@ export function metaLine(meta: MapMeta | undefined, kind?: MapKind): string {
   if (kind && isMeasuredMap(kind)) return MEASURED_LINE
 
   const parts = [DISCLAIMER]
-  if (meta) {
-    parts.push(`Blickverhalten: ${meta.screenBehaviour}`, `Betrachtungsdauer: ${meta.duration}`)
-  }
+  // Jedes Stück einzeln und nur, wenn es da ist. 1.3: die Felder sind optional
+  // geworden, weil ein Pflichtfeld eine Behauptung erzwingt — fehlt der
+  // Referenzprior, nennt die Zeile keine Kategorie und keine Dauer, sondern
+  // sagt, was stattdessen gerechnet hat (`ui/map-meta.ts`).
+  if (meta?.screenBehaviour) parts.push(`Blickverhalten: ${meta.screenBehaviour}`)
+  if (meta?.duration) parts.push(`Betrachtungsdauer: ${meta.duration}`)
+  if (meta?.fallback) parts.push(meta.fallback)
   parts.push(ENGINE_VERSION)
   return parts.join(' · ')
 }
@@ -232,7 +256,10 @@ export async function placeMaps(
   // Vertical, because the CC BY line runs the full width under all maps —
   // once per run instead of once per image.
   const wrapper = figma.createFrame()
-  wrapper.name = `[Figmaps] ${node.name}${meta ? ` — ${meta.duration}` : ''} — ${timestamp(new Date())}`
+  // Die Dauer nur, wenn eine gerechnet wurde. `meta ? …` war falsch: seit 1.3 ist
+  // `duration` optional, und ein vorhandenes `meta` ohne sie hätte
+  // „— undefined" in den Ebenennamen geschrieben.
+  wrapper.name = `[Figmaps] ${node.name}${meta?.duration ? ` — ${meta.duration}` : ''} — ${timestamp(new Date())}`
   wrapper.layoutMode = 'VERTICAL'
   wrapper.primaryAxisSizingMode = 'AUTO'
   wrapper.counterAxisSizingMode = 'AUTO'
@@ -268,7 +295,7 @@ export async function placeMaps(
     // Vorhersage-Parameter — er wandert mit, wenn jemand den Frame kopiert.
     child.name = isMeasuredMap(map.kind)
       ? `${MAP_LABELS[map.kind]} · ${MEASURED_TITLE_SUFFIX}`
-      : `${MAP_LABELS[map.kind]}${meta ? ` · ${meta.duration}` : ''} · ${ENGINE_VERSION}`
+      : `${MAP_LABELS[map.kind]}${meta?.duration ? ` · ${meta.duration}` : ''} · ${ENGINE_VERSION}`
     row.appendChild(child)
 
     paragraph(child, {
@@ -400,7 +427,7 @@ async function appendFindingsFrame(
     paragraph(frame, {
       font: bodyFont,
       size: cfg.findingsFontSize * 0.8,
-      text: `${DISCLAIMER}.`,
+      text: `${DISCLAIMER}. ${FINDINGS_SCOPE}`,
       colour: INK.quiet,
       lineHeightFactor: 1.45,
     })

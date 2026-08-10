@@ -136,6 +136,74 @@ export function hasPriorAsset(id: PriorAssetId, duration: PriorDuration = DEFAUL
   return PRIOR_ASSETS[assetKey(id, duration)] !== undefined
 }
 
+/**
+ * Was am Ende **gerechnet** hat — nicht, was angefordert wurde.
+ *
+ * DAS TEXT-BINDUNGS-PRINZIP, an seiner Wurzel. Bis 1.2 hat die Fußzeile der
+ * Karte die Kategorie aus `priorAssetIdFor(…)` und die Betrachtungsdauer aus
+ * der Einstellung genannt — beides Aussagen darüber, welcher Prior **gewählt**
+ * wurde. Fehlte das Asset, wich `priorMap` stumm aus oder fiel auf die
+ * analytische Glocke zurück, und dieselbe Zeile stand mit denselben Worten
+ * unter einer Karte, die etwas anderes gezeichnet hatte.
+ *
+ * Diese Funktion ist die einzige Stelle, an der die Auflösung stattfindet, und
+ * `priorMap` benutzt sie ebenfalls. Damit kann die Beschriftung nicht mehr von
+ * der Rechnung abweichen — nicht weil jemand daran denkt, sondern weil es nur
+ * eine Antwort gibt.
+ *
+ * Geprüft wird auch die **Nutzlast**, nicht nur die Anwesenheit des Schlüssels:
+ * `priorMap` gibt `null` zurück, wenn die dekodierten Bytes nicht für
+ * `width × height` reichen, und genau diesen Fall bewacht `check-release.mjs`
+ * im Build. Ein Eintrag mit leerem `data` wäre sonst „geladen" und die Zeile
+ * wieder eine Behauptung.
+ */
+export type PriorResolution =
+  | {
+      source: 'data'
+      /** Die Kategorie, deren Karte tatsächlich gelesen wurde. */
+      asset: PriorAssetId
+      /** Die Dauer, deren Karte tatsächlich gelesen wurde. */
+      duration: PriorDuration
+      /** Die angeforderte Dauer — abweichend, wenn auf 3 s ausgewichen wurde. */
+      requestedDuration: PriorDuration
+    }
+  /** Kein Asset lesbar — gerechnet hat die analytische F-Muster-Glocke von 1.0. */
+  | { source: 'analytic'; asset: PriorAssetId; requestedDuration: PriorDuration }
+
+/** Reicht die Base64-Nutzlast für `width × height` Samples? */
+function hasPayload(asset: PriorAsset | undefined): boolean {
+  if (!asset) return false
+  const clean = asset.data.replace(/[^A-Za-z0-9+/]/g, '')
+  return Math.floor((clean.length * 3) / 4) >= asset.width * asset.height
+}
+
+export function resolvePriorAsset(
+  id: PriorAssetId,
+  duration: PriorDuration = DEFAULT_PRIOR_DURATION,
+  assets: Record<string, PriorAsset> = PRIOR_ASSETS,
+): PriorResolution {
+  if (hasPayload(assets[assetKey(id, duration)])) {
+    return { source: 'data', asset: id, duration, requestedDuration: duration }
+  }
+  // Derselbe Rückfall, den `priorMap` schon immer hatte — jetzt mit Rückgabewert.
+  if (hasPayload(assets[assetKey(id, DEFAULT_PRIOR_DURATION)])) {
+    return { source: 'data', asset: id, duration: DEFAULT_PRIOR_DURATION, requestedDuration: duration }
+  }
+  return { source: 'analytic', asset: id, requestedDuration: duration }
+}
+
+/**
+ * Die Betrachtungsdauer eines Profils als `PriorDuration`, oder `null`.
+ *
+ * `PROFILE_DURATIONS` ist ein `Record<ProfileId, number>`, und `number` ist
+ * hier zu weit: eine Dauer, für die es keinen Prior gibt, muss als solche
+ * erkennbar sein statt in einen `as`-Ausdruck zu rutschen. Genau dieser Cast
+ * stand bis 1.2 in `heuristic.ts`.
+ */
+export function priorDurationFor(seconds: number): PriorDuration | null {
+  return PRIOR_DURATIONS.find((duration) => duration === seconds) ?? null
+}
+
 /** Key into the generated table: category and viewing duration. */
 export function assetKey(id: PriorAssetId, duration: PriorDuration): string {
   return `${id}@${duration}s`
@@ -186,7 +254,13 @@ export function priorMap(
   height: number,
   duration: PriorDuration = DEFAULT_PRIOR_DURATION,
 ): Float32Array | null {
-  const asset = PRIOR_ASSETS[assetKey(id, duration)] ?? PRIOR_ASSETS[assetKey(id, DEFAULT_PRIOR_DURATION)]
+  // Über `resolvePriorAsset`, damit die Karte und ihre Beschriftung dieselbe
+  // Antwort benutzen. Vorher stand der Rückfall auf 3 s hier als `??`-Kette und
+  // war von außen nicht zu sehen — die Fußzeile nannte weiter die angeforderte
+  // Dauer (siehe `PriorResolution`).
+  const resolution = resolvePriorAsset(id, duration)
+  if (resolution.source !== 'data') return null
+  const asset = PRIOR_ASSETS[assetKey(resolution.asset, resolution.duration)]
   if (!asset) return null
 
   const bytes = decodeBase64(asset.data)
