@@ -179,8 +179,10 @@ jobs:
           base="origin/${{ github.base_ref }}"
           git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" || true
           if git diff --quiet "$base" -- eval/contrast-baseline.json; then
+            echo "Erwartung unverändert."
             echo "Erwartung unverändert." >> "$GITHUB_STEP_SUMMARY"
           else
+            echo "Die Erwartung wurde in diesem PR verändert — der Diff steht in der Zusammenfassung."
             {
               echo "### Die Contrastmap-Erwartung hat sich bewegt"
               echo ""
@@ -214,6 +216,11 @@ jobs:
               cat /tmp/selftest.log
               fail=1
             else
+              # Auch auf stdout, nicht nur in die Zusammenfassung: der Beweis,
+              # dass das Gate beißt, gehört ins Log. Sonst ist der einzige
+              # Nachweis ein grüner Haken — und ein grüner Haken ohne Messung
+              # ist genau das, was das erste Gate dreimal war.
+              echo "Selbsttest bestanden: $flag wurde abgelehnt."
               echo "Selbsttest bestanden: $flag wurde abgelehnt." >> "$GITHUB_STEP_SUMMARY"
             fi
           done
