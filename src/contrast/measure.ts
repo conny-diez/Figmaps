@@ -21,7 +21,14 @@
  */
 import type { Bitmap } from '../engine/ops'
 import type { NodeSignal } from '../messages'
-import { isSystemChrome, SYSTEM_CHROME_REASON } from './system-chrome'
+import {
+  MEASURABLE_LIMITS,
+  occludedShare,
+  rotationOf,
+  type MeasurableLimits,
+  type Skipped,
+} from './measurable'
+import { isSystemChrome } from './system-chrome'
 import { contrastRatio, formatRatio, isLargeText, requiredRatio, statusOf, type ContrastStatus } from './wcag'
 
 /**
@@ -50,7 +57,7 @@ export function pixelLuminance(r: number, g: number, b: number): number {
  * ins Verhältnis, und bei einer Ausgabe, die auf 0,05 genau sein soll, ist das
  * zu viel: 128 Bins wären allein schon ±0,08 im Verhältnis.
  */
-const HISTOGRAM_BINS = 128
+export const HISTOGRAM_BINS = 128
 
 /**
  * Fenster um die Textfarbe, das bei der Suche nach dem Hintergrund
@@ -101,6 +108,18 @@ export type BackgroundEstimate = {
   /** Wechselt der Hintergrund wirklich? */
   varies: boolean
   sampleCount: number
+  /**
+   * Wie viele Pixel die vorherrschende Fläche trägt — der Zähler von `varies`,
+   * hier eigens ausgewiesen.
+   *
+   * `varies` teilt ihn durch die **Nicht-Text**-Pixel und beantwortet damit
+   * „wechselt der Hintergrund?". Die Plausibilitätsprüfung von 1.3 teilt ihn
+   * durch **alle** abgetasteten Pixel und beantwortet die andere Frage: „ist
+   * überhaupt genug Hintergrund da, um von einem zu sprechen?". Beide Nenner
+   * sind richtig, für verschiedene Fragen — deshalb rechnet keiner den anderen
+   * mit.
+   */
+  dominantCount: number
 }
 
 /**
@@ -190,7 +209,32 @@ export function estimateBackground(
     bestLuminance: varies ? groupMean(takeUntilShare([...byContrast].reverse())) : dominantMean,
     varies,
     sampleCount: total,
+    dominantCount: dominant.values.length,
   }
+}
+
+/**
+ * Welcher Anteil dieser Pixel die **Textfarbe** zeigt.
+ *
+ * Dasselbe Fenster, das `estimateBackground` bei der Hintergrundsuche
+ * ausblendet — und das ist der Punkt: gezählt wird genau das, was dort
+ * weggeworfen wird. Wäre das Fenster hier ein anderes, könnte ein Element beide
+ * Prüfungen bestehen und die Messung liefe trotzdem über Pixel, die sie für
+ * Text hält.
+ *
+ * Eine Anwesenheitsprüfung, keine Kontrastprüfung — siehe
+ * `MeasurableLimits.textCoreShare`.
+ */
+export function textCoreShare(luminances: readonly number[], textLuminance: number): number {
+  if (luminances.length === 0) return 0
+  const binOf = (value: number): number =>
+    Math.min(HISTOGRAM_BINS - 1, Math.max(0, Math.floor(value * HISTOGRAM_BINS)))
+  const textBin = binOf(textLuminance)
+  let hits = 0
+  for (const value of luminances) {
+    if (Math.abs(binOf(value) - textBin) <= TEXT_BIN_WINDOW) hits++
+  }
+  return hits / luminances.length
 }
 
 export type ContrastResult = {
@@ -229,6 +273,20 @@ export type ContrastResult = {
   sampleCount: number
   /** Wurde außerhalb des Rahmens abgetastet, weil innen zu wenig Grund war? */
   sampledOutside: boolean
+  /**
+   * Anteil des abgetasteten Bereichs, den die tragende Hintergrundfläche
+   * einnimmt — die Größe, an der `hintergrund-zu-klein` entschieden wurde.
+   *
+   * Steht im Ergebnis aus demselben Grund wie `backgroundLuminance`: eine
+   * Schwelle, deren Messwert man nicht sieht, ist nicht überprüfbar. Wer
+   * bestreitet, dass ein Element hätte verworfen werden sollen, kann hier
+   * nachsehen, wie knapp es war.
+   */
+  backgroundShare: number
+  /** Anteil des Rahmens, der die Textfarbe zeigt — die Größe von `textkern-fehlt`. */
+  textCoreShare: number
+  /** Anteil des Rahmens, den später gezeichnete Elemente bedecken. */
+  occludedShare: number
 }
 
 export type MeasureOptions = {
@@ -237,6 +295,13 @@ export type MeasureOptions = {
   signals: readonly NodeSignal[]
   frameWidth: number
   frameHeight: number
+  /**
+   * Ab wann ein Element als nicht messbar gilt. Voreinstellung ist das, was
+   * ausgeliefert wird; gesetzt wird es nur von `npm run measurable`, das die
+   * Schwellen durchfährt, und von den Tests, die den Zustand ohne Prüfung als
+   * Vergleichspunkt brauchen.
+   */
+  limits?: MeasurableLimits
 }
 
 /** Alle Luminanzen in einem Rechteck, optional ohne einen inneren Bereich. */
@@ -271,19 +336,27 @@ function luminancesIn(
 /**
  * Misst den Kontrast jedes Textknotens gegen seinen tatsächlichen Hintergrund.
  *
- * Übersprungen wird ein Knoten nur, wenn er keine Textfarbe mitbringt
- * (`fillLuminance` fehlt, z. B. bei mehrfarbigem Text) oder wenn im
- * Textbereich **kein** Hintergrundpixel zu finden ist. Beides wird gezählt und
- * gehört in die Darstellung — eine Messung, die still Elemente auslässt, sagt
- * „alles in Ordnung", wo sie „ich weiß es nicht" meint.
+ * Übersprungen wird ein Knoten nie still: jeder Grund ist ein Code aus
+ * `measurable.ts`, wird gezählt und gehört in die Darstellung — eine Messung,
+ * die Elemente auslässt, sagt „alles in Ordnung", wo sie „ich weiß es nicht"
+ * meint.
+ *
+ * Die Prüfungen laufen in drei Stufen, und die Reihenfolge ist Absicht:
+ *
+ *   1. **Was der Knoten nicht mitbringt** — Chrome, Textfarbe, Schriftgröße.
+ *   2. **Was im Baum steht** — Drehung, Verdeckung. Ablesbar, also abgelesen und
+ *      nicht geschätzt (1.3, 1a).
+ *   3. **Was nur am Ergebnis zu sehen ist** — zeigt der Rahmen diesen Text, und
+ *      trägt die gefundene Fläche genug von ihm (1.3, 1b).
  */
-export function measureContrast(options: MeasureOptions): { results: ContrastResult[]; skipped: Array<{ nodeId: string; reason: string }> } {
+export function measureContrast(options: MeasureOptions): { results: ContrastResult[]; skipped: Skipped[] } {
   const { image, signals, frameWidth, frameHeight } = options
+  const limits = options.limits ?? MEASURABLE_LIMITS
   const scaleX = image.width / frameWidth
   const scaleY = image.height / frameHeight
 
   const results: ContrastResult[] = []
-  const skipped: Array<{ nodeId: string; reason: string }> = []
+  const skipped: Skipped[] = []
   const byId = new Map(signals.map((signal) => [signal.id, signal]))
 
   for (const signal of signals) {
@@ -291,22 +364,42 @@ export function measureContrast(options: MeasureOptions): { results: ContrastRes
     // Statusleiste und Home-Indicator gehören dem Betriebssystem; ein Befund
     // darüber ist für niemanden behebbar. Gezählt statt still ausgelassen.
     if (isSystemChrome(signal, byId)) {
-      skipped.push({ nodeId: signal.id, reason: SYSTEM_CHROME_REASON })
+      skipped.push({ nodeId: signal.id, reason: 'chrome' })
       continue
     }
     if (signal.fillLuminance === undefined) {
-      skipped.push({ nodeId: signal.id, reason: 'keine einfarbige Textfarbe (Verlauf, Bild oder mehrere Fills)' })
+      skipped.push({ nodeId: signal.id, reason: 'keine-textfarbe' })
       continue
     }
     const fontSize = signal.fontSize ?? 0
     if (fontSize <= 0) {
-      skipped.push({ nodeId: signal.id, reason: 'keine Schriftgröße — ohne sie ist die WCAG-Schwelle nicht bestimmt' })
+      skipped.push({ nodeId: signal.id, reason: 'keine-schriftgroesse' })
+      continue
+    }
+
+    // 1.3, 1a — die beiden Fälle, die im Baum **stehen**. Sie werden vor jeder
+    // Pixelarbeit entschieden: eine Plausibilitätsheuristik über eine Tatsache
+    // laufen zu lassen, die man ablesen kann, ist der Fehler, den 1.3 hier
+    // ausdrücklich nicht macht (siehe `measurable.ts`).
+    if (rotationOf(signal, byId) > limits.rotationDegrees) {
+      skipped.push({ nodeId: signal.id, reason: 'gedreht' })
+      continue
+    }
+    const occluded = occludedShare(signal, signals)
+    if (occluded > limits.occludedShare) {
+      skipped.push({ nodeId: signal.id, reason: 'verdeckt' })
       continue
     }
 
     const rect = { x: signal.x, y: signal.y, width: signal.width, height: signal.height }
     const textLuminance = signal.fillLuminance
-    let background = estimateBackground(luminancesIn(image, rect, scaleX, scaleY), textLuminance)
+
+    const inside = luminancesIn(image, rect, scaleX, scaleY)
+    let background = estimateBackground(inside, textLuminance)
+    // Der Nenner der Plausibilitätsprüfung ist der Bereich, aus dem der
+    // Hintergrund **tatsächlich** kommt — bei einem Text, der seinen Rahmen
+    // ausfüllt, ist das der Ring außen und nicht der Rahmen.
+    let region = inside.length
     let sampledOutside = false
 
     if (!background || background.sampleCount < MIN_BACKGROUND_PIXELS) {
@@ -315,12 +408,38 @@ export function measureContrast(options: MeasureOptions): { results: ContrastRes
       // dass es noch derselbe Grund ist.
       const pad = Math.max(2, fontSize * 0.5)
       const outer = { x: rect.x - pad, y: rect.y - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }
-      background = estimateBackground(luminancesIn(image, outer, scaleX, scaleY, rect), textLuminance)
+      const ring = luminancesIn(image, outer, scaleX, scaleY, rect)
+      background = estimateBackground(ring, textLuminance)
+      region = ring.length
       sampledOutside = true
     }
 
     if (!background) {
-      skipped.push({ nodeId: signal.id, reason: 'kein Hintergrund gefunden — Text füllt seinen Rahmen vollständig' })
+      skipped.push({ nodeId: signal.id, reason: 'kein-hintergrund' })
+      continue
+    }
+
+    // 1.3, 1b — das Netz für alles, was im Baum **nicht** steht: Masken,
+    // Clipping, Effekte, Subpixelkanten. Geprüft wird nicht die Ursache,
+    // sondern ob das Ergebnis wie der Hintergrund dieses Elements aussieht.
+    //
+    // Reihenfolge: erst „zeigt der Rahmen diesen Text überhaupt", dann „trägt
+    // die Fläche genug". Die erste Frage ist die schärfere Auskunft — wo die
+    // Textfarbe fehlt, sagt „kein tragender Hintergrund" das Falsche.
+    const core = textCoreShare(inside, textLuminance)
+    if (inside.length > 0 && core < limits.textCoreShare) {
+      skipped.push({ nodeId: signal.id, reason: 'textkern-fehlt' })
+      continue
+    }
+    // `backgroundShare` wird berechnet und ausgewiesen, verwirft aber nichts:
+    // die Messung hat gezeigt, dass es keine Schwelle gibt, die den Fall ohne
+    // Fläche trifft und den Verlauf verschont (siehe
+    // `MeasurableLimits.backgroundShare`). `null` heißt „gemessen, nicht
+    // ausgeliefert" — der Wert steht im Ergebnis, damit die Entscheidung ohne
+    // neue Messung wieder aufzumachen ist.
+    const backgroundShare = region > 0 ? background.dominantCount / region : 0
+    if (limits.backgroundShare !== null && backgroundShare < limits.backgroundShare) {
+      skipped.push({ nodeId: signal.id, reason: 'hintergrund-zu-klein' })
       continue
     }
 
@@ -347,6 +466,9 @@ export function measureContrast(options: MeasureOptions): { results: ContrastRes
       approximate: background.varies,
       sampleCount: background.sampleCount,
       sampledOutside,
+      backgroundShare,
+      textCoreShare: core,
+      occludedShare: occluded,
     })
   }
 

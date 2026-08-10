@@ -57,6 +57,8 @@ import {
 } from './finding-load'
 import { sweepCompetition } from './competition'
 import { runContrastCheck } from './contrast-check'
+import { auditCorpus, auditMeasurable, controlDetail, percentiles, worstBy } from './measurable-audit'
+import { SKIP_LABELS, SKIP_TEXT, type SkipReason } from '../src/contrast/measurable'
 import { judgeOrder, measureKnownCases, HEADER_BAND } from './header-weight'
 import { formatRatio } from '../src/contrast/wcag'
 import { solidImage } from '../src/engine/__tests__/helpers'
@@ -1324,13 +1326,16 @@ function runContrastCheckCommand(args: Args): number {
   console.log('Contrastmap auf zwei Frames. Diese Werte sind nachmessbar — keine Vorhersage.')
   for (const result of runContrastCheck()) {
     console.log('')
-    console.log(`${result.label} — ${result.results.length} Textelemente gemessen, ${result.skipped.length} übersprungen`)
+    console.log(
+      `${result.label} — ${result.results.length} Textelemente gemessen, ${result.skipped.length} nicht messbar` +
+        `${result.skipped.length > 0 ? ` (${result.skippedSummary})` : ''}`,
+    )
     // Angezeigt **und** roh: die angezeigte Zahl ist das, was der Nutzer sieht
     // und wonach er das Urteil beurteilt; der Rohwert ist das, was er beim
     // Nachrechnen bekommt. Beide zu zeigen ist der Sinn dieses Werkzeugs.
     console.log(
       `  ${'Status'.padEnd(15)}${'angezeigt'.padStart(11)}${'roh'.padStart(11)}${'gefordert'.padStart(11)}` +
-        `${'Grund ~'.padStart(10)}${'Näherung'.padStart(10)}   Text`,
+        `${'Grund ~'.padStart(10)}${'Näherung'.padStart(10)}${'Fläche'.padStart(9)}${'Kern'.padStart(8)}   Text`,
     )
     for (const entry of result.results) {
       // Die gemessene Hintergrundfarbe steht dabei: ohne sie ist „dieser Wert
@@ -1339,10 +1344,18 @@ function runContrastCheckCommand(args: Args): number {
       console.log(
         `  ${entry.status.padEnd(15)}${formatRatio(entry.ratio).padStart(11)}${entry.ratio.toFixed(4).padStart(11)}` +
           `${entry.required.toFixed(1).padStart(11)}${`~${grey.toString(16).padStart(2, '0').repeat(3)}`.padStart(10)}` +
-          `${(entry.approximate ? 'ja' : '—').padStart(10)}   ${entry.text.slice(0, 36)}`,
+          `${(entry.approximate ? 'ja' : '—').padStart(10)}` +
+          // Die beiden Prüfgrößen von 1.3 stehen mit dabei: eine Schwelle, deren
+          // Messwert man nicht sieht, ist nicht überprüfbar.
+          `${entry.backgroundShare.toFixed(3).padStart(9)}${entry.textCoreShare.toFixed(3).padStart(8)}` +
+          `   ${entry.text.slice(0, 36)}`,
       )
     }
-    for (const entry of result.skipped) console.log(`  übersprungen: ${entry.nodeId} — ${entry.reason}`)
+    // Pro Element der ganze Satz, nicht nur das Zählwort: hier ist Platz dafür,
+    // und wer einen Wert bestreitet, braucht den Grund und nicht die Statistik.
+    for (const entry of result.skipped) {
+      console.log(`  nicht messbar: ${entry.nodeId} — ${SKIP_TEXT[entry.reason]}`)
+    }
     if (result.nonText.length > 0) {
       console.log('')
       console.log(`  WCAG 1.4.11 — ${result.nonText.length} Elemente im Prüfumfang, ${result.nonTextReported.length} gemeldet`)
@@ -1370,6 +1383,101 @@ function runContrastCheckCommand(args: Args): number {
 function contrastText(result: ReturnType<typeof runContrastCheck>[number], nodeId: string): string {
   const index = result.results.findIndex((entry) => entry.nodeId === nodeId)
   return index >= 0 ? result.findings[index] : ''
+}
+
+// ---------------------------------------------------------------------------
+// measurable — 1.3, 1d: wie streng ist die Plausibilitätsprüfung?
+//
+//   npm run measurable [-- --variants 6]
+//
+// Diese Zahl entscheidet über die Schwellen, sie bestätigt sie nicht. Eine
+// Prüfung, die viele Elemente verwirft, tauscht falsche Werte gegen fehlende
+// Aussagen — und der Tausch ist nur günstig, solange er selten greift.
+// ---------------------------------------------------------------------------
+
+function runMeasurable(args: Args): number {
+  const variants = num(args, 'variants', 6)
+  const audit = auditMeasurable(variants)
+  const { normal } = auditCorpus(variants)
+
+  console.log('1.3, 1d — Plausibilitätsprüfung der Kontrastmessung: wie viele Elemente verliert sie?')
+  console.log(`Korpus: ${audit.frameCount} Frames MIT Layer-Baum (Onboarding + ${variants} Varianten je Form).`)
+  console.log(`Ohne Layer-Baum und deshalb nicht im Korpus: ${audit.withoutLayerTree.join(', ')} —`)
+  console.log('ein Screenshot hat keine Ebenen, die Contrastmap misst dort NULL Elemente (nicht: null Probleme).')
+  console.log('')
+
+  console.log(`  Textknoten im Korpus:            ${audit.before.textNodes}`)
+  console.log(`  gemessen OHNE Prüfung (1.2):     ${audit.before.measured}`)
+  console.log(`  gemessen MIT Prüfung (1.3):      ${audit.after.measured}`)
+  const lost = audit.before.measured - audit.after.measured
+  console.log(
+    `  Verlust:                         ${lost} (${((lost / Math.max(1, audit.before.measured)) * 100).toFixed(1)} %)`,
+  )
+  console.log('')
+
+  console.log('  Übersprungen, nach Grund:')
+  for (const reason of Object.keys(SKIP_LABELS) as SkipReason[]) {
+    const before = audit.before.skipped[reason]
+    const after = audit.after.skipped[reason]
+    if (before === 0 && after === 0) continue
+    console.log(`    ${SKIP_LABELS[reason].padEnd(30)}${String(before).padStart(6)} → ${String(after).padStart(6)}`)
+  }
+  console.log('')
+
+  console.log('  Verteilung der Prüfgrößen über alle Elemente, die OHNE Prüfung gemessen wurden:')
+  console.log(`    ${'Größe'.padEnd(18)}${'min'.padStart(9)}${'p5'.padStart(9)}${'Median'.padStart(9)}${'p95'.padStart(9)}${'max'.padStart(9)}`)
+  const row = (label: string, samples: number[]): void => {
+    const values = percentiles(samples)
+    console.log(`    ${label.padEnd(18)}${values.map((value) => value.toFixed(4).padStart(9)).join('')}`)
+  }
+  row('backgroundShare', audit.before.backgroundShares)
+  row('textCoreShare', audit.before.textCoreShares)
+  row('occludedShare', audit.before.occludedShares)
+  row('rotation (Grad)', audit.before.rotations)
+  console.log('')
+
+  console.log('  Jede Schwelle EINZELN, alle anderen aus — sonst verdecken sie einander:')
+  console.log(`    ${'Schwelle'.padEnd(20)}${'Wert'.padStart(9)}${'verloren'.padStart(11)}${'Anteil'.padStart(9)}`)
+  for (const entry of audit.sweep) {
+    console.log(
+      `    ${entry.limit.padEnd(20)}${entry.value.toFixed(3).padStart(9)}${String(entry.lost).padStart(11)}` +
+        `${`${(entry.share * 100).toFixed(1)} %`.padStart(9)}`,
+    )
+  }
+  console.log('')
+
+  console.log('  Die knappsten gemessenen Elemente — hier entscheidet die Schwelle:')
+  for (const key of ['backgroundShare', 'textCoreShare'] as const) {
+    for (const entry of worstBy(normal, key, 4)) {
+      console.log(`    ${key.padEnd(18)}${entry.value.toFixed(4).padStart(9)}   ${entry.frame} — ${entry.text.slice(0, 34)}`)
+    }
+  }
+  console.log('')
+
+  console.log('  Gegenprobe (eigener Frame mit gewollter Verdeckung und Drehung) — NICHT in der Quote oben:')
+  console.log(`    gemessen ohne Prüfung: ${audit.controlBefore.measured} von ${audit.controlBefore.textNodes}`)
+  console.log(`    gemessen mit Prüfung:  ${audit.control.measured} von ${audit.control.textNodes}`)
+  for (const reason of Object.keys(SKIP_LABELS) as SkipReason[]) {
+    if (audit.control.skipped[reason] === 0) continue
+    console.log(`    ${SKIP_LABELS[reason].padEnd(30)}${String(audit.control.skipped[reason]).padStart(4)}`)
+  }
+  console.log('')
+  // Element für Element, mit den Prüfgrößen: an der Gegenprobe entscheidet sich,
+  // ob eine Schwelle den richtigen Fall trifft — und der Grenzfall „Text über
+  // Verlauf" ist in 1.2 C5 ausdrücklich als messbar erklärt. Er muss hier mit
+  // seiner Zahl stehen, nicht in einer Vermutung.
+  console.log(`    ${'Knoten'.padEnd(16)}${'Fläche'.padStart(9)}${'Kern'.padStart(8)}${'verdeckt'.padStart(10)}   Antwort`)
+  for (const entry of controlDetail()) {
+    console.log(
+      `    ${entry.nodeId.padEnd(16)}${entry.backgroundShare.padStart(9)}${entry.textCoreShare.padStart(8)}` +
+        `${entry.occludedShare.padStart(10)}   ${entry.answer}`,
+    )
+  }
+  console.log('')
+  console.log('Was diese Messung NICHT sagt: wie häufig Drehung und Verdeckung in echten Dateien sind.')
+  console.log('Die Generatoren erzeugen beides nicht — jeder Treffer im Korpus wäre eine Fehlmeldung,')
+  console.log('und die Trefferquote steht erst mit dem Set aus echten Layer-Bäumen fest (PRD Set 2).')
+  return 0
 }
 
 // ---------------------------------------------------------------------------
@@ -1777,6 +1885,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (args['finding-load']) return await runFindingLoad(args)
     if (args.competition) return await runCompetition(args)
     if (args['contrast-check']) return runContrastCheckCommand(args)
+    if (args.measurable) return runMeasurable(args)
     if (args['header-weight']) return await runHeaderWeight()
     if (args['visual-check']) return await runVisualCheckCommand(args)
     if (args['side-effects']) return await runSideEffects(args)

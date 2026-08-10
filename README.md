@@ -1866,7 +1866,8 @@ Code, der Rest ist das Set.
 ## Contrastmap (1.2 C)
 
 ```bash
-npm run contrast-check      # die Karte auf zwei Frames, Bild und Befunde
+npm run contrast-check      # die Karte auf drei Frames, Bild und Befunde
+npm run measurable          # 1.3: wie viele Elemente verwirft die Plausibilitätsprüfung?
 ```
 
 **Die dritte Karte, und die einzige, die keine Vorhersage ist.** Sie hat keinen
@@ -2075,12 +2076,12 @@ mehr, sondern ein Muster — also einmal systematisch durchgegangen, was
 | **Kantenglättung** an Glyphen | **Ja, tat es.** Minimum über Pixel traf immer ein Mischpixel | **behoben**, eigener Test mit bekannten Farbpaaren |
 | **Textfarbe** (`fillLuminance`) | **Ja, tat es.** Ohne sie misst die Contrastmap gar nicht | **behoben**, beide Generatoren setzen sie |
 | **Deckkraft < 1** an Fill oder Knoten | **Ja.** Die Farbe aus dem Layer-Baum ist dann nicht die, die man sieht — der gemeldete Kontrast wäre **besser** als die Wirklichkeit | **behoben ohne Testfall**: `traverse.ts` setzt `fillLuminance` nur noch, wenn Paint und Knoten voll deckend sind. Lieber „nicht messbar" als eine geschönte Zahl |
-| **Überlappende Elemente / Verdeckung** | **Ja, offen.** Ein Knoten, der von einem späteren Element überdeckt wird, wird gegen Pixel gemessen, die gar nicht zu ihm gehören. Die Generatoren zeichnen überschneidungsfrei | **offen** — braucht einen Frame mit bewusster Verdeckung |
+| **Überlappende Elemente / Verdeckung** | **Ja, tat es.** Ein Knoten, der von einem späteren Element überdeckt wird, wurde gegen Pixel gemessen, die gar nicht zu ihm gehören. Die Generatoren zeichnen überschneidungsfrei | **behoben in 1.3**: aus dem Baum bestimmt, gemeldet als nicht messbar. Der Frame mit bewusster Verdeckung existiert jetzt (`eval/overlap.ts`) |
 | **Verläufe als Hintergrund** | **Vermutlich nein.** Der `varies`-Pfad ist getestet, aber nur mit einem synthetischen Verlauf, nicht aus einem Generator | **offen**, geringes Risiko |
 | **Text auf Fotos** | **Vermutlich nein**, gleicher Pfad wie Verläufe. Die Onboarding-Kacheln haben Bildflächen, aber der Text liegt darunter, nie darauf | **offen**, geringes Risiko |
 | **Subpixel-Positionen** | **Möglich.** Alle Rechtecke der Generatoren liegen auf ganzen Pixeln; Figma liefert Bruchteile. `luminancesIn` rundet, kann also eine Pixelreihe daneben greifen — bei kleinem Text anteilig viel | **offen** |
-| **Rotation** | **Ja, vermutlich.** Ein gedrehter Textknoten hat eine achsenparallele Bounding-Box voller Hintergrund; die dominante Fläche wäre dann der Grund neben dem Text statt der dahinter | **offen** |
-| **Effekte (Schatten, Blur), Masken, Clipping** | **Möglich.** Ein Schatten unter Text verschiebt den gemessenen Hintergrund; eine Maske kann Pixel zeigen, die nicht zum Knoten gehören | **offen** |
+| **Rotation** | **Ja, tat es.** Ein gedrehter Textknoten hat eine achsenparallele Bounding-Box voller Hintergrund; die dominante Fläche war dann der Grund neben dem Text statt der dahinter | **behoben in 1.3**: `node.rotation` reist im Signal mit, geprüft am Knoten **und** an seinen Vorfahren |
+| **Effekte (Schatten, Blur), Masken, Clipping** | **Möglich.** Ein Schatten unter Text verschiebt den gemessenen Hintergrund; eine Maske kann Pixel zeigen, die nicht zum Knoten gehören | **teilweise behoben in 1.3**: schneidet die Maske den Text ganz weg, fällt das auf (Textkern fehlt). Ein Schatten, der den Grund nur verschiebt, bleibt offen |
 | **`figma.mixed`** (mehrere Schriftgrößen, mehrere Fills in einem Knoten) | Nein — der Übersprungpfad existiert und meldet den Grund | abgedeckt durch Konstruktion |
 
 **Was das über die Testframes sagt.** Sie sind gut für Geometrie und für die
@@ -2092,10 +2093,181 @@ zählt, und prüft gegen Zahlen, die feststehen.
 
 **Die drei offenen Punkte mit echtem Risiko** (Verdeckung, Rotation, Subpixel)
 haben eines gemeinsam: bei allen dreien ist die **Bounding-Box nicht das, was
-man sieht**. Der naheliegende nächste Schritt ist deshalb keine weitere
-Fixture-Variante, sondern eine Plausibilitätsprüfung in der Messung selbst — ob
-die dominante Fläche überhaupt groß genug ist, um der Hintergrund *dieses*
-Elements zu sein. Nicht in diesem Schritt gebaut.
+man sieht**. In 1.3 sind sie angegangen — aber nicht alle drei auf dieselbe
+Weise, und das ist der Kern der Sache.
+
+### 1.3 — was feststellbar ist, wird festgestellt und nicht geschätzt
+
+Die drei Fälle sehen gleich aus und sind es nicht:
+
+| | woher die Antwort kommt | wie 1.3 damit umgeht |
+|---|---|---|
+| **Rotation** | `node.rotation` steht am Knoten | abgelesen, Knoten **und** Vorfahren |
+| **Verdeckung** | Zeichenreihenfolge und Geometrie stehen im Baum | ausgerechnet, Flächenvereinigung über alle späteren malenden Elemente |
+| **Subpixel, Masken, Effekte** | entsteht erst beim Rendern | Netz am Ergebnis, nicht an der Ursache |
+
+**Für die ersten beiden wäre eine Plausibilitätsheuristik der falsche Weg.** Sie
+würde eine Tatsache *raten*, die im Baum steht — und jede Fehlschätzung wäre
+entweder eine erfundene Zahl oder ein verworfenes messbares Element. Wenn eine
+Antwort ablesbar ist, wird sie abgelesen. Der Code steht in
+[`src/contrast/measurable.ts`](src/contrast/measurable.ts).
+
+Beide melden **„nicht messbar" mit Grund** statt eine Zahl über fremde Pixel.
+Das ist die brauchbarere Auskunft: „verdeckt" sagt einem Menschen, was zu tun
+ist, „3,1:1" über die Pixel einer Plakette sagt etwas Falsches über die Datei.
+
+Drei Entscheidungen, die jede für sich eine Fehlmeldungsklasse ausschließen:
+
+- **Drehung über die Vorfahren.** `rotation` ist in Figma relativ zum
+  Elternknoten: ein gerader Text in einer gedrehten Gruppe steht selbst auf
+  null und trotzdem schief. Nur den Knoten zu prüfen fände die Gruppe und nicht
+  ihren Inhalt — dieselbe Schleife wie bei `isSystemChrome`, aus demselben
+  Grund.
+- **Drehung nicht als `!== 0`.** Figma leitet `rotation` aus
+  `relativeTransform` ab, und Auto-Layout- und Instanzketten liefern dort Reste
+  wie `-1.4e-14`. Die Schwelle ist 0,1° und ist keine Toleranz, sondern
+  Rechengenauigkeit: bei 0,1° wächst ein 500 px breiter Textrahmen um
+  500 · sin(0,1°) = 0,87 px, also um weniger als ein Pixel.
+- **Als Verdecker zählt nur, was später gezeichnet wird *und* malt.** Ein
+  Element *vor* dem Text liegt hinter ihm und ist genau der Hintergrund, den
+  die Messung sucht — ein Scrim unter weißer Schrift darf sie nicht verwerfen.
+  Eine Gruppe ohne Fill umfasst den Text und verändert kein Pixel; ohne diese
+  Bedingung wäre in einer echten Datei fast jeder Text „verdeckt". Und die
+  Fläche wird **vereinigt**, nicht summiert: drei Icons zu je 5 %, die sich
+  gegenseitig überdecken, sind als Summe 15 % und in Wahrheit weniger — bei
+  einer Schwelle von 10 % entscheidet das.
+
+### Wie streng die Plausibilitätsprüfung sein darf — gezählt, bevor sie lief
+
+**Jede dieser Schwellen tauscht falsche Zahlen gegen fehlende Aussagen.** Der
+Tausch ist nur günstig, solange er selten greift: eine Prüfung, die ein Drittel
+der Textelemente verwirft, hat die Contrastmap nicht genauer gemacht, sondern
+abgeschafft. Die Zahl stand deshalb vor der Entscheidung.
+
+```bash
+npm run measurable
+```
+
+**Korpus: 19 Frames mit Layer-Baum, 369 Textknoten** — Onboarding-Screen plus
+sechs Varianten je konstruierter Form. Das ist alles, was dieses Repo hat.
+
+> **Die Gate-Bilder tragen dazu nichts bei, und zwar nicht ein einziges
+> Element.** `gate-web` und `gate-mobile` sind UEyes-Screenshots; der Import
+> legt ausdrücklich kein `signals/` an, weil ein Screenshot keine Ebenen hat.
+> Ohne Layer-Baum gibt es keinen Textknoten, keine Textfarbe und keine
+> Schriftgröße — die Contrastmap misst auf ihnen **null** Elemente. Das ist eine
+> Null mit Grund, nicht „null Probleme", und es ist dieselbe Lücke, an der
+> `dead-cta` und `cta-below-fold` hängen (PRD Set 2).
+
+| | Elemente |
+|---|---:|
+| Textknoten im Korpus | 369 |
+| gemessen **ohne** Prüfung (Stand 1.2) | 368 |
+| gemessen **mit** Prüfung (Stand 1.3) | **368** |
+| Verlust | **0** |
+
+Das eine übersprungene Element ist die Statusleiste, und die war es vorher auch.
+Der Abstand zur nächsten Schwelle ist in jeder Richtung mindestens zehnfach:
+
+| Größe | kleinster Wert im Korpus | Schwelle | Abstand |
+|---|---:|---:|---:|
+| `textCoreShare` | 0,133 | 0,010 | 13× |
+| `occludedShare` | 0,000 | 0,100 | — |
+| Drehung (Grad) | 0,000 | 0,100 | — |
+
+**Was diese Messung nicht sagt.** Wie häufig Drehung und Verdeckung in echten
+Dateien vorkommen. Die Generatoren erzeugen beides nicht, jeder Treffer im
+Korpus *wäre* eine Fehlmeldung — die Messung beantwortet also „verwirft die
+Prüfung Messbares" (nein) und nicht „findet sie, was sie finden soll". Das
+zweite steht in `measurable.test.ts` und im dritten Prüffall von
+`npm run contrast-check`, an Fällen, die den Mangel absichtlich herstellen.
+
+#### Die Gegenprobe: der Frame mit bewusster Verdeckung existiert jetzt
+
+[`eval/overlap.ts`](eval/overlap.ts) — der Frame, den die Tabelle oben seit 1.2
+als fehlend führt. Er ist eine **Gegenprobe, keine Stichprobe**: er zeigt, dass
+die Erkennung greift, nicht wie oft der Fall vorkommt, und seine Zahlen gehören
+in keine Quote. Deshalb liegt er in einer eigenen Datei und wird getrennt
+ausgewiesen.
+
+| Knoten | Fläche | Kern | verdeckt | Antwort |
+|---|---:|---:|---:|---|
+| Kontrolle, dunkel auf hell | 0,675 | 0,295 | 0,000 | gemessen, 17,2:1 |
+| Zeile unter einer Plakette | 0,432 | 0,158 | **0,480** | verdeckt |
+| Zeile mit 18° Drehung | 0,915 | 0,085 | 0,000 | gedreht |
+| Zeile, von einer Maske entfernt | 1,000 | **0,000** | 0,000 | Textkern fehlt |
+| Weiß über Verlauf | 0,034 | 0,289 | 0,000 | gemessen, 1,1:1 |
+| Weiß über Textur | 0,059 | 0,295 | 0,000 | gemessen, 1,1:1 |
+
+Die **Kontrollen** sind der wichtigere Teil. Eine Prüfung, die alles verwirft,
+ist kein Fortschritt gegenüber einer, die alles meldet.
+
+#### „Zeigt der Rahmen diesen Text überhaupt" — eine Anwesenheits-, keine Kontrastprüfung
+
+Der Unterschied ist der ganze Wert der Prüfung, denn die naheliegende Lesart
+wäre zirkulär: eine Forderung nach *Trennung* zwischen Textkern und Umgebung
+würde genau die Elemente verwerfen, die das Werkzeug finden soll — schlecht
+lesbaren Text.
+
+Gezählt wird deshalb nur, ob die im Baum **angemeldete** Textfarbe im Rahmen
+vorkommt, im selben Fenster, das die Hintergrundsuche ausblendet. Liegen Text
+und Grund dicht beieinander, sind das *viele* Pixel: hellgrau auf Weiß mit
+1,3:1 besteht die Prüfung mühelos und kommt als Befund heraus. Sie schlägt nur
+an, wenn die Farbe praktisch nicht vorkommt — dann zeigt der Rahmen etwas
+anderes als diesen Text, und das ist der Masken- und Clipping-Fall. Ein eigener
+Test hält das fest, weil ein späterer Umbau in Richtung „genügend Trennung" die
+Contrastmap um ihre wichtigsten Befunde bringen würde.
+
+#### Die zweite Hälfte der Idee ist gemessen und **nicht** ausgeliefert
+
+Die naheliegende Prüfung war: *ist die dominante Fläche überhaupt groß genug, um
+der Hintergrund dieses Elements zu sein?* Drei gemessene Zahlen schließen jede
+Schwelle dafür aus:
+
+| Fall | Flächenanteil | soll |
+|---|---:|---|
+| normale Elemente, kleinster Wert im Korpus | 0,551 | messbar |
+| weißer Text über Verlauf Schwarz→Weiß | **0,034** | messbar (1.2 C5) |
+| weißer Text über gleichverteiltem Rauschen | **0,059** | verwerfen? |
+
+**Das Rauschen liegt über dem Verlauf, nicht darunter.** Der Grund ist die
+sRGB-Kurve: gleichverteilte Bytes häufen sich im dunklen Ende der Luminanz, und
+der unterste Bin sammelt rund ein Zehntel der Pixel. Eine Schwelle zwischen
+beiden gibt es damit nicht — jeder Wert, der die Textur trifft, verwirft auch den
+Verlauf. Und der Verlauf ist in C5 („Grenzen, ehrlich benannt") ausdrücklich als
+messbar erklärt: weiß über einem Verlauf, der bis Weiß läuft, **ist** am hellen
+Ende unlesbar, und genau das gibt die Messung aus — schlechtester Wert, „der
+Hintergrund wechselt", Fahne mit „~". Diese richtige Aussage gegen „nicht
+messbar" zu tauschen wäre ein Rückschritt.
+
+Umgekehrt liegt jede Schwelle unter 0,034 unterhalb dessen, was selbst reines
+Rauschen erreicht — sie würde nie greifen. Eine Prüfung, die nie greift, ist
+keine.
+
+Die Größe wird weiter berechnet, steht in `ContrastResult.backgroundShare` und in
+der Tabelle von `npm run contrast-check`. Wer die Entscheidung neu aufmachen
+will, braucht keine neue Messung, nur eine Zahl statt `null` — dieselbe
+Konstruktion wie `shipped: false` bei den Vorhersageregeln.
+
+**Was das über die Reihenfolge sagt.** Von zwei Ideen für das Netz hat die
+Zählung eine widerlegt. Ohne sie wären beide ausgeliefert worden, und eine davon
+hätte einen dokumentierten Befund still weggenommen — genau die Fehlerklasse,
+die diese README auf fünf Anläufen verfolgt.
+
+#### Gezählt und benannt, nicht aufgezählt
+
+Die Warnung lautet jetzt
+
+> Contrastmap: 3 Textelement(e) nicht messbar (2 verdeckt, 1 gedreht).
+
+und nicht mehr eine Aufzählung der *vorkommenden* Gründe. Bis 1.2 stand in
+`skipped` ein Satz je Element, und die Warnung konnte deshalb nur die Menge der
+Gründe zeigen, nie ihre Häufigkeit — bei zwölf übersprungenen Elementen sagte sie
+nicht, ob elf davon dieselbe Ursache hatten. Seit 1.3 ist jeder Grund ein Code
+mit einem kurzen Zählwort und einem ganzen Satz; die Reihenfolge ist bei
+Gleichstand festgelegt, damit sich der Wortlaut zwischen zwei Läufen auf
+demselben Frame nicht ändert. Eine Warnung, die das tut, sieht wie ein Befund
+aus.
 
 ### Der Kopf der Contrastmap läuft nicht durch die Vorhersage-Vorlage
 
@@ -2193,9 +2365,23 @@ Hintergrund wechselt und der Wert eine Näherung nach unten ist. In der Karte
 trägt die Fahne dann ein `~`.
 
 Elemente, die gar nicht messbar sind, werden **gezählt und benannt** statt still
-ausgelassen: mehrfarbiger Text ohne einfarbigen Fill, fehlende Schriftgröße,
-Text, der seinen Rahmen vollständig füllt. Eine Messung, die Elemente
-verschweigt, sagt „in Ordnung", wo sie „ich weiß es nicht" meint.
+ausgelassen. Eine Messung, die Elemente verschweigt, sagt „in Ordnung", wo sie
+„ich weiß es nicht" meint.
+
+Die vollständige Liste der Gründe steht in
+[`src/contrast/measurable.ts`](src/contrast/measurable.ts) — je Grund ein kurzes
+Zählwort für die Warnung und ein ganzer Satz für die Einzelausgabe:
+
+| Grund | woran es liegt | seit |
+|---|---|---|
+| Betriebssystem-Chrome | Statusleiste, Home-Indicator | 1.2 |
+| keine einfarbige Textfarbe | Verlauf, Bild, mehrere Fills, Deckkraft unter 1 | 1.2 |
+| keine Schriftgröße | `figma.mixed` — ohne sie ist die WCAG-Schwelle nicht bestimmt | 1.2 |
+| kein Hintergrund im Rahmen | Text füllt seinen Rahmen vollständig, auch der Ring außen trägt nichts | 1.2 |
+| **gedreht** | die achsenparallele Box ist nicht der Textbereich | **1.3** |
+| **verdeckt** | ein später gezeichnetes Element liegt über dem Textbereich | **1.3** |
+| **Text im Rahmen nicht zu sehen** | die angemeldete Textfarbe kommt dort nicht vor — Maske, Clipping | **1.3** |
+| kein tragender Hintergrund | *gemessen und nicht ausgeliefert*, siehe oben | — |
 
 ### Panel (C6)
 

@@ -114,6 +114,18 @@ export type NodeSignal = {
   nameHints: string[]
   /** Relative luminance of the dominant solid fill, `[0,1]`. */
   fillLuminance?: number
+  /**
+   * Eigendrehung des Knotens in Grad, relativ zum Elternknoten. Fehlt, wenn der
+   * Knotentyp keine Drehung kennt.
+   *
+   * Nur die Kontrastmessung liest es, und sie liest es, weil `x/y/width/height`
+   * hier die **achsenparallele** Bounding-Box sind: bei einem gedrehten
+   * Textknoten ist diese Box größer als der Text und überwiegend mit Pixeln
+   * gefüllt, die nicht hinter ihm liegen. Ohne dieses Feld ist das aus dem
+   * Signal nicht zu erkennen — und die Messung meldete eine Zahl über
+   * Fremdpixel (`contrast/measurable.ts`).
+   */
+  rotation?: number
 }
 
 export type FrameSummary = {

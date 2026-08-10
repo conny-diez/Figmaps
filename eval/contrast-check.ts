@@ -20,12 +20,14 @@ import type { NodeSignal } from '../src/messages'
 import { nodeImageOps } from '../src/platform/imageops-node'
 import { measureContrast, type ContrastResult } from '../src/contrast/measure'
 import { contrastFindingText } from '../src/contrast/measure'
+import { summariseSkipped, type Skipped } from '../src/contrast/measurable'
 import { measureNonTextContrast, reportableNonText, type NonTextResult } from '../src/contrast/non-text'
 import { __testing } from '../src/render/contrastmap'
 
 const { placeTag } = __testing
 import { buildOnboardingFrame } from './onboarding'
 import { buildFrame, SHAPES } from './constructed'
+import { buildOverlapFrame } from './overlap'
 
 type Rgb = [number, number, number]
 
@@ -104,7 +106,7 @@ export type ContrastCheckCase = {
 }
 
 /**
- * Die beiden Prüffälle.
+ * Die drei Prüffälle.
  *
  * Der Onboarding-Screen, weil er der Fall aus A4 ist und weil auf ihm eine
  * bekannte Antwort steht: die dunkle Kachel trägt weißen Text auf fast Schwarz
@@ -113,11 +115,17 @@ export type ContrastCheckCase = {
  *
  * Dazu ein konstruierter Desktop-Frame — dieselbe Messung auf einer anderen
  * Frame-Form, mit Fließtext in Grau auf Weiß.
+ *
+ * Seit 1.3 als Dritter der Frame mit **gewollter Verdeckung und Drehung**. Er
+ * ist eine Gegenprobe und keine Stichprobe: er zeigt, dass die Erkennung
+ * greift, nicht wie oft der Fall vorkommt. Seine Zahlen gehören in keine Quote
+ * — siehe `overlap.ts`.
  */
 export function contrastCheckCases(): ContrastCheckCase[] {
   const onboarding = buildOnboardingFrame()
   const desktop = SHAPES.find((shape) => shape.id === 'desktop-lang')!
   const constructed = buildFrame(desktop, 3)
+  const overlap = buildOverlapFrame()
   return [
     {
       id: 'onboarding',
@@ -135,6 +143,14 @@ export function contrastCheckCases(): ContrastCheckCase[] {
       frameWidth: desktop.frameWidth,
       frameHeight: desktop.frameHeight,
     },
+    {
+      id: 'overlap',
+      label: overlap.label,
+      image: overlap.image,
+      signals: overlap.signals,
+      frameWidth: overlap.frameWidth,
+      frameHeight: overlap.frameHeight,
+    },
   ]
 }
 
@@ -142,7 +158,9 @@ export type ContrastCheckResult = {
   id: string
   label: string
   results: ContrastResult[]
-  skipped: Array<{ nodeId: string; reason: string }>
+  skipped: Skipped[]
+  /** Gezählt und benannt — „2 verdeckt, 1 gedreht". */
+  skippedSummary: string
   findings: string[]
   /** WCAG 1.4.11 — alle geprüften Elemente, auch die nicht ausgelieferten. */
   nonText: NonTextResult[]
@@ -213,6 +231,7 @@ export function runContrastCheck(options: { tileWidth?: number } = {}): Contrast
       label: item.label,
       results,
       skipped,
+      skippedSummary: summariseSkipped(skipped),
       nonText: nonText.results,
       nonTextReported: reportableNonText(nonText.results),
       findings: results.map((result) => contrastFindingText(result)),

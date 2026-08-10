@@ -15,6 +15,7 @@ import { analysisSourceSize } from '../engine/ops-pure'
 import type { ScalarMap } from '../engine/types'
 import { deriveFindings } from '../findings/derive'
 import { contrastFindingText, measureContrast } from '../contrast/measure'
+import { summariseSkipped } from '../contrast/measurable'
 import { measureNonTextContrast, nonTextFindingText, reportableNonText } from '../contrast/non-text'
 import { renderContrastmap } from '../render/contrastmap'
 import { CLICKMAP_IN_PANEL,
@@ -235,9 +236,15 @@ export async function generateMaps(
     if (contrast.skipped.length > 0) {
       // Nicht verschweigen: eine Messung, die Elemente auslässt, sagt „in
       // Ordnung", wo sie „ich weiß es nicht" meint.
+      //
+      // **Gezählt, nicht aufgezählt.** Bis 1.2 stand hier die Menge der Gründe;
+      // bei zwölf übersprungenen Elementen sagte die Zeile nicht, ob elf davon
+      // dieselbe Ursache hatten. Nach 1.3 lautet sie „3 Textelemente nicht
+      // messbar (2 verdeckt, 1 gedreht)" — dieselbe Form, in der das
+      // Betriebssystem-Chrome schon gezählt wurde.
       warnings.push(
         `Contrastmap: ${contrast.skipped.length} Textelement(e) nicht messbar ` +
-          `(${[...new Set(contrast.skipped.map((entry) => entry.reason))].join('; ')}).`,
+          `(${summariseSkipped(contrast.skipped)}).`,
       )
     }
 
@@ -261,7 +268,7 @@ export async function generateMaps(
     if (nonText.skipped.length > 0) {
       warnings.push(
         `Contrastmap (Bedienelemente): ${nonText.skipped.length} Element(e) nicht geprüft ` +
-          `(${[...new Set(nonText.skipped.map((entry) => entry.reason))].join('; ')}).`,
+          `(${summariseSkipped(nonText.skipped)}).`,
       )
     }
 

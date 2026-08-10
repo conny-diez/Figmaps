@@ -45,7 +45,8 @@
 import type { Bitmap } from '../engine/ops'
 import type { NodeSignal } from '../messages'
 import { estimateBackground, pixelLuminance } from './measure'
-import { isSystemChrome, SYSTEM_CHROME_REASON } from './system-chrome'
+import type { Skipped } from './measurable'
+import { isSystemChrome } from './system-chrome'
 import { contrastRatio, formatRatio, statusOf, type ContrastStatus } from './wcag'
 
 /** WCAG 1.4.11 fordert 3:1 — dieselbe Zahl wie für großen Text. */
@@ -236,7 +237,7 @@ export type NonTextOptions = {
 
 export function measureNonTextContrast(options: NonTextOptions): {
   results: NonTextResult[]
-  skipped: Array<{ nodeId: string; reason: string }>
+  skipped: Skipped[]
 } {
   const { image, signals, frameWidth, frameHeight } = options
   const scaleX = image.width / frameWidth
@@ -251,7 +252,7 @@ export function measureNonTextContrast(options: NonTextOptions): {
   }
 
   const results: NonTextResult[] = []
-  const skipped: Array<{ nodeId: string; reason: string }> = []
+  const skipped: Skipped[] = []
   const byId = new Map(signals.map((signal) => [signal.id, signal]))
 
   for (const signal of signals) {
@@ -260,7 +261,7 @@ export function measureNonTextContrast(options: NonTextOptions): {
     // „15:30" aus der Prüfung und die Symbole daneben blieben stehen.
     if (isSystemChrome(signal, byId)) {
       if (reasonFor(signal, byParent.get(signal.parentId ?? '__root__') ?? [], frameWidth, frameHeight)) {
-        skipped.push({ nodeId: signal.id, reason: SYSTEM_CHROME_REASON })
+        skipped.push({ nodeId: signal.id, reason: 'chrome' })
       }
       continue
     }
@@ -274,7 +275,7 @@ export function measureNonTextContrast(options: NonTextOptions): {
     const innerEstimate = estimateBackground(inner, null)
     const outerEstimate = estimateBackground(outer, null)
     if (!innerEstimate || !outerEstimate) {
-      skipped.push({ nodeId: signal.id, reason: 'keine angrenzende Fläche — Element liegt am Frame-Rand' })
+      skipped.push({ nodeId: signal.id, reason: 'kein-nachbar' })
       continue
     }
 

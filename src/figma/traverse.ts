@@ -162,6 +162,15 @@ export function collectSignals(root: AnalysableNode): TraverseResult {
       nameHints: extractNameHints(node.name),
     }
 
+    // Nur, wenn wirklich gedreht — sonst trägt jedes Signal ein Feld mit Null.
+    //
+    // `rotation` ist aus `relativeTransform` abgeleitet und kommt bei
+    // Auto-Layout- und Instanzketten als Rechenrest daher (`-1.4e-14`). Die
+    // Schwelle steht deshalb nicht hier, sondern bei der Messung
+    // (`contrast/measurable.ts` → `MeasurableLimits.rotationDegrees`): dieses
+    // Modul überträgt, was in der Datei steht, und urteilt nicht.
+    if ('rotation' in node && node.rotation !== 0) signal.rotation = node.rotation
+
     if (node.type === 'TEXT') {
       if (node.fontSize !== figma.mixed) signal.fontSize = node.fontSize
       if (node.fontName !== figma.mixed) signal.fontWeight = fontWeightFromStyle(node.fontName.style)

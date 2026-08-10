@@ -25,6 +25,8 @@
  * Hauptnavigation einer App aus der Prüfung.
  */
 
+import { SKIP_TEXT } from './measurable'
+
 /**
  * Die Muster, jeweils als Folge **ganzer Wörter**.
  *
@@ -92,6 +94,12 @@ export function isSystemChrome(node: ChromeNode, byId: ReadonlyMap<string, Chrom
   return false
 }
 
-/** Der Grund, der im Report steht, wenn etwas deswegen übersprungen wird. */
-export const SYSTEM_CHROME_REASON =
-  'Betriebssystem-Chrome (Statusleiste, Home-Indicator) — nicht Teil des Entwurfs'
+/**
+ * Der Grund, der im Report steht, wenn etwas deswegen übersprungen wird.
+ *
+ * Seit 1.3 steht der Wortlaut in `measurable.ts` bei allen anderen Gründen —
+ * die Warnung im Panel zählt sie („2 verdeckt, 1 gedreht"), und dafür braucht
+ * jeder Grund einen Code statt eines Satzes. Diese Konstante bleibt als die
+ * eine Stelle, an der der Satz zum Code `chrome` gehört.
+ */
+export const SYSTEM_CHROME_REASON = SKIP_TEXT.chrome
