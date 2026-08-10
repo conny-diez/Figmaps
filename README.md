@@ -39,20 +39,31 @@ Kein Backend, kein Login, keine Netzwerkanfragen — `networkAccess` steht auf
 
 ### Was 1.2 bisher ändert
 
-1.2 läuft in drei Blöcken (A Alpha-Kurve, B Regeln für Ein-Viewport-Screens,
-C Contrastmap). **Fertig ist A.**
+1.2 lief in drei Blöcken (A Alpha-Kurve, B Regeln für Ein-Viewport-Screens,
+C Contrastmap). **A und C sind fertig, B ist abgeschlossen — aber nur eine
+seiner vier Aufgaben hat eine Regel hervorgebracht:**
+
+| | |
+|---|---|
+| **B1** `competition` auf die Diagonale | gebaut und neu kalibriert |
+| **B2** Kopfbereich gegen Inhalt | gemessen und **verworfen** — die Größe ordnet die bekannten Fälle nicht |
+| **B3** CTA in der ruhigsten Zone | **nicht angefangen.** Kein Code, keine Messung |
+| **B4** `cta-below-fold` auf `localMean` | gebaut, gemessen, **bleibt abgeschaltet** — der Umbau behebt den Defekt nicht |
+
+Das Regelwerk hat 1.2 damit **keine neue Regel** hinzugefügt; es hat zwei
+bestehende neu kalibriert und zwei Ideen widerlegt.
 
 | | |
 |---|---|
 | **`blendAlpha` 0,3 → 0,5** | Kreuzvalidiert und out-of-sample nachgemessen statt in-sample abgelesen. AUC, CC und NSS haben ihr Optimum einstimmig bei 0,5, in beiden Kategorien. Siehe [Alpha-Kurve](#alpha-kurve-12-a). |
 | **Befund: unsere Karten sind zu weich** | Die gemessene Aufmerksamkeit ist um **Faktor 3,4** konzentrierter als unsere Vorhersage. Die Verteilungen überlappen nicht. `blendAlpha` ist dafür der falsche Hebel — ein höheres α macht die Karten weicher, nicht schärfer. |
-| **Contrastmap — die Hauptausgabe, nicht die dritte Karte** | Auf dem Onboarding-Screen stehen **8 gemessene Kontrastaussagen gegen 1 Vorhersagebefund**, auf einem Desktop-Frame **10 durchgefallene Elemente gegen Ø 1,67 Vorhersagebefunde**. Sie braucht weder Folds noch Abschnitte noch Kandidaten noch Kalibrierung und sagt auf **jeder** Frame-Form etwas — als einzige Ausgabe des Plugins. Siehe [Contrastmap](#contrastmap-12-c). |
+| **Contrastmap — die Hauptausgabe, nicht die dritte Karte** | Auf dem Onboarding-Screen stehen **8 gemessene Kontrastaussagen gegen 1 Vorhersagebefund**, auf einem Desktop-Frame **14 durchgefallene von 21 gemessenen Elementen gegen Ø 1,67 Vorhersagebefunde**. Sie braucht weder Folds noch Abschnitte noch Kandidaten noch Kalibrierung und sagt auf **jeder** Frame-Form etwas — als einzige Ausgabe des Plugins. Siehe [Contrastmap](#contrastmap-12-c). |
 | **Schärfe: Blur 0,035 + `blendGamma` 1,6** | Der A1-Befund ist zu gut einem Drittel behoben, bei **besseren Werten in allen vier Metriken**, KL eingeschlossen. Der entscheidende Hebel war der, den 1.1 wegen KL ausgebaut hatte. Nicht 2,0, obwohl der Mittelwert dafür spräche: dieser Wert lässt die Gruppe stehen, für die das Plugin existiert. Siehe [Schärfe](#a6--schärfe-die-nachbearbeitung-nicht-das-mischungsverhältnis) und [A7](#a7--derselbe-mittelwert-zwei-gegenläufige-hälften). |
 | **Transparenzschwelle nachgezogen** | 0,08 → 0,02. Dieselbe Schwelle hätte auf der neuen Karte 37,5 % statt 18,0 % verdeckt — ein Gutteil von „das Overlay ist leerer" war der Renderer, nicht die Vorhersage. |
 | **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. Die Zahlen des Gates sind **kein Qualitätsbeleg** — siehe unten. |
 | **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
 | **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
-| **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.1" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
+| **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.2" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort; die Zahl im Kopf folgt dem Versionssprung automatisch. |
 
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
 `hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt in
@@ -188,7 +199,7 @@ automatisch herunter.
 
 ### Panel: Design, Theming, Bedienelemente
 
-**Der Kopf trägt einen Beta-Marker.** Neben dem Produktnamen steht „Beta v1.1".
+**Der Kopf trägt einen Beta-Marker.** Neben dem Produktnamen steht „Beta v1.2".
 Der Marker ist eine Aussage über die **Vorhersage**, nicht über die Stabilität
 des Codes: die Engine ist gegen einen einzigen öffentlichen Datensatz gemessen,
 drei der sechs Befundregeln sind abgeschaltet, und für die eigenen Screens fehlt
@@ -3084,15 +3095,22 @@ bekommt aus dem Befundsystem fast nichts. Die Regeln sind für scrollende Seiten
 entworfen; sie sprechen über Abschnittsgrenzen, und auf einem Screen ohne
 Abschnitte gibt es nichts zu sagen.
 
-#### Was 1.2 dafür bauen müsste — und was schon da ist
+#### Was 1.2 dafür vorhatte — und was daraus geworden ist
 
-Drei Regeln, die ohne Folds und ohne Abschnitte auskommen:
+Drei Regel-Ideen, die ohne Folds und ohne Abschnitte auskommen. Die Spalte
+„vorhanden" war der Plan; die letzte Spalte ist das Ergebnis, und in zwei von
+drei Fällen ist es nicht das erhoffte.
 
-| Regel-Idee | vorhanden | neu zu bauen |
+**Der Plan hat sich in genau der Form geirrt, vor der die Spalte „vorhanden"
+warnt:** dass ein Baustein existiert, sagt nichts darüber, ob er die Frage
+beantwortet. Das ist bei B4 explizit schiefgegangen und hier zweimal
+mitgezählt.
+
+| Regel-Idee | vorhanden | Stand nach 1.2 |
 |---|---|---|
-| **Konkurrierende Blickfänge** — zwei etwa gleich starke, weit auseinanderliegende Spitzen | `competition` gibt es bereits: Zwei-Maxima-Suche, Talprüfung, Schwellen in `config.ts` | Der Mindestabstand misst am Karten**breiten**anteil und bedeutet je nach Frame-Form 3,9 % bis 48,0 % der Höhe (Tabelle oben). Für Hochkant-Screens braucht es die Diagonale oder getrennte x/y-Schwellen — und danach eine **Neumessung der Feuerrate**, siehe unten |
-| **CTA in der ruhigsten Zone** — der primäre Kandidat liegt dort, wo die Karte kalt ist | `meanInRect` über die Kandidatengeometrie, `percentile` über die ganze Karte, `isPrimaryCandidate` | Die Entscheidungsgröße muss der Rang des CTA **innerhalb der Kartenverteilung** sein (z. B. „unter dem 30. Perzentil aller Pixel"), nicht relativ zu den anderen Kandidaten — genau der Fehler, an dem `dead-cta` hängt. Schwelle aus Daten |
-| **Kopfbereich stärker als Inhalt** — die Aufmerksamkeit bleibt im oberen Band hängen | Die Karte selbst, `sectionSalience` als Konzentrationsmaß, Geometrie aller Knoten | Bandaufteilung (z. B. obere 25 % gegen Rest) und ein Verhältnismaß. Dieselbe Vorsicht wie bei `flat`: die Größe darf nicht auf die *Menge* an Inhalt reagieren |
+| **Konkurrierende Blickfänge** — zwei etwa gleich starke, weit auseinanderliegende Spitzen | `competition` gibt es bereits: Zwei-Maxima-Suche, Talprüfung, Schwellen in `config.ts` | **B1, erledigt.** Der Abstand läuft auf der Diagonale und ist an je 495 Bildern neu kalibriert (0,25). Die Feuerraten sind neu gemessen, alle älteren Quoten sind ungültig |
+| **CTA in der ruhigsten Zone** — der primäre Kandidat liegt dort, wo die Karte kalt ist | `meanInRect` über die Kandidatengeometrie, `percentile` über die ganze Karte, `isPrimaryCandidate` | **B3, nicht angefangen.** Kein Code, keine Messung. Die Bausteine liegen weiterhin da — was nach B4 ausdrücklich *kein* Argument dafür ist, dass es nur Anschließen wäre |
+| **Kopfbereich stärker als Inhalt** — die Aufmerksamkeit bleibt im oberen Band hängen | Die Karte selbst, `sectionSalience` als Konzentrationsmaß, Geometrie aller Knoten | **B2, gemessen und verworfen.** Die Größe ist auf dem klarsten Fall undefiniert, spannt 0–202, und drei gleich große Blöcke (1,280) übertreffen den „hoch"-Fall (1,246). Siehe [B2](#b2--kopfbereich-stärker-als-inhalt-wird-nicht-gebaut) |
 
 **Vierter Punkt, in 1.2 A dazugekommen und als Erstes von B erledigt:
 `cold-fold` hat jetzt eine Schwelle je UI-Typ.**
@@ -3232,7 +3250,34 @@ sagte genau das, drei Runden lang.
 
 | Regel | neue Größe | Stand |
 |---|---|---|
-| `cta-below-fold` | **Verhältnis zweier Dominanzen**: um wieviel deutlicher führt dieser Kandidat seinen Ausschnitt an als der Anführer des ersten Ausschnitts den seinen | Die naheliegende Größe (`localMean`) ist in 1.2 B4 gebaut, gemessen und als unzureichend belegt. Ein Verhältnis ist unabhängig von der Zahl der Ausschnitte — genau die Abhängigkeit, an der `localMean` scheitert. Nicht gemessen. |
+| `cta-below-fold` | **Vergleich nur gegen die Kandidaten des ersten Ausschnitts** — statt gegen alle Kandidaten aller Ausschnitte | Die naheliegende Größe (`localMean`) ist in 1.2 B4 gebaut, gemessen und als unzureichend belegt. Siehe die Notiz für 1.3 unmittelbar darunter. Nicht gemessen. |
+
+#### Für 1.3 vorgemerkt: `cta-below-fold` hat die falsche Frage, nicht die falsche Schwelle
+
+Der Unterschied entscheidet, was als Nächstes zu tun ist, deshalb steht er
+eigens hier. Eine falsche Schwelle justiert man nach; eine falsche Frage nicht.
+
+**Die Frage lautet heute:** „führt der stärkste Kandidat des Screens seinen
+eigenen Ausschnitt an, und liegt dieser Ausschnitt unter dem Fold?" Auf einem
+langen Frame liegen die meisten Ausschnitte unter dem Fold — bei 390 × 3000
+sind es drei von vier. Die Antwort ist damit überwiegend von der
+**Frame-Länge** bestimmt und nicht vom Entwurf. Gemessen: 100 % auf Telefon
+scrollend, 4,2 % auf Desktop scrollend, und in beiden Fällen ohne Bezug zu der
+Frage, ob der CTA oben oder unten steht.
+
+**Das ist strukturell derselbe Fehler wie bei `dead-cta`.** Dort ist die Größe
+ein Minimum über N Kandidaten und sinkt mit deren *Zahl*; hier ist sie ein
+Maximum über N Ausschnitte und steigt mit deren *Zahl*. Beide Male hängt die
+Antwort an einer Eigenschaft des Frames statt an einer Eigenschaft des
+Entwurfs. Wer das übersieht, sucht nach einer Konstante, die es nicht geben
+kann — bei `dead-cta` hat genau diese Suche fünf Anläufe gekostet.
+
+**Mögliche Richtung:** den Vergleich auf die Kandidaten des **ersten
+Ausschnitts** beschränken. Die Regel fragt dann „gibt es unterhalb des Folds
+einen Kandidaten, der stärker ist als alles im ersten Ausschnitt?" — eine
+Frage, deren Antwort nicht davon abhängt, wie viele Ausschnitte es darunter
+noch gibt. Nicht gemessen, und wie alles in dieser Tabelle erst nach dem Set
+mit echten Layer-Bäumen kalibrierbar (PRD Set 2).
 | `flat` | **p99 ÷ Median** des Bildanalyse-Anteils statt Massenanteil der stärksten 5 % | Ein Verhältnis von Spitze zu Grundrauschen ist unabhängig von der *Fläche* der Spitze. Genau die Fläche ist es, die den heutigen Wert bei einem großen Hero nach unten zieht und die Größe nicht monoton macht. |
 | `dead-cta` | **gleichartige, wiederholte Kandidaten gruppieren**, dann das Minimum bilden — auf `localMean`, das dafür schon existiert | Aus „die neunte von zwölf Listenkarten ist die leiseste" wird „von den *unterscheidbaren* Bedienelementen ist dieses das leiseste". Die Kandidatenzahl hängt dann an der Zahl der Rollen statt an der Zahl der Listeneinträge. |
 
@@ -3588,8 +3633,8 @@ Zusätzlich für 1.1 (M4, M5):
 | M2 | A-2 bis A-5 Harness | **fertig** — UEyes importiert (Webpage + Mobile UI), `npm run eval` liefert Report und Kontaktbogen, die Zahl für 1.0 liegt auf dem Tisch: **S-2 nicht erfüllt** |
 | M3 | A-6, A-7 Tuning | **Code fertig, Abnahme offen** — `npm run tune` und das Gate stehen; `heuristic-v2` ist noch nicht erzeugt und nach dem S-2-Befund auch nicht die naheliegende nächste Maßnahme |
 | M4 | Epic B | **fertig** |
-| M5 | Epic C | **fertig bis auf die Textabnahme** — sechs Regeln implementiert und getestet, Formulierungen sind noch von einem Menschen freizugeben (C-1) |
-| M6 | Epic D | **Code fertig, Beleg offen** — drei Profile existieren und sind evaluierbar; ausgeliefert wird bis zum Beleg nur `scan` |
+| M5 | Epic C | **fertig bis auf die Textabnahme** — sechs Regeln implementiert und getestet, davon **drei ausgeliefert** (`cta-rank`, `competition`, `cold-fold`); Formulierungen sind noch von einem Menschen freizugeben (C-1) |
+| M6 | Epic D | **fertig** — der Beleg liegt vor (Ortseffekt, kreuzvalidiert, siehe [Betrachtungsdauer](#betrachtungsdauer-epic-d--gemessen)); **alle drei Profile werden ausgeliefert**, `shippedProfiles()` gibt `glance, scan, read` |
 
 ### Stand der Erfolgskriterien
 

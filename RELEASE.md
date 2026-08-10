@@ -77,6 +77,12 @@ hier nicht ausgeliefert, auch wenn sie plausibel klingt. Das heißt auch: ein
 Screen bekommt selten mehr als ein bis zwei Vorhersage-Befunde. Das ist so
 gewollt.
 
+Offen gesagt hat 1.2 dem Regelwerk **keine neue Regel** hinzugefügt: zwei
+bestehende wurden neu kalibriert, zwei Ideen gemessen und verworfen, eine
+nicht angefangen. Der Zuwachs dieser Version liegt bei der Messung, nicht bei
+der Vorhersage — was die Verschiebung oben noch einmal von der anderen Seite
+beschreibt.
+
 ---
 
 ## Bekannte Einschränkungen
