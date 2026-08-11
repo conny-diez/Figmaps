@@ -577,6 +577,132 @@ die `images/` nicht. Dem Gate fehlt dann die Eingabe — es sei denn, die Bilder
 kommen zur Laufzeit aus dem privaten Repo, und genau so ist die Skizze in Punkt 6
 gebaut.
 
+#### Die RICO-Frage betrifft die Gegenwart, nicht die Zukunft
+
+**Das ist keine Frage über ein künftiges öffentliches Repo.** Die 20 Bilder mit
+möglicher RICO-Herkunft liegen **seit 1.2 im privaten Repo**, und darauf haben
+Kollegen Zugriff. RICOs Bedingung lautet:
+
+> „Researcher may provide research associates and colleagues with access to the
+> Database provided that they first agree to be bound by these terms and
+> conditions."
+
+Wer bei uns Repo-Zugriff hat, sieht diese Bilder — **ohne RICOs Bedingungen je
+gesehen zu haben.** Wenn die Klausel für sie gilt, findet die fragliche
+Weitergabe also nicht künftig statt, sondern seit dem 10.08.2026.
+
+**Zwei Lesarten, und die Entscheidung liegt nicht bei uns:**
+
+| | |
+|---|---|
+| **A** | Wir haben die Bilder aus dem **UEyes-Deposit auf Zenodo unter CC BY 4.0** bezogen, nicht von RICO. Wir haben RICO nie heruntergeladen und dessen Vertrag nie akzeptiert — der bindet, wer den Datensatz bezieht. CC BY erlaubt Weitergabe. Dann ist der heutige Zustand in Ordnung. |
+| **B** | UEyes konnte für den RICO-abgeleiteten Teil keine weitergehenden Rechte einräumen, als es selbst hielt. Dann reist die Zugangsklausel mit den Bildern, und der heutige Zustand ist bereits eine Weitergabe an Personen, die nicht zugestimmt haben. |
+
+Für **A** spricht ein harter Umstand: wir haben mit RICO nie einen Vertrag
+geschlossen. Für **B** spricht der allgemeine Satz, dass niemand mehr Rechte
+übertragen kann als er hat. Das ist genau die Art Frage, die eine
+Selbsteinschätzung nicht beantworten darf.
+
+**Und dieselbe Form wie beim Registry-Host:** die Bilder stehen in der History
+seit 1.2. Aus HEAD sind sie entfernbar, aus den Commits nicht.
+
+#### Gibt es eine Variante, die den Regressionsschutz erhält, ohne die Bilder zu verbreiten?
+
+**Ja, mit einer klar benannten Einschränkung — und ein naheliegender Weg fällt an
+einer Zahl aus.**
+
+**Was nicht geht: pro Lauf aus Zenodo holen.** Das UEyes-Deposit ist **eine
+einzige Zip von 12,91 GB** (nachgesehen über die Zenodo-API, `md5:c2d53e6a…`).
+Ein Teilabruf von 40 Bildern ist damit nicht vorgesehen; 12,9 GB pro CI-Lauf
+sind keine Option, und ein Cache dafür ist genau das, was schon einmal
+stillschweigend verfallen ist.
+
+**Was geht: die 40 Bilder gar nicht erst committen.** Von den 120 Dateien der
+beiden Gate-Sets sind nur 40 das Problem:
+
+| Verzeichnis | Dateien | zeigt fremde Oberflächen | bleibt? |
+|---|---:|---|---|
+| `images/` | 40 | **ja** — Screenshots fremder Apps und Websites | **nein** |
+| `heatmaps/3s/` | 40 | nein — ein Graustufen-Blobfeld aus Blickdaten | ja |
+| `fixmaps/3s/` | 40 | nein — binäre Fixationspunkte | ja |
+| `index.json` | 2 | nein — Metadaten, Lizenz, Zitat | ja |
+
+Nachgesehen, nicht angenommen: eine Heatmap ist ein schwarzes Bild mit hellen
+Flecken, in dem von der Oberfläche darunter nichts zu erkennen ist. Die Ground
+Truth ist unsere Ableitung aus Blickdaten und zeigt kein fremdes Werk.
+
+Der Vorschlag konkret:
+
+1. `images/` aus der Versionierung nehmen, `.gitignore` entsprechend zurückbauen.
+2. Ein **Manifest** committen: die 40 Bild-IDs mit ihrem sha256. Das macht die
+   Auswahl reproduzierbar und den Bezug überprüfbar, ohne ein Bild zu enthalten.
+3. Ein Skript, das die 40 aus einer **lokalen** UEyes-Kopie zieht und gegen das
+   Manifest prüft — der Pfad als Parameter, wie schon bei `--ueyes`.
+4. Das Gate läuft dort, wo die Daten liegen: auf der Maschine oder dem privaten
+   Runner, der UEyes bezogen hat. Genau die Skizze aus Punkt 6, nur mit der
+   Verschärfung, dass **auch das private Repo die Bilder nicht hält.**
+
+**Der Preis, und er ist derselbe wie 2026-08:** das Gate läuft in keinem CI ohne
+Datenzugang. Genau daran ist es damals monatelang still ausgefallen. Was diese
+Variante heute tragbar macht und damals nicht, ist eine einzige Zeile:
+`scripts/gate-coverage.mjs` **spricht die Abwesenheit aus**, in jedem Lauf. Ein
+fehlendes Gate ist dann eine Aussage in der Zusammenfassung und kein grüner
+Haken.
+
+**Was die Variante nicht löst:** die Bilder stehen weiter in der History. Für den
+heutigen Zustand ändert sie also, wer sie **künftig** neu bekommt, nicht, wer sie
+schon hat. Vollständig wäre nur ein frisches Repo — Punkt 6.
+
+#### Anfrage an die Imp1k-Autoren — abschickfertig
+
+Imp1k ist der eine der fünf Upstreams, dessen Bedingungen sich nicht ermitteln
+ließen: weder `predimportance.mit.edu` noch das Repo noch die Veröffentlichung
+nennen eine Lizenz. Anschreiben ist der einzige Weg. Adressat ist die auf der
+Projektseite genannte Kontaktadresse; Autoren sind Fosco, Casser, Bedi,
+O'Donovan, Hertzmann und Bylinskii (UIST 2020).
+
+Auf Englisch, weil die Autoren an MIT und Adobe sitzen.
+
+```text
+Subject: Licence terms for Imp1k — internal evaluation and subset redistribution
+
+Dear authors,
+
+we are evaluating an internal, unpublished Figma plugin that predicts visual
+attention on user interfaces. For that we use the UEyes dataset (Jiang et al.,
+CHI 2023), published on Zenodo under CC BY 4.0.
+
+UEyes states that 200 of its webpage images and 398 of its poster images come
+from Imp1k. We keep a 40-image subset of UEyes (20 webpage, 20 mobile) as a
+regression test set. Because UEyes selected 495 images per category from a
+larger candidate pool and does not record per-image provenance, we cannot tell
+which of our images originate from Imp1k — we have to assume that some may.
+
+We could not find a licence or terms-of-use statement for Imp1k on
+predimportance.mit.edu, in the linked repository, or in the paper. Hence three
+questions:
+
+1. Under which terms is Imp1k made available?
+2. Do those terms cover using Imp1k-derived images internally to evaluate a tool
+   that is not published?
+3. Do they cover redistributing a small subset of the images — for example as a
+   test fixture in a source repository that may later become public?
+
+We are not asking for anything beyond what the terms already permit; we need to
+know what they are, so that we can decide whether such a subset may be shared at
+all. If the answer to (3) is no, that is a useful answer and we will keep the
+images out of any distribution.
+
+Thank you for the dataset and for your time.
+
+Kind regards,
+Constantin Diessenbacher
+```
+
+**Was die Anfrage bewusst nicht tut:** sie bittet nicht um eine Ausnahme und
+nicht um eine Erlaubnis. Sie fragt nach den Bedingungen — denn die Antwort „nein"
+ist genauso brauchbar wie „ja" und beendet die offene Stelle in der Vorlage.
+
 ### 6. Frisches öffentliches Repo statt History-Rewrite — Skizze
 
 **Warum kein Rewrite.** 76 von 77 Commits sind betroffen. `git filter-repo`
@@ -813,6 +939,14 @@ Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster 
    internes Archiv kennzeichnen.
 6. Erst danach das private Repo aus der Verteilung nehmen.
 
+### Stand: das Thema ruht
+
+**Alles Weitere zum öffentlichen Repo ruht, bis Freigabe und Lizenz geklärt
+sind.** Dieser Abschnitt bleibt als Bestandsaufnahme stehen — er ist die Grundlage
+der Entscheidung und nicht ihr Ergebnis. Offen und außerhalb dieses Repos zu
+klären: die Freigabe der Herkunft, die Markenfrage am Logo, die Projektlizenz,
+die Imp1k-Bedingungen (Anfrage oben) und die RICO-Frage über den heutigen Zustand.
+
 ### Zusammenfassung: was blockiert, was nur aufzuräumen ist
 
 | Punkt | Art | Blockiert? |
@@ -822,7 +956,8 @@ Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster 
 | interner Registry-Host in 76 Commits | Security | **HEAD behoben (1.3)**, History nur per Rewrite oder frisches Repo |
 | Markenfarbe in Logo und ausgeliefertem Bundle | Marke | **ja, Entscheidung nötig** |
 | Keine `LICENSE` | Recht | **ja, Entscheidung nötig** |
-| 40 UEyes-Screenshots Dritter | Recht | **ja, Security-Vorlage** |
+| 20 Bilder möglicher RICO-Herkunft **liegen heute schon** im Repo | Recht — Frage über die Gegenwart | **ja, Security-Vorlage** |
+| Imp1k-Bedingungen unbekannt | Recht | **ja** — Anfrage formuliert, siehe oben |
 | Private Autoren-Adresse in 77 Commits | persönlich | Hinweis |
 | Branches | Aufräumen | **erledigt** — neun entfernt, zwei übrig |
 | Bilder in `assets/messungen/` | — | nein, alle neutral |
