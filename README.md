@@ -370,10 +370,12 @@ Zwei Nebenbefunde:
 
 - **Autorschaft.** Alle 77 Commits stehen auf einer privaten Mailadresse, nicht
   der dienstlichen. Das wird mit öffentlich und ist nicht rückholbar.
-- **Branches.** Von elf Remote-Branches sind sechs veraltete entfernt (alle über
-  PRs #1–#6 squash-gemergt, Inhalt in `main`, PR-Diffs bleiben abrufbar). Übrig
-  sind fünf. `docs/1.3-prior-fallback`, `docs/release-1.2` und `release/1.2.0`
-  wären nach derselben Prüfung ebenfalls entbehrlich.
+- **Branches.** Von elf Remote-Branches sind neun entfernt — jeder einzeln
+  geprüft: PR gemergt, Inhalt in `main`, PR-Diffs bleiben abrufbar. Übrig sind
+  `main` und der jeweils aktive Arbeitsbranch. **„Reines Aufräumen" war es
+  nicht:** keiner der sechs ersten war Vorfahre von `main`, zusammen 27 eigene
+  Commits. Dass nichts verloren geht, folgte erst aus den Squash-Merges — und das
+  musste geprüft werden, nicht angenommen.
 - **Gelöschte Branches.** Ihre Objekte sind über keinen Ref mehr erreichbar,
   können aber bis zur serverseitigen Garbage Collection per SHA abrufbar sein.
   Wer keinen SHA kennt, findet sie nicht.
@@ -488,14 +490,57 @@ Datengrundlage steht unter jeder platzierten Vorhersage-Karte.
 
 **Was mit einem öffentlichen Repo trotzdem hinzukommt, und es ist nicht die
 Lizenz.** Die 40 Bilder in `images/` sind Screenshots **fremder** Apps und
-Websites. UEyes stellt den Datensatz unter CC BY 4.0 — ob diese Lizenz die in
-den Screenshots abgebildeten Oberflächen Dritter mitumfasst, können die
-Datensatz-Autoren nicht für deren Rechteinhaber erklären. Genau diese
-Einschränkung steht bei Rico, dem Ursprungsdatensatz derselben Gattung, wörtlich
-im Nutzungsvertrag: *„The screenshots contained in the Rico dataset may contain
-copyrighted work."* Für interne Nutzung ist das ein kleines Risiko; öffentliche
-Weiterverbreitung von 40 Bildern ist eine größere Fläche. Das gehört vor Security
-und nicht in eine Selbsteinschätzung.
+Websites. UEyes stellt den Datensatz unter CC BY 4.0 — ob diese Lizenz die in den
+Screenshots abgebildeten Oberflächen Dritter mitumfassen kann, können die
+Datensatz-Autoren nicht für deren Rechteinhaber erklären. Für interne Nutzung ist
+das ein kleines Risiko; öffentliche Weiterverbreitung von 40 Bildern ist eine
+größere Fläche. Das gehört vor Security und nicht in eine Selbsteinschätzung.
+
+#### Woher die 40 Bilder wirklich kommen — Korrektur
+
+**Eine frühere Fassung dieses Abschnitts nannte Rico „den Ursprungsdatensatz
+derselben Gattung" für alle 40 Bilder. Das war falsch, und zwar in einer
+Richtung, die eine Vorlage an Security in die Irre geführt hätte:** Rico ist die
+Quelle von *Enrico*, und für UEyes ist es die Quelle **einer** der vier
+Kategorien. Die beiden Sets in diesem Repo haben deshalb **verschiedene**
+Vorgeschichten.
+
+Laut dem UEyes-Datensatzpapier setzen sich die vier Kategorien (je 495 Bilder)
+so zusammen:
+
+| Kategorie | Quelle der Bilder |
+|---|---|
+| **mobile** | Stichprobe aus den 46.064 Mobile-UI-Bildern des **Rico**-Datensatzes |
+| **webpage** | Alexa-500-Datensatz, „Visual Complexity and Aesthetics"-Datensatz, Imp1k |
+| desktop | ein Desktop-UI-Datensatz von GitHub plus eigene Erhebung der Autoren |
+| poster | Imp1k (Ads und Infografiken) plus eigene Erhebung der Autoren |
+
+Für dieses Repo heißt das:
+
+| unser Set | Kategorie | Vorgeschichte | Folge |
+|---|---|---|---|
+| `gate-mobile/images/` (20) | mobile | **über Rico** | Ricos Bedingungen wirken hier upstream — inklusive „The screenshots contained in the Rico dataset may contain copyrighted work" und der Klausel, dass Zugang nur an Personen weitergegeben werden darf, die den Bedingungen zustimmen |
+| `gate-web/images/` (20) | webpage | Alexa 500, Visual Complexity and Aesthetics, Imp1k — **nicht Rico** | drei weitere Upstreams, deren Bedingungen hier **nicht geprüft** sind |
+
+**Das ist die eigentliche Verschärfung.** Die frühere Fassung hätte Security auf
+Rico geschickt und die drei Upstreams des Web-Sets übersehen — also genau die
+Hälfte der Bilder, die wir öffentlich weitergeben würden. Wer prüft, muss vier
+Vorgeschichten ansehen, nicht eine.
+
+**Wie weit das belegt ist.** Die Aufstellung stammt aus dem Datensatzpapier
+(arXiv 2402.05202); die ACM-Vollfassung ist hinter 403, die arXiv-PDF überschritt
+die Abrufgrenze, und weder Zenodo-Eintrag noch Projektseite noch das GitHub-Repo
+der Autoren nennen die Herkunft. Zwei unabhängige Abfragen ergaben dieselbe
+Zuordnung; die **Kategoriezuordnung** — Rico nur für mobile — halte ich damit für
+gesichert, die genauen Stückzahlen nicht. Vor der Vorlage an Security gehört das
+Papier selbst gelesen, Abschnitt zu den Stimuli.
+
+**Was sich an der Lizenzlage dadurch nicht ändert.** UEyes steht als Datensatz
+unter CC BY 4.0, unsere Nennung erfüllt §3(a), und Weitergabe ist erlaubt. Die
+Frage bleibt dieselbe wie oben, sie hat nur mehr als einen Adressaten: ob eine
+CC-BY-Erklärung der Datensatz-Autoren die in den Screenshots abgebildeten
+Oberflächen Dritter mitumfassen kann. Für das Mobile-Set ist die Antwort
+upstream ausdrücklich offen gelassen.
 
 Eine Rückfalloption gibt es und sie kostet wenig: die Gate-Sets aus dem Repo
 nehmen und wieder als Actions-Cache oder Release-Asset führen. Der Preis ist
@@ -564,6 +609,125 @@ die öffentliche README ein Satz: die Vorhersagegüte wird intern gegen UEyes
 bewacht, öffentlich läuft die Regressionsprüfung der Messung. Das ist weniger,
 aber es ist wahr.
 
+#### Die Lücke: das Eval-Gate hat nach dem Schnitt kein Zuhause
+
+**Die Skizze oben ist an dieser Stelle unvollständig, und die Lücke ist genau das
+Netz, dessen Ausfall in 1.2 dreimal gefunden wurde.** Das Eval-Gate braucht
+**Code und Fixtures**. Der Code wird öffentlich, die Fixtures bleiben privat, und
+„privat hält keinen Code" heißt: der Regressionsschutz der Vorhersage-Engine
+läuft nirgends.
+
+Zu unterscheiden ist dabei, was der Schnitt kostet und was nicht:
+
+| | braucht Fixtures | läuft öffentlich |
+|---|---|---|
+| `verify` (Typecheck, Tests, Build, Lint) | nein | **ja** |
+| Contrastmap-Gate | nein — der Korpus ist Code | **ja** |
+| Lockfile-Invariante | nein | **ja** |
+| Release + Release-Prüfer | nein | **ja** |
+| **Eval-Gate (Vorhersage, 40 Bilder)** | **ja** | **nein** |
+
+Betroffen ist also genau eine Prüfung — aber die für die Karte, die das Produkt
+verkauft.
+
+#### Die Variante: privates Repo hält Fixtures **und** einen schlanken Workflow
+
+```
+figmaps-eval-data  (privat, klein)
+├─ fixtures/gate-web/…        20 Bilder + Ground Truth
+├─ fixtures/gate-mobile/…     20 Bilder + Ground Truth
+├─ eval-baseline.json         die Erwartung, eingecheckt
+└─ .github/workflows/gate.yml checkt den ÖFFENTLICHEN Code aus, legt die
+                              Fixtures hinein, fährt das Gate
+```
+
+Der Workflow ist kurz: öffentliches Repo auf einen Ref auschecken, Fixtures
+hineinkopieren, `npm ci`, `npm run eval -- --gate --baseline eval-baseline.json`.
+Kein Code-Duplikat — der Code kommt bei jedem Lauf aus der öffentlichen Quelle,
+und damit kann nichts divergieren.
+
+**Die Erwartung wird eingecheckt**, wie `contrast-baseline.json`. Heute rechnet
+das Gate seine Referenz in einem Worktree von `origin/main` — das setzt voraus,
+dass beide Stände im selben Repo liegen, und genau das gilt nach dem Schnitt
+nicht mehr. Eine eingecheckte Zahl im privaten Repo macht jede Bewegung dort zu
+einer Zeile im Diff.
+
+#### Gegen welchen Ref, und wann
+
+Alle drei, für verschiedene Zwecke — sie ersetzen sich nicht:
+
+| Auslöser | prüft | Zweck | Ergebnis |
+|---|---|---|---|
+| `repository_dispatch`, gesendet vom öffentlichen Repo bei Push auf `main` | den Merge-Commit | Regression **nach** dem Merge | Commit-Status am öffentlichen Commit |
+| Push eines Tags `v*` (dispatch) | den Tag | **Release-Voraussetzung** | ohne grünes Gate kein Release |
+| `schedule`, nächtlich | `main` | Drift in Toolchain und Abhängigkeiten | Issue im privaten Repo |
+| `workflow_dispatch` mit Ref | beliebig | von Hand, etwa gegen einen PR-Branch | Status am angegebenen Commit |
+
+Der Tag-Lauf ist der wertvollste: er ist der eine Moment, an dem eine schlechte
+Karte tatsächlich Nutzer erreicht, und er ist erzwingbar — `release-verify.yml`
+kann den Status zum Tag zur Bedingung machen.
+
+#### Wie ein öffentlicher PR von einem roten Gate erfährt
+
+**Ein PR aus einem Fork erfährt es nicht, und er kann es nicht.** Das ist keine
+Nachlässigkeit im Entwurf, sondern eine Eigenschaft von GitHub: ein
+`pull_request`-Lauf aus einem Fork bekommt **keine Secrets**. Ohne Secret keine
+Fixtures und kein Dispatch ins private Repo. Damit ist die Vorab-Durchsetzung für
+Fork-PRs verloren — und das ist der Punkt, an dem solche Aufstellungen
+üblicherweise faulen, weil jemand die Lücke mit einem übersprungenen Job
+schließt, der grün aussieht.
+
+Drei Wege, absteigend nach Aufwand:
+
+**(1) Kein Vorab-Gate für Fork-PRs — empfohlen.** Die Durchsetzung wandert an
+zwei Stellen, die beide funktionieren: nach dem Merge auf `main` (Status wird rot,
+`main` ist sichtbar kaputt, der Merger ist zuständig) und vor dem Release (kein
+Release ohne grünes Gate zum Tag). In der öffentlichen README steht ein Satz
+dazu. **Der Eval-Gate-Job wird im öffentlichen Repo entfernt, nicht
+übersprungen** — ein Job, der „skipped" meldet, weil Daten fehlen, ist derselbe
+Ausfall, der das Gate monatelang stillgelegt hat.
+
+*Kostet:* eine Regression kann auf `main` landen und wird Minuten später
+gefunden, nicht vorher.
+
+**(2) Für PRs aus demselben Repo mitlaufen lassen.** Nicht-Fork-PRs bekommen
+Secrets. Der öffentliche Workflow kann die Fixtures mit einem Token holen und das
+Gate selbst fahren; für Fork-PRs entfällt der Job. Bei einem Projekt mit einem
+Committer trifft das praktisch alle PRs.
+
+*Kostet:* ein Token mit Leserechten am privaten Repo liegt in den Secrets eines
+**öffentlichen** Repos. Das ist eine Security-Frage und keine Bequemlichkeit —
+und für Fork-PRs bleibt die Lücke, nur unsichtbarer, weil sie jetzt wie eine
+Ausnahme aussieht.
+
+**(3) Privater Poller, der Status auf offene PRs schreibt.** Das private Repo
+fragt regelmäßig die offenen PRs des öffentlichen ab (der Fork-Head ist
+öffentlich, also abrufbar), fährt das Gate und schreibt einen Commit-Status
+zurück. Ein von außen gesetzter Status **kann** über Branch Protection zur
+Merge-Bedingung gemacht werden — das ist die einzige Variante, die
+Vorab-Durchsetzung wirklich zurückholt.
+
+*Kostet:* Latenz in der Größe des Poll-Intervalls, und eine Falle, die genannt
+werden muss: **eine Merge-Bedingung, deren Status nie eintrifft, blockiert jeden
+Fork-PR für immer.** Wer (3) verlangt, muss den Poller so bauen, dass er
+**immer** einen Status setzt, auch „nicht anwendbar". Sonst ist die Durchsetzung
+nicht gewonnen, sondern in eine Blockade verwandelt.
+
+#### Eine Alternative, die naheliegt und nicht hilft
+
+Den Eval-Harness gleich ganz privat halten und nur das Plugin veröffentlichen.
+Das verschiebt das Problem: der Harness importiert aus `src/`, bräuchte also den
+öffentlichen Code als Abhängigkeit — dieselbe repo-übergreifende Konstruktion,
+nur ohne den Vorteil, dass die Messungen nachvollziehbar sind. Und die
+Glaubwürdigkeit dieser README hängt daran, dass der Harness lesbar ist.
+
+#### Was das für die Reihenfolge bedeutet
+
+Der Schritt „`eval-gate.yml` im öffentlichen Repo entfernen" aus der Liste oben
+ist **erst zulässig, wenn das private Gate läuft und einen Status schreibt.**
+Sonst gibt es ein Fenster, in dem die Vorhersage gar nicht bewacht ist — und ein
+solches Fenster hat in diesem Projekt schon einmal Monate gedauert.
+
 #### Synchronhalten — der Punkt, an dem es üblicherweise scheitert
 
 **Zwei Repos mit denselben Dateien laufen auseinander, sobald jemand in das
@@ -595,7 +759,10 @@ Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster 
 1. Entscheidungen aus Punkt 1, 4, 5 und zur Markenfarbe. **Ohne sie nichts anlegen.**
 2. Öffentliches Repo anlegen, Initial-Commit aus dem bereinigten Stand.
 3. Tag `v1.2.0`, Release, Zip — dann `check-published-release.mjs`.
-4. `eval-gate.yml` im öffentlichen Repo entfernen, README um den Satz dazu ergänzen.
+4. **Erst** das private Gate aufsetzen und einen Status schreiben lassen, **dann**
+   `eval-gate.yml` im öffentlichen Repo entfernen und die README um den Satz dazu
+   ergänzen. Nicht umgekehrt — sonst entsteht ein Fenster ohne Bewachung der
+   Vorhersage.
 5. Privates Repo auf Fixtures und Archiv zurückschneiden, Release-Text als
    internes Archiv kennzeichnen.
 6. Erst danach das private Repo aus der Verteilung nehmen.
@@ -611,7 +778,7 @@ Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster 
 | Keine `LICENSE` | Recht | **ja, Entscheidung nötig** |
 | 40 UEyes-Screenshots Dritter | Recht | **ja, Security-Vorlage** |
 | Private Autoren-Adresse in 77 Commits | persönlich | Hinweis |
-| Branches | Aufräumen | **erledigt** — sechs entfernt, fünf übrig |
+| Branches | Aufräumen | **erledigt** — neun entfernt, zwei übrig |
 | Bilder in `assets/messungen/` | — | nein, alle neutral |
 | UEyes-Nennung | — | nein, vollständig |
 
