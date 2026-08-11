@@ -292,6 +292,212 @@ Und gemerkt hat es diesmal ein Nutzer, nicht wir.
 
 ---
 
+## Vor einem öffentlichen Repo zu klären
+
+Bestandsaufnahme, Stand 11.08.2026. **Nichts davon ist entschieden**, und drei
+der fünf Punkte sind keine technischen Fragen.
+
+**Suchraum:** 77 Commits, erreichbar von den 11 Branches und dem Tag `v1.2.0`
+auf `origin` — das ist, was öffentlich würde. Die 145 weiteren Commits im
+lokalen Repo sind Conductor-Checkpoints unter `refs/conductor-*` und werden
+nicht gepusht.
+
+> **Zur Methode, weil sie beim ersten Versuch falsch war.** Der erste Suchlauf
+> meldete für *jedes* Muster null Treffer — auch für `Figmaps`, was unmöglich
+> ist. Ursache: zsh trennt eine unquotierte Variable nicht an Zeilenumbrüchen,
+> `git grep` bekam die 77 SHAs als ein einziges Argument, und die Fehlermeldung
+> lief nach `/dev/null`. Aufgefallen ist es nur durch eine **Positivkontrolle**
+> mit Mustern, die es geben muss. Jede Zahl unten steht hinter einem Lauf, der
+> `Figmaps` (75 Commits) und `UEyes` (73) findet.
+
+### 1. Git-History
+
+| Muster | Dateiinhalte | Dateinamen | Commit-Messages |
+|---|---|---|---|
+| `meinestadt` | **76 Commits, 7 Dateien**, 16.172 Zeilen | keine | keine |
+| `meine stadt` / `meine-stadt` | keine | keine | keine |
+| `Meine Jobs` | **22 Commits, 1 Datei**, 2 Zeilen | keine | keine |
+| `repository.meinestadt.de` | **76 Commits, 2 Dateien**, 16.035 Zeilen | keine | keine |
+| `#FFDD00` | **75 Commits, 3 Dateien**, 225 Zeilen | keine | keine |
+| `#FFE100` | keine | keine | keine |
+
+**Nichts davon steht in einer Commit-Message oder einem Dateinamen.** Alles
+steht in Dateiinhalten, und der Löwenanteil ist `package-lock.json` (Punkt 3).
+
+Die Fundstellen außerhalb des Lockfiles, vollständig:
+
+| Datei | was dort steht |
+|---|---|
+| `README.md` | „meinestadt-Screens" als Bezeichnung für das geplante First-Click-Set (Set 2), dazu zweimal `repository.meinestadt.de` im Klartext in der Lockfile-Begründung |
+| `eval/fixtures/README.md` | Set 2 = „10 meinestadt-Screens mit First-Click-Test (Lyssna oder Maze, ca. 50 Teilnehmer)"; dazu die offene Lizenzfrage „für die interne Verwendung bei meinestadt.de" |
+| `NOTICE.md` | dreimal derselbe Satz: „…meinestadt.de gelten dieselben CC-BY-Pflichten" |
+| `src/engine/config.ts` | „**Bei meinestadt.de sind sämtliche…**" — die Begründung, warum die Stichwortliste deutsch ist |
+| `src/figma/__tests__/traverse.test.ts` | „the whole library at meinestadt.de is German" |
+| `eval/fixtures-cli.ts` | „die Lizenzfrage für die interne Nutzung bei meinestadt.de ist laut…" |
+| `src/figma/__tests__/place.test.ts` | **`name: 'Meine Jobs - beworben'`** — ein interner Produkt-/Seitenname als Ebenenname in einer Test-Fixture. Zweimal, in 22 Commits |
+
+**Bewertung.** Keine Zugangsdaten, keine Tokens, keine Kundendaten, keine
+internen URLs außer der Registry. Was sichtbar würde, ist von anderer Art:
+**dass dieses Werkzeug bei meinestadt.de entstanden ist, für welches Produkt,
+mit welchem Forschungsplan** (First-Click-Test mit 50 Teilnehmern über Lyssna
+oder Maze), und dass die Lizenzfrage zu UEyes intern noch offen ist. Das ist
+Kontext über Vorhaben und Rechtsstand, nicht über Technik — und ob er nach
+außen darf, ist keine technische Entscheidung.
+
+Zwei Nebenbefunde:
+
+- **Autorschaft.** Alle 77 Commits stehen auf
+  `conny-diez <constantin.conny@gmail.com>`, also einer privaten Adresse, nicht
+  der dienstlichen. Das wird mit öffentlich und ist nicht mehr rückholbar.
+- **Elf Branches.** Öffentlich würden auch `Redesign`, `UI-Anpassungen`,
+  `Vergleichsfixes`, `prd-version-1-1`, `rename-plugin-to-figmaps`,
+  `feature/2026-08-09` — Zwischenstände, die niemand mehr liest. Ein Aufräumen
+  vorher reduziert die Fläche, ist aber kein Sicherheitsthema.
+- **Gelöschte Branches.** Der Branch `v1.2` ist entfernt; seine Objekte sind
+  nicht mehr über einen Ref erreichbar, können aber serverseitig bis zur
+  Garbage Collection per SHA noch abrufbar sein. Wer keinen SHA kennt, findet
+  sie nicht.
+
+### 2. Versionierte Bilder
+
+**Kein einziges Bild zeigt ein reales meinestadt-Design.** Nachgesehen, nicht
+angenommen — jedes Bild geöffnet, dazu die Pixelfarben ausgezählt.
+
+| Datei | zeigt | real oder Nachbau |
+|---|---|---|
+| `assets/messungen/a4-onboarding.png` | Onboarding-Frame + 4 Heatmap-Varianten | **Nachbau** (Generator) |
+| `assets/messungen/a6-schaerfe-onboarding.png` | derselbe Frame, Schärfevergleich | **Nachbau** |
+| `assets/messungen/a8-onboarding-cutoff.png` | derselbe Frame, Cutoff-Vergleich | **Nachbau** |
+| `assets/messungen/a8-baender-grauer-frame.png` | grauer Testframe, Abschnittsbänder | **Nachbau** |
+| `assets/messungen/c-contrastmap-onboarding.png` | Contrastmap auf dem Onboarding-Frame | **Nachbau** |
+| `assets/messungen/c-contrastmap-desktop.png` | Contrastmap auf dem Desktop-Frame | **Nachbau** |
+
+Alle sechs sind Ausgaben von `eval/onboarding.ts` bzw. `eval/constructed.ts`:
+Text als abstrakte Glyphenbalken, Kacheln als Farbflächen, Beschriftungen
+gattungstypisch erfunden. **Markenfarbe in keinem einzigen** — ausgezählt über
+alle Pixel; das Gelb der Testframes ist `#FFC800`, nicht `#FFDD00`.
+
+**Aber:** `assets/logo.svg`, `assets/logo-light.svg` und `src/ui/logo.tsx`
+tragen `#FFDD00`, und über `logo.tsx` landet es in `build/ui.html` — also im
+Release-Zip und in jedem veröffentlichten Plugin. Ob das Logo die Markenfarbe
+tragen darf, wenn das Repo öffentlich ist und das Plugin außerhalb der
+Organisation erscheint, ist eine Marken- und keine Code-Frage.
+
+**Und die 40 Bilder, die niemand auf der Liste hatte:**
+`eval/fixtures/gate-web/images/` und `gate-mobile/images/` sind je 20 **echte
+Screenshots fremder Apps und Websites** aus UEyes — nicht unsere Designs, aber
+reale Produktoberflächen Dritter. Dazu je 20 Heatmaps und 20 Fixmaps, die
+Ground Truth und keine Screens sind. Siehe Punkt 5.
+
+### 3. `package-lock.json` — was daraus ablesbar wäre
+
+Alle 211 `resolved`-Felder zeigen auf **einen** Host:
+
+```
+https://repository.meinestadt.de:443/artifactory/api/npm/remote-npmjs.org-repo/@esbuild/darwin-arm64/-/darwin-arm64-0.28.1.tgz
+```
+
+Ablesbar wäre daraus:
+
+| | |
+|---|---|
+| Hostname | `repository.meinestadt.de`, **mit explizitem Port** `:443` |
+| Produkt | JFrog Artifactory (aus `/artifactory/api/…`) |
+| API-Pfadlayout | `/artifactory/api/npm/<repo>/<paket>/-/<datei>` |
+| interne Repo-Benennung | `remote-npmjs.org-repo` — die Namenskonvention für Proxy-Repos |
+| Umfang | 211 Pakete werden über diesen Proxy bezogen |
+
+Dazu zwei Prosa-Stellen in `README.md`, die den Host im Klartext nennen.
+
+**Es gibt eine Variante, die reproduzierbare Installationen erhält und die Hosts
+nicht nennt — nachgemessen, nicht behauptet:**
+
+| Variante | interne Hosts | Paketmenge | Version + `integrity` | `npm ci` |
+|---|---|---|---|---|
+| **A — `resolved` entfernen** (`scripts/ci-lockfile.mjs` auf die eingecheckte Datei) | **0** | 211, unverändert | **0 von 211 abweichend** | 163 Pakete, erfolgreich gegen die öffentliche Registry |
+| **B — Lockfile neu erzeugen** gegen `registry.npmjs.org` | 0 | 211, unverändert | **38 Versionen wandern** (u. a. esbuild 0.28.1 → 0.28.2) | — |
+
+**A ist die Antwort.** Das Skript, das heute nur auf dem Runner läuft, auf die
+eingecheckte Datei anzuwenden, entfernt genau die Bezugsquelle und lässt jede
+Zusicherung stehen: `integrity` bleibt in allen 211 Einträgen und wird von
+`npm ci` geprüft. Ein Paket mit falschem Inhalt schlägt weiterhin fehl. Die
+Installation ist danach **exakt** dieselbe — dieselben Pakete, dieselben
+Versionen, dieselben Hashes.
+
+**B ist möglich, aber keine reine Metadaten-Änderung.** Ein neu erzeugtes
+Lockfile löst die Semver-Bereiche neu auf und aktualisiert 38 Pakete. Bei
+gleicher Version wichen keine Hashes ab (also kein Manipulationssignal), aber
+ein Abhängigkeits-Update gehört in einen eigenen, gewollten Schritt und nicht in
+eine Offenlegungsmaßnahme.
+
+Für Security zusammengefasst: der Host steht in 76 Commits und lässt sich nicht
+durch eine Änderung an HEAD aus der History nehmen — das erforderte ein
+Umschreiben aller Commits (`filter-repo`) und damit neue SHAs für alles.
+Alternativ bleibt das Repo privat, oder es wird mit neuer History öffentlich
+gemacht.
+
+### 4. Lizenz — offen, und nicht technisch
+
+**Es gibt keine `LICENSE`-Datei.** Ein öffentliches Repo ohne Lizenz steht unter
+„alle Rechte vorbehalten": Lesen und Forken über GitHub ist erlaubt, jede
+Nutzung, Änderung oder Weitergabe nicht. Für ein Werkzeug, das Kollegen und
+womöglich Dritte benutzen sollen, ist das vermutlich nicht gewollt — die
+Entscheidung, **ob** und **welche** Lizenz, gehört aber nicht in ein
+Commit-Diff. Zu bedenken ist dabei, dass das Repo abgeleitete UEyes-Daten
+enthält (CC BY 4.0), die eine eigene Lizenz behalten; eine Projektlizenz gilt
+für unseren Code, nicht für sie.
+
+### 5. UEyes-Fixtures unter CC BY 4.0 — reicht die Nennung?
+
+**Ja, für die Anforderungen der Lizenz.** CC BY 4.0 erlaubt Weitergabe
+ausdrücklich, auch öffentlich und kommerziell; Pflicht ist die Nennung. Die vier
+Elemente aus §3(a) sind vorhanden und geprüft:
+
+| verlangt | wo |
+|---|---|
+| Urheber genannt | `NOTICE.md`, dazu `citation` in beiden `index.json` |
+| Lizenz benannt und verlinkt | `CC BY 4.0` + `creativecommons.org/licenses/by/4.0/` |
+| Änderungen angegeben | `NOTICE.md` und die `notes` beider Sets („auf dem Analyseraster", „maximum-gepoolt", „einmal mehr resampled") |
+| Quelle nachvollziehbar | DOI `10.1145/3544548.3581096` |
+
+Zusätzlich trägt `src/engine/priors/generated.ts` die Nennung im Kopf, und die
+Datengrundlage steht unter jeder platzierten Vorhersage-Karte.
+
+**Was mit einem öffentlichen Repo trotzdem hinzukommt, und es ist nicht die
+Lizenz.** Die 40 Bilder in `images/` sind Screenshots **fremder** Apps und
+Websites. UEyes stellt den Datensatz unter CC BY 4.0 — ob diese Lizenz die in
+den Screenshots abgebildeten Oberflächen Dritter mitumfasst, können die
+Datensatz-Autoren nicht für deren Rechteinhaber erklären. Genau diese
+Einschränkung steht bei Rico, dem Ursprungsdatensatz derselben Gattung, wörtlich
+im Nutzungsvertrag: *„The screenshots contained in the Rico dataset may contain
+copyrighted work."* Für interne Nutzung ist das ein kleines Risiko; öffentliche
+Weiterverbreitung von 40 Bildern ist eine größere Fläche. Das gehört vor Security
+und nicht in eine Selbsteinschätzung.
+
+Eine Rückfalloption gibt es und sie kostet wenig: die Gate-Sets aus dem Repo
+nehmen und wieder als Actions-Cache oder Release-Asset führen. Der Preis ist
+bekannt und dokumentiert — genau so ist das Gate monatelang still ausgefallen.
+Die bessere Variante wäre, die **Ground Truth** (Heatmaps und Fixmaps) zu
+behalten und nur die `images/` zu ersetzen; dann fehlt dem Gate allerdings die
+Eingabe. Beides ist eine Abwägung, keine Lösung.
+
+### Zusammenfassung: was blockiert, was nur aufzuräumen ist
+
+| Punkt | Art | Blockiert? |
+|---|---|---|
+| Herkunft `meinestadt.de` in 7 Dateien, 76 Commits | Freigabe-Entscheidung | **ja, Entscheidung nötig** |
+| `Meine Jobs` als Fixture-Ebenenname | interner Produktname | **ja** — aber in HEAD in einer Zeile behebbar, nicht in der History |
+| `repository.meinestadt.de` in 76 Commits | Security | **ja** — Variante A behebt HEAD, History nur per Rewrite |
+| `#FFDD00` in Logo und ausgeliefertem Bundle | Marke | **ja, Entscheidung nötig** |
+| Keine `LICENSE` | Recht | **ja, Entscheidung nötig** |
+| 40 UEyes-Screenshots Dritter | Recht | **ja, Security-Vorlage** |
+| Private Autoren-Adresse in 77 Commits | persönlich | Hinweis |
+| Elf Branches, davon sechs veraltet | Aufräumen | nein |
+| Bilder in `assets/messungen/` | — | nein, alle neutral |
+| UEyes-Nennung | — | nein, vollständig |
+
+---
+
 ## Bedienung
 
 1. Frame, Component, Instance, Section oder Group auswählen (Mehrfachauswahl = Batch)
