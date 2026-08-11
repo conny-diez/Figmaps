@@ -56,6 +56,19 @@ jobs:
       - run: npm run lint
       - run: npm run verify
 
+      # Ein grüner Haken sagt nicht, worüber er grün ist. Dieser Schritt schreibt
+      # in die Zusammenfassung, welche Netze diesen Lauf abdecken und welche
+      # nicht — und wo die Durchsetzung für das Fehlende stattfindet.
+      #
+      # Er urteilt nicht und wird nie rot. Nach dem Schnitt in ein öffentliches
+      # und ein privates Repo läuft das Eval-Gate öffentlich nicht mehr, und ein
+      # PR wäre dort grün mit einem Netz weniger, ohne dass es irgendwo steht.
+      # Erkannt wird der Zustand, nicht behauptet: dasselbe Skript läuft in beiden
+      # Repos und sagt in jedem die Wahrheit.
+      - name: Was dieser Lauf abdeckt
+        if: always()
+        run: node scripts/gate-coverage.mjs
+
   eval-gate:
     # A-7 — Regressions-Gate: bewertet das eingecheckte 40-Bild-Set und macht
     # den Check rot, wenn CC gegenüber `main` um mehr als 0,02 fällt.

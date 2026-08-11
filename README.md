@@ -502,52 +502,80 @@ größere Fläche. Das gehört vor Security und nicht in eine Selbsteinschätzun
 derselben Gattung" für alle 40 Bilder. Das war falsch, und zwar in einer
 Richtung, die eine Vorlage an Security in die Irre geführt hätte:** Rico ist die
 Quelle von *Enrico*, und für UEyes ist es die Quelle **einer** der vier
-Kategorien. Die beiden Sets in diesem Repo haben deshalb **verschiedene**
-Vorgeschichten.
+Kategorien. Wer prüft, muss fünf Vorgeschichten ansehen, nicht eine.
 
-Laut dem UEyes-Datensatzpapier setzen sich die vier Kategorien (je 495 Bilder)
-so zusammen:
+#### Die 40 Gate-Bilder: Vorlage für Security
 
-| Kategorie | Quelle der Bilder |
-|---|---|
-| **mobile** | Stichprobe aus den 46.064 Mobile-UI-Bildern des **Rico**-Datensatzes |
-| **webpage** | Alexa-500-Datensatz, „Visual Complexity and Aesthetics"-Datensatz, Imp1k |
-| desktop | ein Desktop-UI-Datensatz von GitHub plus eigene Erhebung der Autoren |
-| poster | Imp1k (Ads und Infografiken) plus eigene Erhebung der Autoren |
+**Die Einzelherkunft ist nicht rekonstruierbar, und das ist die tragende
+Aussage.** UEyes hat je Kategorie 495 Bilder aus einem größeren Kandidatenpool
+**ausgewählt** und nennt nicht, welches Bild aus welchem Upstream stammt. Aus dem
+Datensatzpapier (arXiv 2402.05202, Abschnitt 3), wörtlich:
 
-Für dieses Repo heißt das:
+> „We collected 494 webpage images from the Alexa 500 dataset, 1,507 images from
+> the Visual Complexity and Aesthetics dataset, and 200 images from the Imp1k
+> dataset. We extended the breadth of the webpage image set by capturing 103
+> additional webpage screenshots."
 
-| unser Set | Kategorie | Vorgeschichte | Folge |
+> „We extracted a sample of 1,761 images from among the 46,064 mobile UI images
+> from the RICO dataset. We extended the set with 42 further mobile UI images."
+
+| Kategorie | Kandidaten | ausgewählt | mögliche Vorgeschichten |
+|---|---:|---:|---:|
+| webpage | 2.304 | 495 | **4** |
+| mobile | 1.803 | 495 | **2** |
+
+**Die Formulierung für die Vorlage:** nicht „20 aus RICO, 20 aus drei Quellen",
+sondern
+
+> **40 Bilder mit nicht trennbarer Einzelherkunft. Fünf mögliche Vorgeschichten.
+> Für jede Kategorie gilt der restriktivste in Frage kommende Upstream.**
+
+Eine Präzisierung, die die Aussage nicht aufweicht, sondern schärft: trennbar ist
+die Herkunft bis auf die **Kategorie**, nicht bis aufs Bild. Unsere 20
+Mobile-Bilder haben zwei mögliche Vorgeschichten, unsere 20 Web-Bilder vier. Der
+„restriktivste Upstream gilt" wird damit **pro Kategorie** angewandt — und das
+Ergebnis ist für beide Kategorien unbequem, aber aus verschiedenen Gründen.
+
+#### Die fünf Upstreams, Lizenzlage einzeln
+
+| Upstream | was es ist | Lizenz | Stand |
 |---|---|---|---|
-| `gate-mobile/images/` (20) | mobile | **über Rico** | Ricos Bedingungen wirken hier upstream — inklusive „The screenshots contained in the Rico dataset may contain copyrighted work" und der Klausel, dass Zugang nur an Personen weitergegeben werden darf, die den Bedingungen zustimmen |
-| `gate-web/images/` (20) | webpage | Alexa 500, Visual Complexity and Aesthetics, Imp1k — **nicht Rico** | drei weitere Upstreams, deren Bedingungen hier **nicht geprüft** sind |
+| **Visual Complexity and Aesthetics** (1.507, webpage) | Harvard Dataverse, `doi:10.7910/DVN/XEYNYW`, enthält `stimuli.zip` mit den Screenshots (695 MB) | **CC0 1.0** | **belegt** über die Dataverse-API |
+| **RICO** (1.761, mobile) | interactionmining.org | **keine Lizenz, sondern ein Nutzungsvertrag**: Zugang darf nur an Personen weitergegeben werden, die den Bedingungen zustimmen; „The screenshots contained in the Rico dataset may contain copyrighted work" | **belegt**, Volltext gelesen |
+| **Alexa Top 500** (494, webpage) | **kein Bilddatensatz.** Die Literaturangabe lautet „Alexa Top 500 Websites. 2022. expireddomains.net/alexa-top-websites" — eine **Domainliste** | **es existiert keine Upstream-Lizenz.** Die Bilder sind Screenshots lebender Websites, aufgenommen anhand dieser Liste; der einzige Rechtsanspruch darüber ist die CC-BY-Erklärung der UEyes-Autoren | **belegt** über die Literaturangabe |
+| **eigene Aufnahmen der Autoren** (103 webpage, 42 mobile) | Teil des UEyes-Deposits | **CC BY 4.0** über Zenodo — die abgebildeten Oberflächen bleiben fremd | belegt für das Deposit, **abgeleitet** für die Einzelbilder |
+| **Imp1k** (200 webpage) | predimportance.mit.edu, Fosco et al., UIST 2020 | **OFFEN.** Projektseite, Suche und Repo nennen keine Lizenz; die Seite sagt nur „the dataset and interface are made available" | **offen** |
 
-**Das ist die eigentliche Verschärfung.** Die frühere Fassung hätte Security auf
-Rico geschickt und die drei Upstreams des Web-Sets übersehen — also genau die
-Hälfte der Bilder, die wir öffentlich weitergeben würden. Wer prüft, muss vier
-Vorgeschichten ansehen, nicht eine.
+**Was offen bleibt: eine von fünf** — Imp1k. Alle anderen sind belegt, wobei
+„belegt" bei den eigenen Aufnahmen der Autoren heißt: das Deposit trägt CC BY 4.0,
+also gilt es für sie; einzeln ausgewiesen sind sie nicht.
 
-**Wie weit das belegt ist.** Die Aufstellung stammt aus dem Datensatzpapier
-(arXiv 2402.05202); die ACM-Vollfassung ist hinter 403, die arXiv-PDF überschritt
-die Abrufgrenze, und weder Zenodo-Eintrag noch Projektseite noch das GitHub-Repo
-der Autoren nennen die Herkunft. Zwei unabhängige Abfragen ergaben dieselbe
-Zuordnung; die **Kategoriezuordnung** — Rico nur für mobile — halte ich damit für
-gesichert, die genauen Stückzahlen nicht. Vor der Vorlage an Security gehört das
-Papier selbst gelesen, Abschnitt zu den Stimuli.
+#### Was daraus für die beiden Kategorien folgt
 
-**Was sich an der Lizenzlage dadurch nicht ändert.** UEyes steht als Datensatz
-unter CC BY 4.0, unsere Nennung erfüllt §3(a), und Weitergabe ist erlaubt. Die
-Frage bleibt dieselbe wie oben, sie hat nur mehr als einen Adressaten: ob eine
-CC-BY-Erklärung der Datensatz-Autoren die in den Screenshots abgebildeten
-Oberflächen Dritter mitumfassen kann. Für das Mobile-Set ist die Antwort
-upstream ausdrücklich offen gelassen.
+**Mobile (20 Bilder).** Möglich sind RICO oder eigene Aufnahme. Restriktivster
+Upstream ist **RICO** — und dessen Bedingungen sind mit einer öffentlichen
+Weitergabe schwer vereinbar: Zugang nur an Personen, die vorher zustimmen. Ein
+öffentliches Repo kann das nicht sicherstellen. Für diese 20 ist die Antwort
+absehbar nein, unabhängig von CC BY 4.0 auf der UEyes-Ebene.
 
-Eine Rückfalloption gibt es und sie kostet wenig: die Gate-Sets aus dem Repo
-nehmen und wieder als Actions-Cache oder Release-Asset führen. Der Preis ist
-bekannt und dokumentiert — genau so ist das Gate monatelang still ausgefallen.
-Die bessere Variante wäre, die **Ground Truth** (Heatmaps und Fixmaps) zu
-behalten und nur die `images/` zu ersetzen; dann fehlt dem Gate allerdings die
-Eingabe. Beides ist eine Abwägung, keine Lösung.
+**Webpage (20 Bilder).** Möglich sind vier. Der restriktivste ist **nicht
+bestimmbar**, weil Imp1k offen ist — und der zweite Problemfall ist Alexa Top 500,
+wo es überhaupt keine Upstream-Lizenz gibt, sondern nur Screenshots fremder
+Websites. Dass Visual Complexity and Aesthetics CC0 trägt, hilft hier nicht: bei
+nicht trennbarer Herkunft nützt der freizügigste Upstream nichts.
+
+**Die eigentliche Frage an Security ist damit eine juristische und keine
+technische:** kann eine CC-BY-4.0-Erklärung der Datensatz-Autoren die in den
+Screenshots abgebildeten Oberflächen Dritter mitumfassen — und wenn nein, ändert
+das etwas daran, dass wir 40 solcher Bilder öffentlich weitergeben würden? Für
+die interne Nutzung ist die Lage unstrittig; die Weitergabe ist der Schritt, der
+sie aufwirft.
+
+**Ein Weg, der die Frage umgeht:** die Ground Truth (Heatmaps und Fixmaps) ist
+unsere Ableitung und zeigt keine fremde Oberfläche. Sie könnte öffentlich bleiben,
+die `images/` nicht. Dem Gate fehlt dann die Eingabe — es sei denn, die Bilder
+kommen zur Laufzeit aus dem privaten Repo, und genau so ist die Skizze in Punkt 6
+gebaut.
 
 ### 6. Frisches öffentliches Repo statt History-Rewrite — Skizze
 
@@ -679,7 +707,7 @@ schließt, der grün aussieht.
 
 Drei Wege, absteigend nach Aufwand:
 
-**(1) Kein Vorab-Gate für Fork-PRs — empfohlen.** Die Durchsetzung wandert an
+**(1) Kein Vorab-Gate für Fork-PRs — GEWÄHLT.** Die Durchsetzung wandert an
 zwei Stellen, die beide funktionieren: nach dem Merge auf `main` (Status wird rot,
 `main` ist sichtbar kaputt, der Merger ist zuständig) und vor dem Release (kein
 Release ohne grünes Gate zum Tag). In der öffentlichen README steht ein Satz
@@ -690,15 +718,29 @@ Ausfall, der das Gate monatelang stillgelegt hat.
 *Kostet:* eine Regression kann auf `main` landen und wird Minuten später
 gefunden, nicht vorher.
 
-**(2) Für PRs aus demselben Repo mitlaufen lassen.** Nicht-Fork-PRs bekommen
-Secrets. Der öffentliche Workflow kann die Fixtures mit einem Token holen und das
-Gate selbst fahren; für Fork-PRs entfällt der Job. Bei einem Projekt mit einem
-Committer trifft das praktisch alle PRs.
+**Bedingung, und sie ist nicht verhandelbar: die Abwesenheit muss sichtbar sein.**
+Jeder PR-Lauf schreibt in seine Zusammenfassung, welche Netze ihn abdecken und
+welche nicht, und wo die Durchsetzung für das Fehlende stattfindet —
+`scripts/gate-coverage.mjs`, eingehängt im `verify`-Job. Das Skript sieht nach, ob
+die Fixtures da sind, statt es zu behaupten; damit läuft es in beiden Repos
+unverändert und sagt in jedem die Wahrheit. Es wird nie rot, es ist ein
+Beipackzettel.
 
-*Kostet:* ein Token mit Leserechten am privaten Repo liegt in den Secrets eines
-**öffentlichen** Repos. Das ist eine Security-Frage und keine Bequemlichkeit —
-und für Fork-PRs bleibt die Lücke, nur unsichtbarer, weil sie jetzt wie eine
-Ausnahme aussieht.
+Ohne diese Zeile hätte ein grüner Haken im öffentlichen Repo **formal dieselbe
+Form** wie die sechs dokumentierten Fälle: eine Prüfung, die grün ist, ohne das zu
+messen, was man ihr zuschreibt. Der Unterschied zwischen „läuft nicht, hier steht
+warum und wo stattdessen" und „läuft nicht" ist der ganze Unterschied.
+
+**(2) Für PRs aus demselben Repo mitlaufen lassen — verworfen.** Nicht-Fork-PRs
+bekommen Secrets, der öffentliche Workflow könnte die Fixtures mit einem Token
+holen. Bei einem Committer träfe das praktisch alle PRs.
+
+*Verworfen aus zwei Gründen, und der zweite ist der stärkere:* ein Token mit
+Leserecht am privaten Repo in den Secrets eines **öffentlichen** Repos ist eine
+**Kopplung, die man später bereut** — sie überlebt jede Umorganisation, jeden
+Wechsel der Zuständigkeit, und sie ist genau dann noch da, wenn niemand mehr weiß,
+warum. Der Gewinn ist bei einem Committer klein. Dazu bliebe die Lücke für
+Fork-PRs bestehen, nur unsichtbarer, weil sie dann wie eine Ausnahme aussieht.
 
 **(3) Privater Poller, der Status auf offene PRs schreibt.** Das private Repo
 fragt regelmäßig die offenen PRs des öffentlichen ab (der Fork-Head ist
@@ -759,10 +801,14 @@ Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster 
 1. Entscheidungen aus Punkt 1, 4, 5 und zur Markenfarbe. **Ohne sie nichts anlegen.**
 2. Öffentliches Repo anlegen, Initial-Commit aus dem bereinigten Stand.
 3. Tag `v1.2.0`, Release, Zip — dann `check-published-release.mjs`.
-4. **Erst** das private Gate aufsetzen und einen Status schreiben lassen, **dann**
-   `eval-gate.yml` im öffentlichen Repo entfernen und die README um den Satz dazu
-   ergänzen. Nicht umgekehrt — sonst entsteht ein Fenster ohne Bewachung der
-   Vorhersage.
+4. **Das private Gate aufsetzen — und `eval-gate.yml` im öffentlichen Repo erst
+   entfernen, wenn es läuft UND einmal beweisbar rot geworden ist.** Nicht
+   vorher. Ein Gate, von dem niemand gesehen hat, dass es rot werden kann, ist
+   ein grüner Haken; dieses Repo hat das dreimal am eigenen Eval-Gate erlebt. Der
+   Beweis ist billig — ein Lauf mit absichtlich verschlechterter Engine, wie ihn
+   `eval-gate.yml` heute schon als Schritt „Das Gate muss rot werden können"
+   führt. Solange dieser Beweis fehlt, bleibt der öffentliche Job stehen, auch
+   wenn er doppelt läuft.
 5. Privates Repo auf Fixtures und Archiv zurückschneiden, Release-Text als
    internes Archiv kennzeichnen.
 6. Erst danach das private Repo aus der Verteilung nehmen.
