@@ -149,6 +149,67 @@ zwei — und das Panel zeigte etwas anderes an, als das Release heißt.
 `npm ci` stört das nicht (nachgemessen, nicht angenommen). Die offene Frage am
 Lockfile ist eine andere und steht unter den offenen Punkten.
 
+#### Der Entwurf ist die Stelle, an der v1.2.0 schiefgegangen ist
+
+**Es gab zwei Release-Objekte zum Tag `v1.2.0`.** Den Entwurf des Workflows, an
+dem `figmaps-1.2.0.zip` hing, und ein von Hand angelegtes, veröffentlichtes
+Release ohne jedes Asset und mit der Repo-Beschreibung als Text. Wer dem Tag
+folgte, bekam nur die beiden automatischen „Source code"-Archive — Quellcode ohne
+`build/`, und der Figma-Import scheitert daran. Gemerkt hat es ein Kollege.
+
+Der Release-Workflow war dabei grün, und er hatte alles geprüft, was er prüfen
+konnte. Nur die letzte Frage nicht:
+
+> Liegt die Datei dort, wo eine Nutzerin sie sucht?
+
+**Ein Entwurf kann diese Frage nicht beantworten**, und das ist keine
+Nachlässigkeit, sondern eine Eigenschaft von GitHub: ein Entwurf hängt nicht am
+Tag, bekommt eine `untagged-…`-URL, und `GET /releases/tags/<tag>` findet ihn
+überhaupt nicht (nachgemessen — der Aufruf lieferte das veröffentlichte Objekt
+mit null Assets und den Entwurf gar nicht). Die Antwort entsteht erst bei der
+Veröffentlichung, also muss die Prüfung dort laufen.
+
+Daraus sind drei Änderungen geworden:
+
+| | vorher | jetzt |
+|---|---|---|
+| **Anlegen** | `gh release create --draft` | erst fragen, was zum Tag existiert: nichts → Entwurf anlegen; genau eines → **ergänzen**; mehr als eines → abbrechen |
+| **Nachweis am Tag-Push** | keiner | das Asset wird am Objekt **nachgesehen**, Größe und Link stehen in der Zusammenfassung, und bei einem Entwurf steht ausdrücklich dort, dass am Tag noch nichts liegt |
+| **Nachweis am Tag** | keiner | `release-verify.yml` am `release: published`-Ereignis **lädt die Datei aus dem Release und packt sie aus** |
+
+**Warum `gh release create` nicht bleiben konnte.** Nachgemessen mit zwei
+Aufrufen auf denselben, nicht existierenden Tag: es entstehen **zwei**
+`untagged-`Objekte, ohne Fehler und ohne Hinweis. Ein Entwurf ist nicht an den
+Tag gebunden, es gibt also nichts, womit er kollidieren könnte — ein erneuter
+Lauf auf demselben Tag doppelt still.
+
+```bash
+npm run check-published-release -- v1.2.0
+```
+
+Der Prüfer (`scripts/check-published-release.mjs`) stellt fünf Fragen, und jede
+einzelne hätte den Vorfall gefunden:
+
+1. Trägt **genau ein** Objekt diesen Tag? (Bei v1.2.0: zwei.)
+2. Findet die Tag-Suche etwas, und ist es kein Entwurf?
+3. Hängt das erwartete Zip dran und ist es nicht leer? (Bei v1.2.0: kein Asset.)
+4. Lädt es sich herunter, entpacken, liegen `manifest.json` und `build/` richtig,
+   und sind die Ortsprior-Nutzdaten im ausgelieferten Bundle? — geprüft an der
+   **Datei**, nicht an ihren Metadaten.
+5. Enthält der veröffentlichte Text den Download-Hinweis aus `RELEASE.md`? (Bei
+   v1.2.0: der Text war 65 Zeichen lang, die Repo-Beschreibung.)
+
+Der Hinweis steht in `RELEASE.md` zwischen zwei Markern
+(`<!-- download-hinweis:anfang -->`), damit es für ihn **eine** Quelle gibt und
+der Prüfer nicht gegen eine Kopie vergleicht.
+
+Geladen wird über den Asset-Endpunkt der API mit Token — das Repo ist privat, ein
+anonymer Abruf liefert 404, und das wäre fehlende Anmeldung und kein Defekt.
+
+**Dieselbe Klasse wie das Eval-Gate, das dreimal grün war, ohne zu messen** — mit
+einem Unterschied: hier sah die Prüfung nicht das Falsche an, sie lief zu früh.
+Und gemerkt hat es diesmal ein Nutzer, nicht wir.
+
 ---
 
 ## Bedienung

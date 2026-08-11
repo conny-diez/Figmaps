@@ -134,23 +134,133 @@ jobs:
           name: ${{ steps.pack.outputs.zip }}
           path: ${{ steps.pack.outputs.zip }}
 
-      - name: Release als Entwurf anlegen
+      - name: Release anlegen oder ergänzen
+        id: release
         if: startsWith(github.ref, 'refs/tags/v')
         # `--draft` mit Absicht: der Text wird vor der Veröffentlichung gelesen.
         # Ein Release, das sich selbst veröffentlicht, nimmt diese Entscheidung
         # vorweg — und ein Zip zurückzuziehen, das schon jemand geladen hat,
         # geht nicht.
         #
-        # Mit `gh` statt mit einer Action von Dritten. Der Schritt macht einen
-        # API-Aufruf, den das vorinstallierte CLI ohnehin kann; eine externe
-        # Action dafür einzubinden hieße, für diese eine Zeile eine weitere
-        # Abhängigkeit in die Lieferkette zu nehmen — in einem Repo, dessen
-        # Lockfile gerade deswegen bei Security liegt, die falsche Richtung.
+        # WARUM HIER NICHT MEHR EINFACH `gh release create` STEHT. Nachgemessen:
+        # der Befehl legt auch dann einen weiteren Entwurf an, wenn zum Tag schon
+        # einer existiert — zwei `untagged-…`-Objekte, kein Fehler, kein Hinweis.
+        # Ein Entwurf ist nicht an den Tag gebunden, es gibt also nichts, womit er
+        # kollidieren könnte. Genau daraus ist der Vorfall bei v1.2.0 entstanden:
+        # zwei Objekte zum selben Tag, das Asset am falschen.
+        #
+        # Deshalb wird zuerst gefragt, was es gibt, und dann ergänzt statt
+        # gedoppelt. Bei mehr als einem Objekt bricht der Schritt ab — welches
+        # das richtige ist, kann er nicht wissen, und raten wäre die Ursache
+        # noch einmal.
+        #
+        # Über die API und nicht über `gh release upload <tag>`: dessen
+        # Tag-Auflösung findet Entwürfe nicht (`GET /releases/tags/<tag>` liefert
+        # nur Veröffentlichtes). Der Asset-Endpunkt mit der Release-Id trifft
+        # beide Fälle.
         env:
           GH_TOKEN: ${{ github.token }}
+          ZIP: ${{ steps.pack.outputs.zip }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --draft \
-            --title "Figmaps ${GITHUB_REF_NAME#v}" \
-            --notes-file RELEASE.md \
-            "${{ steps.pack.outputs.zip }}"
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          releases="repos/$GITHUB_REPOSITORY/releases"
+
+          # Jede Abfrage in EINEM `gh --jq`-Durchgang, nur Skalare heraus.
+          #
+          # Nachgemessen: die Ausgabe von `gh --jq` ist kein wieder-parsebares
+          # JSON, wenn ein String Zeilenumbrüche enthält — und der Release-Text
+          # enthält sie zu Tausenden. `gh api … --jq '[…]' | jq length` bricht mit
+          # „control characters must be escaped" ab. Ein zweiter jq-Aufruf über
+          # eine gh-Ausgabe ist deshalb hier grundsätzlich falsch.
+          count="$(gh api "$releases?per_page=100" --jq "[.[] | select(.tag_name == \"$tag\")] | length")"
+
+          if [ "$count" -gt 1 ]; then
+            echo "::error title=Release::$count Release-Objekte tragen den Tag $tag. Welches gemeint ist, kann dieser Schritt nicht entscheiden — genau daraus ist der Vorfall bei v1.2.0 entstanden."
+            gh api "$releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"$tag\") | \"  id=\(.id) draft=\(.draft) assets=\(.assets|length) \(.html_url)\""
+            exit 1
+          fi
+
+          # Nutzlast mit `jq --rawfile`: RELEASE.md ist mehrere Kilobyte Markdown
+          # mit Anführungszeichen, Backticks und Zeilenumbrüchen. Über
+          # `-f key=@datei` wäre das von gh's Typ-Umwandlung abhängig; so ist es
+          # eindeutig. (`jq` liest hier eine Datei, keine gh-Ausgabe.)
+          if [ "$count" -eq 0 ]; then
+            jq -n --rawfile body RELEASE.md --arg tag "$tag" --arg name "Figmaps ${tag#v}" \
+              '{tag_name: $tag, name: $name, draft: true, prerelease: false, body: $body}' > /tmp/release.json
+            id="$(gh api --method POST "$releases" --input /tmp/release.json --jq '.id')"
+            echo "Entwurf neu angelegt (id=$id)."
+          else
+            id="$(gh api "$releases?per_page=100" --jq "[.[] | select(.tag_name == \"$tag\")] | .[0].id")"
+            # Nur den Text nachziehen — Entwurfsstatus und Name des bestehenden
+            # Objekts bleiben, wie ein Mensch sie gesetzt hat.
+            jq -n --rawfile body RELEASE.md '{body: $body}' > /tmp/patch.json
+            gh api --method PATCH "$releases/$id" --input /tmp/patch.json --jq '.id' > /dev/null
+            echo "Bestehendes Objekt ergänzt (id=$id) — Text aus RELEASE.md aktualisiert."
+            old="$(gh api "$releases/$id" --jq "[.assets[] | select(.name == \"$ZIP\") | .id] | .[0] // empty")"
+            if [ -n "$old" ]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"
+              echo "Vorherige Fassung von $ZIP entfernt."
+            fi
+          fi
+
+          gh api --method POST \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$id/assets?name=$ZIP" \
+            -H "Content-Type: application/zip" --input "$ZIP" --jq '.name' > /dev/null
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Nachweisen, dass das Asset am Objekt hängt
+        if: startsWith(github.ref, 'refs/tags/v')
+        # KEIN GRÜNER HAKEN OHNE NACHWEIS. Der Schritt davor sagt „hochgeladen";
+        # dieser sieht nach. Ein Upload, dessen Ergebnis niemand liest, ist eine
+        # Behauptung — und die letzte Behauptung dieser Art hat einen Kollegen
+        # einen Nachmittag gekostet.
+        #
+        # WAS HIER NICHT BEWIESEN WERDEN KANN, und das gehört ausdrücklich
+        # hierher: solange das Release ein **Entwurf** ist, hängt das Asset nicht
+        # am Tag. GitHub gibt ihm eine `untagged-…`-URL, und `releases/tag/<tag>`
+        # findet es nicht. Die Frage „liegt die Datei dort, wo eine Nutzerin sie
+        # sucht" ist erst nach der Veröffentlichung beantwortbar — dafür gibt es
+        # `release-verify.yml`, das am `release: published`-Ereignis hängt und die
+        # Datei aus dem Release **lädt und auspackt**.
+        #
+        # Dieser Schritt beweist also die Hälfte, die jetzt beweisbar ist, und
+        # sagt die andere Hälfte als Auftrag an einen Menschen.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIP: ${{ steps.pack.outputs.zip }}
+          ID: ${{ steps.release.outputs.id }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          rel="repos/$GITHUB_REPOSITORY/releases/$ID"
+          size="$(gh api "$rel" --jq "[.assets[] | select(.name == \"$ZIP\") | .size] | .[0] // 0")"
+          if [ "$size" -eq 0 ]; then
+            echo "::error title=Asset::$ZIP hängt nicht am Release-Objekt $ID (oder ist leer)."
+            gh api "$rel" --jq '"Vorhandene Assets: " + ([.assets[].name] | join(", "))'
+            exit 1
+          fi
+          draft="$(gh api "$rel" --jq '.draft')"
+          url="$(gh api "$rel" --jq '.html_url')"
+          expected="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$ZIP"
+          {
+            echo "### Release $tag"
+            echo ""
+            echo "- Objekt: $url"
+            echo "- Asset: \`$ZIP\`, $size Bytes — nachgesehen, nicht angenommen"
+            if [ "$draft" = "true" ]; then
+              echo "- **Entwurf.** Am Tag liegt noch nichts: \`releases/tag/$tag\` findet diesen"
+              echo "  Entwurf nicht, und die beiden automatischen „Source code\"-Archive sind"
+              echo "  Quellcode ohne \`build/\` — damit scheitert der Figma-Import."
+              echo "- **Zu tun:** den Entwurf unter $url veröffentlichen. Danach prüft"
+              echo "  \`release-verify.yml\` die Datei am Tag und lädt sie dafür herunter."
+              echo "- Danach erreichbar unter: $expected"
+            else
+              echo "- Veröffentlicht. Download: $expected"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Asset $ZIP ($size Bytes) hängt an $url"
+          if [ "$draft" = "true" ]; then
+            echo "::notice title=Noch nicht am Tag::Der Entwurf muss veröffentlicht werden, sonst findet niemand das Zip. $url"
+          fi

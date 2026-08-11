@@ -1,5 +1,12 @@
 # Figmaps 1.2 — Beta
 
+<!-- download-hinweis:anfang -->
+> **Lade `figmaps-1.2.0.zip`.** Die beiden „Source code"-Archive von GitHub
+> funktionieren nicht — sie enthalten den Quellcode ohne gebautes Plugin. Nach
+> dem Entpacken müssen `manifest.json` und ein Ordner `build/` nebeneinander
+> liegen.
+<!-- download-hinweis:ende -->
+
 **Die Verschiebung dieser Version in einem Satz:** Figmaps war ein
 Vorhersagewerkzeug mit einem Kontrast-Zusatz und ist ein **Messwerkzeug mit
 einem Vorhersage-Zusatz** geworden.

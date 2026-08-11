@@ -1,0 +1,101 @@
+name: Release verify
+
+# Prüft, was eine Nutzerin am Tag tatsächlich findet — nach der Veröffentlichung.
+#
+# WARUM ES DIESEN ZWEITEN WORKFLOW BRAUCHT. `release.yml` läuft am Tag-Push und
+# legt einen **Entwurf** an. Ein Entwurf hängt nicht am Tag: GitHub gibt ihm eine
+# `untagged-…`-URL, und `releases/tag/<tag>` findet ihn überhaupt nicht. Die
+# entscheidende Frage ist zu diesem Zeitpunkt also nicht beantwortbar, und zwar
+# grundsätzlich, nicht aus Nachlässigkeit:
+#
+#     Liegt die Datei dort, wo ein Nutzer sie sucht?
+#
+# Bei v1.2.0 lautete die Antwort nein, und niemand hat gefragt. Es gab zwei
+# Objekte zum selben Tag — den Entwurf mit dem Zip und ein von Hand angelegtes,
+# veröffentlichtes Release ohne Asset und mit der Repo-Beschreibung als Text. Wer
+# dem Tag folgte, bekam die automatischen „Source code"-Archive, also Quellcode
+# ohne `build/`; der Figma-Import scheitert daran. Der Release-Workflow war die
+# ganze Zeit grün.
+#
+# Dieser Workflow hängt deshalb am Ereignis, an dem die Antwort entsteht. Er
+# prüft nicht Metadaten, sondern **lädt das Asset aus dem Release und packt es
+# aus** — Kein grüner Haken ohne Nachweis, dass die Datei installierbar ist.
+#
+# `edited` ist mit dabei, weil ein Release nach der Veröffentlichung noch
+# verändert wird: ein nachgereichter Text, ein ersetztes Asset. Genau in diesem
+# Fenster ist der Fehler von v1.2.0 entstanden.
+
+on:
+  release:
+    types: [published, edited]
+  # Von Hand gegen einen beliebigen Tag laufbar — damit sich der Zustand eines
+  # schon veröffentlichten Release jederzeit nachprüfen lässt, ohne ihn zu
+  # verändern. So ist der Vorfall von v1.2.0 reproduziert worden.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag, dessen Release geprüft wird (z. B. v1.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Was liegt am Tag?
+    runs-on: ubuntu-latest
+    steps:
+      - name: Tag bestimmen
+        id: tag
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$tag" ]; then
+            echo "::error title=Tag::Kein Tag bestimmbar."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # Ausgecheckt wird der TAG, nicht der Standard-Branch. Der Prüfer liest die
+      # Version aus `package.json` und den Download-Hinweis aus `RELEASE.md`; auf
+      # `main` stehen dort die Werte der *nächsten* Version, und die Prüfung
+      # suchte dann nach einem Asset, das es nie geben sollte.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      # Kein `npm ci`: der Prüfer braucht nur node, gh und unzip. Weniger
+      # bewegliche Teile heißt hier auch, dass er nicht an einem Lockfile-Problem
+      # scheitert und dann „übersprungen" meldet — der Ausfallmodus, der das
+      # Eval-Gate monatelang stillgelegt hat.
+      - name: Prüfen, was am Tag liegt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-published-release.mjs "${{ steps.tag.outputs.tag }}"
+
+      - name: Ergebnis in die Zusammenfassung
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          {
+            echo "### Release $tag"
+            echo ""
+            if node scripts/check-published-release.mjs "$tag" > /tmp/verify.log 2>&1; then
+              echo '```'
+              cat /tmp/verify.log
+              echo '```'
+            else
+              echo "**Die Prüfung ist rot.** Solange das offen ist, findet eine Nutzerin am Tag"
+              echo "kein installierbares Plugin — sie bekommt die automatischen Source-Archive."
+              echo ""
+              echo '```'
+              cat /tmp/verify.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
