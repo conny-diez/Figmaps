@@ -107,8 +107,88 @@ npm run visual-check                              # die zwei Prüffälle als Bil
 npm run side-effects -- --before 0.3 --after 0.5  # Feuerraten vorher/nachher
 ```
 
-Die `id` in `manifest.json` ist ein lokaler Platzhalter. Beim Publishing in die
-Community vergibt Figma eine echte ID, die dann eingetragen wird.
+Die `id` in `manifest.json` ist ein lokaler Platzhalter. Beim Publishing vergibt
+Figma eine echte ID, die dann eingetragen wird.
+
+### Welcher Weg wofür da ist
+
+**Es gibt drei Wege, wie dieses Plugin in ein Figma kommt, und sie sind nicht
+gleichwertig.** Ohne diese Tabelle pflegen wir in vier Wochen zwei Verteilwege
+und wissen nicht mehr, welcher der verbindliche ist.
+
+| Weg | für wen | Stand |
+|---|---|---|
+| **Privates Publishing in der Organisation** | **alle Nutzer** — Designerinnen, Reviewer, jeder ohne Repo-Zugriff | **der verbindliche Weg**, sobald er steht. Noch offen, siehe unten |
+| **Release-Zip am Tag** | Entwicklung, Archiv, Notlage | steht (`v1.2.0`), bleibt — aber **nicht** der Weg, den man Kollegen nennt |
+| **Dev-Import aus dem Worktree** | nur Entwicklung, nur lokal | steht (`npm run watch`) |
+
+**Warum der GitHub-Weg als Verteilweg nicht taugt, und zwar unabhängig davon,
+wie gut er geprüft ist.** Das Repo ist privat. Wer keinen Zugriff hat, sieht das
+Release nicht, bekommt auf jede Asset-URL 404 und kann das Zip nicht laden — und
+Designerinnen haben typischerweise keinen Repo-Zugriff. Dazu kommt alles, was
+der Weg an Handgriffen verlangt: das richtige Archiv erwischen (die beiden
+automatischen „Source code"-Archive sind Quellcode ohne `build/`), entpacken, an
+einen dauerhaften Ort legen, „Import plugin from manifest…" finden, die richtige
+`manifest.json` wählen. Jeder dieser Handgriffe ist eine Stelle, an der es
+scheitert, und einer davon hat schon gescheitert.
+
+**Privates Publishing löst das vollständig.** Das Plugin erscheint in Figma unter
+den Plugins der Organisation, Installation ist ein Klick, Aktualisierung
+passiert ohne Zutun. Damit entfallen Zip, Manifest-Import, Archiv-Verwechslung
+und der Release-Prüfer **als Verteilweg**.
+
+**Was bleibt, und warum.** Der Tag-Release bleibt als **Archiv**: er ist der
+einzige Ort, an dem ein geprüfter, reproduzierbarer Stand pro Version liegt —
+gebaut aus einem Commit, mit `check-release.mjs` gegen die Ortsprior-Nutzdaten
+geprüft, entpackt nachgemessen. Das ist wertvoll, wenn eine Frage lautet „was
+genau war in 1.2.0 drin", und es ist der Rückfallweg, wenn Publishing einmal
+nicht geht. `release-verify.yml` bewacht weiterhin, dass dieses Archiv nicht
+still leer ist — dieselbe Prüfung, anderer Zweck.
+
+**Die Regel, damit es nicht wieder auseinanderläuft:** einem Kollegen wird
+**nur** der Publishing-Weg genannt. Steht das private Publishing, wird der
+Dev-Import aus dem Worktree in Figma entfernt — sonst stehen zwei Einträge
+namens „Figmaps" mit derselben Plugin-Id im Entwicklungs-Menü, und niemand
+sieht, welcher gerade läuft. Genau das war beim Start dieses Branches der Fall
+(einer aus `~/Downloads/figmaps-1.2.0`, einer aus dem Worktree).
+
+#### Was für das private Publishing noch fehlt
+
+Geprüft gegen Figmas Angaben zum Publish-Dialog (Stand August 2026) und gegen
+das, was im Repo liegt.
+
+| Feld | verlangt | im Repo | fehlt |
+|---|---|---|---|
+| Name | — | `Figmaps` | — |
+| **Icon** | empfohlen **128 × 128 px** | nur `assets/logo.svg` | **der Export.** Kein PNG in dieser Größe ist versioniert |
+| **Thumbnail / Cover** | empfohlen **1920 × 1080 px** | nichts in der Nähe (größtes Bild: 1648 × 710, eine Messgrafik) | **ganz** |
+| **Tagline** | ein Satz | nirgends | **ganz** — und es ist nicht die Repo-Beschreibung, siehe unten |
+| **Beschreibung** | Fließtext | nirgends als veröffentlichbarer Text | **ganz.** `RELEASE.md` sind Release-Notizen, die README hat über 4.000 Zeilen |
+| Kategorie | eine auswählen | — | Entscheidung |
+| **Support-Kontakt** | **Pflicht** | — | Entscheidung. **Nicht** „Issues im Repo" — genau die Leute, für die wir das machen, kommen dort nicht hin |
+| Carousel-Bilder | optional, bis 9 | die Messgrafiken unter `assets/messungen/` wären Kandidaten | — |
+| Playground-Datei | optional | — | — |
+| Sicherheitsangaben | optional | `networkAccess: none` im Manifest | eine wahre und starke Aussage, die man machen sollte |
+| Plugin-Id | Figma vergibt sie beim Publishing | Platzhalter `1000000000000000001` | muss danach in `manifest.json` zurückwandern |
+
+Zwei Punkte, die nicht auf der Liste stehen und trotzdem entscheiden:
+
+- **Der Plan.** Privates Publishing gibt es laut Figma nur in den Plänen
+  **Organization und Enterprise**. Steht das nicht, ist der ganze Weg zu.
+- **Keine Prüfung durch Figma.** „Figma doesn't review any plugins you choose to
+  share privately within an organization." Das ist bequem und verschiebt die
+  Verantwortung vollständig zu uns: was hier an Text steht, steht ungeprüft vor
+  Kollegen.
+
+**Und ein Befund, der hierher gehört, weil er dieselbe Klasse ist wie der Rest
+dieses Kapitels.** Die Repo-Beschreibung — die im veröffentlichten Release als
+Text stand — lautet „A Figma Plugin for creating Heatmaps, Focusmaps and
+Contrastmaps". Das ist die Reihenfolge von 1.1: Vorhersage zuerst. Seit 1.2 ist
+sie falsch, und diese README begründet an anderer Stelle ausführlich, warum: wer
+das Plugin öffnet, bekommt zuerst eine **Kontrastprüfung nach WCAG** und
+zusätzlich eine Aufmerksamkeitsvorhersage, nicht umgekehrt. Tagline und
+Beschreibung sind neu zu schreiben und nicht aus dem Vorhandenen zu übernehmen —
+sonst tragen wir die alte Reihenfolge in den Store.
 
 ### Ein Release bauen
 
@@ -447,7 +527,8 @@ eval/                      Epic A — läuft offline in Node
 └─ fixtures/               nicht im Repo — siehe fixtures/README.md
 
 assets/
-└─ logo.svg                Produkt-Logo (Quelle für Panel-Mark und Store-Icon)
+└─ logo.svg                Produkt-Logo. Quelle für die Panel-Mark; der
+                           128er-Export fürs Publishing fehlt noch
 ```
 
 ### Ablauf eines Laufs
@@ -4151,8 +4232,10 @@ Zusätzlich für 1.1 (M4, M5):
 ## Offene Entscheidungen (PRD §11)
 
 1. ~~**Plugin-Name**~~ — entschieden: `Figmaps`. Das Logo liegt als
-   `assets/logo.svg` und wird beim Community-Publishing als Plugin-Icon
-   hochgeladen (die `manifest.json` hat kein Icon-Feld).
+   `assets/logo.svg` (die `manifest.json` hat kein Icon-Feld). **Offen bleibt der
+   Export:** Figma will 128 × 128 px, und kein PNG dieser Größe ist versioniert.
+   Ebenso fehlen Cover (1920 × 1080), Tagline und Beschreibung — siehe
+   „Was für das private Publishing noch fehlt".
 2. **`positionPrior` für RTL** — implementiert als Schalter
    `ENGINE_CONFIG.prior.mirrorHorizontally` (Default `false` = westliche
    Leserichtung). Noch nicht im UI exponiert, weil die Selection allein die
