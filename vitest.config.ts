@@ -8,6 +8,6 @@ export default defineConfig({
   define: { __PACKAGE_VERSION__: JSON.stringify(packageVersion) },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'eval/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'eval/**/*.test.ts', 'scripts/**/*.test.ts'],
   },
 })

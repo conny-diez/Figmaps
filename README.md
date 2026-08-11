@@ -310,57 +310,77 @@ nicht gepusht.
 > mit Mustern, die es geben muss. Jede Zahl unten steht hinter einem Lauf, der
 > `Figmaps` (75 Commits) und `UEyes` (73) findet.
 
-### 1. Git-History
+### 1. Git-History — und der Unterschied zu HEAD
 
-| Muster | Dateiinhalte | Dateinamen | Commit-Messages |
-|---|---|---|---|
-| `meinestadt` | **76 Commits, 7 Dateien**, 16.172 Zeilen | keine | keine |
-| `meine stadt` / `meine-stadt` | keine | keine | keine |
-| `Meine Jobs` | **22 Commits, 1 Datei**, 2 Zeilen | keine | keine |
-| `repository.meinestadt.de` | **76 Commits, 2 Dateien**, 16.035 Zeilen | keine | keine |
-| `#FFDD00` | **75 Commits, 3 Dateien**, 225 Zeilen | keine | keine |
-| `#FFE100` | keine | keine | keine |
+**Die beiden Fragen sind verschieden, und die Antworten fallen weit auseinander.**
 
-**Nichts davon steht in einer Commit-Message oder einem Dateinamen.** Alles
-steht in Dateiinhalten, und der Löwenanteil ist `package-lock.json` (Punkt 3).
+#### HEAD ist sauber, bis auf zwei Stellen
 
-Die Fundstellen außerhalb des Lockfiles, vollständig:
+Die Bereinigung von 1.2 hat gehalten. Auf `main` enthält **keine** der Dateien,
+die damals angefasst wurden, noch ein Vorkommen:
 
-| Datei | was dort steht |
+| Datei | HEAD |
 |---|---|
-| `README.md` | „meinestadt-Screens" als Bezeichnung für das geplante First-Click-Set (Set 2), dazu zweimal `repository.meinestadt.de` im Klartext in der Lockfile-Begründung |
-| `eval/fixtures/README.md` | Set 2 = „10 meinestadt-Screens mit First-Click-Test (Lyssna oder Maze, ca. 50 Teilnehmer)"; dazu die offene Lizenzfrage „für die interne Verwendung bei meinestadt.de" |
-| `NOTICE.md` | dreimal derselbe Satz: „…meinestadt.de gelten dieselben CC-BY-Pflichten" |
-| `src/engine/config.ts` | „**Bei meinestadt.de sind sämtliche…**" — die Begründung, warum die Stichwortliste deutsch ist |
-| `src/figma/__tests__/traverse.test.ts` | „the whole library at meinestadt.de is German" |
-| `eval/fixtures-cli.ts` | „die Lizenzfrage für die interne Nutzung bei meinestadt.de ist laut…" |
-| `src/figma/__tests__/place.test.ts` | **`name: 'Meine Jobs - beworben'`** — ein interner Produkt-/Seitenname als Ebenenname in einer Test-Fixture. Zweimal, in 22 Commits |
+| `NOTICE.md` | sauber |
+| `src/engine/config.ts` | sauber |
+| `src/figma/__tests__/traverse.test.ts` | sauber |
+| `src/figma/__tests__/place.test.ts` | sauber — der interne Produktname als Fixture-Ebenenname ist weg |
+| `eval/fixtures/README.md` | sauber |
+| `eval/fixtures-cli.ts` | sauber |
+| `README.md` | sauber auf `main` (0 Zeilen für jedes Muster) |
 
-**Bewertung.** Keine Zugangsdaten, keine Tokens, keine Kundendaten, keine
-internen URLs außer der Registry. Was sichtbar würde, ist von anderer Art:
-**dass dieses Werkzeug bei meinestadt.de entstanden ist, für welches Produkt,
-mit welchem Forschungsplan** (First-Click-Test mit 50 Teilnehmern über Lyssna
-oder Maze), und dass die Lizenzfrage zu UEyes intern noch offen ist. Das ist
-Kontext über Vorhaben und Rechtsstand, nicht über Technik — und ob er nach
-außen darf, ist keine technische Entscheidung.
+Übrig auf HEAD sind genau zwei:
+
+1. **`package-lock.json`** — 211 Adressen der internen Registry. Siehe Punkt 3;
+   seit 1.3 behoben.
+2. **`assets/logo.svg`, `assets/logo-light.svg`, `src/ui/logo.tsx`** — die
+   Markenfarbe, und über `logo.tsx` auch in `build/ui.html`, also im Release-Zip
+   und in jedem veröffentlichten Plugin.
+
+#### Die History ist es nicht
+
+| Muster | Dateiinhalte in 77 Commits | Dateinamen | Commit-Messages |
+|---|---|---|---|
+| Firmenname | 76 Commits, 7 Dateien | keine | **keine** |
+| Firmenname mit Leerzeichen | keine | keine | keine |
+| interner Produktname | 22 Commits, 1 Datei | keine | keine |
+| interner Registry-Host | 76 Commits, 2 Dateien | keine | keine |
+| Markenfarbe (primär) | 75 Commits, 3 Dateien | keine | keine |
+| Markenfarbe (sekundär) | keine | keine | keine |
+
+Die sieben Dateien sind dieselben wie oben. **Was in HEAD entfernt wurde, steht
+in der History weiter** — und aus ihr lässt es sich nicht durch einen Commit
+nehmen, sondern nur durch ein Umschreiben aller Commits mit neuen SHAs. Deshalb
+Punkt 6.
+
+Inhaltlich sichtbar würde: dass dieses Werkzeug in einem Unternehmen entstanden
+ist, für welches Produkt, mit welchem Forschungsplan (First-Click-Test, ~50
+Teilnehmer über Lyssna oder Maze), und dass die Lizenzfrage zu UEyes intern
+offen war. Keine Zugangsdaten, keine Tokens, keine Kundendaten.
+
+> **Die konkreten Zeichenketten stehen hier nicht.** Dieser Abschnitt beschreibt,
+> was bei einer Veröffentlichung sichtbar würde — er darf sie nicht selbst
+> sichtbar machen. Beim ersten Schreiben tat er genau das: die erste Fassung
+> nannte Host, Produktnamen und Markenfarbe im Klartext und war damit die
+> einzige Datei auf HEAD, die alle drei Muster wieder enthielt. Aufgefallen ist
+> das nur, weil die Suche nach HEAD getrennt von der History wiederholt wurde.
+> Die Werte liegen im Ticket, nicht im Repo.
 
 Zwei Nebenbefunde:
 
-- **Autorschaft.** Alle 77 Commits stehen auf
-  `conny-diez <constantin.conny@gmail.com>`, also einer privaten Adresse, nicht
-  der dienstlichen. Das wird mit öffentlich und ist nicht mehr rückholbar.
-- **Elf Branches.** Öffentlich würden auch `Redesign`, `UI-Anpassungen`,
-  `Vergleichsfixes`, `prd-version-1-1`, `rename-plugin-to-figmaps`,
-  `feature/2026-08-09` — Zwischenstände, die niemand mehr liest. Ein Aufräumen
-  vorher reduziert die Fläche, ist aber kein Sicherheitsthema.
-- **Gelöschte Branches.** Der Branch `v1.2` ist entfernt; seine Objekte sind
-  nicht mehr über einen Ref erreichbar, können aber serverseitig bis zur
-  Garbage Collection per SHA noch abrufbar sein. Wer keinen SHA kennt, findet
-  sie nicht.
+- **Autorschaft.** Alle 77 Commits stehen auf einer privaten Mailadresse, nicht
+  der dienstlichen. Das wird mit öffentlich und ist nicht rückholbar.
+- **Branches.** Von elf Remote-Branches sind sechs veraltete entfernt (alle über
+  PRs #1–#6 squash-gemergt, Inhalt in `main`, PR-Diffs bleiben abrufbar). Übrig
+  sind fünf. `docs/1.3-prior-fallback`, `docs/release-1.2` und `release/1.2.0`
+  wären nach derselben Prüfung ebenfalls entbehrlich.
+- **Gelöschte Branches.** Ihre Objekte sind über keinen Ref mehr erreichbar,
+  können aber bis zur serverseitigen Garbage Collection per SHA abrufbar sein.
+  Wer keinen SHA kennt, findet sie nicht.
 
 ### 2. Versionierte Bilder
 
-**Kein einziges Bild zeigt ein reales meinestadt-Design.** Nachgesehen, nicht
+**Kein einziges Bild zeigt ein reales Produktdesign des Unternehmens.** Nachgesehen, nicht
 angenommen — jedes Bild geöffnet, dazu die Pixelfarben ausgezählt.
 
 | Datei | zeigt | real oder Nachbau |
@@ -375,10 +395,10 @@ angenommen — jedes Bild geöffnet, dazu die Pixelfarben ausgezählt.
 Alle sechs sind Ausgaben von `eval/onboarding.ts` bzw. `eval/constructed.ts`:
 Text als abstrakte Glyphenbalken, Kacheln als Farbflächen, Beschriftungen
 gattungstypisch erfunden. **Markenfarbe in keinem einzigen** — ausgezählt über
-alle Pixel; das Gelb der Testframes ist `#FFC800`, nicht `#FFDD00`.
+alle Pixel; das Gelb der Testframes ist `#FFC800` und nicht die Markenfarbe.
 
 **Aber:** `assets/logo.svg`, `assets/logo-light.svg` und `src/ui/logo.tsx`
-tragen `#FFDD00`, und über `logo.tsx` landet es in `build/ui.html` — also im
+tragen die Markenfarbe, und über `logo.tsx` landet sie in `build/ui.html` — also im
 Release-Zip und in jedem veröffentlichten Plugin. Ob das Logo die Markenfarbe
 tragen darf, wenn das Repo öffentlich ist und das Plugin außerhalb der
 Organisation erscheint, ist eine Marken- und keine Code-Frage.
@@ -394,14 +414,15 @@ Ground Truth und keine Screens sind. Siehe Punkt 5.
 Alle 211 `resolved`-Felder zeigen auf **einen** Host:
 
 ```
-https://repository.meinestadt.de:443/artifactory/api/npm/remote-npmjs.org-repo/@esbuild/darwin-arm64/-/darwin-arm64-0.28.1.tgz
+https://<interner-host>:443/artifactory/api/npm/<proxy-repo>/@esbuild/darwin-arm64/-/darwin-arm64-0.28.1.tgz
 ```
 
-Ablesbar wäre daraus:
+Ablesbar wäre daraus (die echten Werte im Ticket, nicht hier — siehe die Notiz
+unter Punkt 1):
 
 | | |
 |---|---|
-| Hostname | `repository.meinestadt.de`, **mit explizitem Port** `:443` |
+| Hostname | vollständig, **mit explizitem Port** `:443` |
 | Produkt | JFrog Artifactory (aus `/artifactory/api/…`) |
 | API-Pfadlayout | `/artifactory/api/npm/<repo>/<paket>/-/<datei>` |
 | interne Repo-Benennung | `remote-npmjs.org-repo` — die Namenskonvention für Proxy-Repos |
@@ -417,9 +438,11 @@ nicht nennt — nachgemessen, nicht behauptet:**
 | **A — `resolved` entfernen** (`scripts/ci-lockfile.mjs` auf die eingecheckte Datei) | **0** | 211, unverändert | **0 von 211 abweichend** | 163 Pakete, erfolgreich gegen die öffentliche Registry |
 | **B — Lockfile neu erzeugen** gegen `registry.npmjs.org` | 0 | 211, unverändert | **38 Versionen wandern** (u. a. esbuild 0.28.1 → 0.28.2) | — |
 
-**A ist die Antwort.** Das Skript, das heute nur auf dem Runner läuft, auf die
-eingecheckte Datei anzuwenden, entfernt genau die Bezugsquelle und lässt jede
-Zusicherung stehen: `integrity` bleibt in allen 211 Einträgen und wird von
+**A ist umgesetzt** (1.3). Die 211 Adressen sind aus der eingecheckten Datei
+entfernt, `scripts/ci-lockfile.mjs --check` bewacht die Invariante im Test und in
+CI, und `scripts/__tests__/lockfile.test.ts` belegt beide Richtungen — dass die
+echte Datei besteht und dass die Prüfung an einer wiedereingeschleppten Adresse
+fehlschlägt. Entfernt wurde genau die Bezugsquelle, jede Zusicherung steht: `integrity` bleibt in allen 211 Einträgen und wird von
 `npm ci` geprüft. Ein Paket mit falschem Inhalt schlägt weiterhin fehl. Die
 Installation ist danach **exakt** dieselbe — dieselben Pakete, dieselben
 Versionen, dieselben Hashes.
@@ -430,8 +453,8 @@ gleicher Version wichen keine Hashes ab (also kein Manipulationssignal), aber
 ein Abhängigkeits-Update gehört in einen eigenen, gewollten Schritt und nicht in
 eine Offenlegungsmaßnahme.
 
-Für Security zusammengefasst: der Host steht in 76 Commits und lässt sich nicht
-durch eine Änderung an HEAD aus der History nehmen — das erforderte ein
+Für Security zusammengefasst: HEAD ist bereinigt, aber der Host steht in 76
+Commits und lässt sich nicht durch eine Änderung an HEAD aus der History nehmen — das erforderte ein
 Umschreiben aller Commits (`filter-repo`) und damit neue SHAs für alles.
 Alternativ bleibt das Repo privat, oder es wird mit neuer History öffentlich
 gemacht.
@@ -481,18 +504,114 @@ Die bessere Variante wäre, die **Ground Truth** (Heatmaps und Fixmaps) zu
 behalten und nur die `images/` zu ersetzen; dann fehlt dem Gate allerdings die
 Eingabe. Beides ist eine Abwägung, keine Lösung.
 
+### 6. Frisches öffentliches Repo statt History-Rewrite — Skizze
+
+**Warum kein Rewrite.** 76 von 77 Commits sind betroffen. `git filter-repo`
+erzeugt für jeden einen neuen SHA; damit zeigt der Tag `v1.2.0` ins Leere, das
+veröffentlichte Release verliert seinen Bezug, jeder Link auf einen Commit in
+einem PR oder Ticket bricht, und die vorhandenen Klone werden inkompatibel. Der
+Aufwand steht in keinem Verhältnis zu 27 Commits alter Zwischenstände.
+
+**Nichts davon ist angelegt.** Das Folgende ist die Skizze zur Entscheidung.
+
+#### Was mitwandert, was zurückbleibt
+
+| | |
+|---|---|
+| **wandert** | `src/`, `eval/` (ohne `fixtures/`), `scripts/`, `assets/fonts/`, `assets/messungen/`, `manifest.json`, `package.json`, das bereinigte `package-lock.json`, `.github/workflows/`, `README.md`, `NOTICE.md`, `RELEASE.md`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.js` |
+| **bleibt** | die 77 Commits samt Herkunft; die 40 UEyes-Screenshots (Punkt 5); dieser Abschnitt und Punkt 1–5, die von Interna sprechen; die private Autorenadresse |
+| **entscheidungsabhängig** | `assets/logo.svg`, `assets/logo-light.svg`, `src/ui/logo.tsx` — solange die Markenfarbe drin ist, wandert das Logo nicht mit |
+
+**Ein Initial-Commit, keine gefilterte History.** Ein „Initial public release,
+extrahiert aus interner Entwicklung" ist ehrlich und billig. Eine kuratierte
+Teil-History wäre teuer, fehleranfällig und würde die Herkunft ohnehin nur
+verwischen statt entfernen. Die Autorenidentität wird dabei einmal bewusst
+gesetzt (`git -c user.email=…`), nicht aus der lokalen Konfiguration übernommen.
+
+#### Tag und Release
+
+Im öffentlichen Repo neu: Tag `v1.2.0` auf dem Initial-Commit, Release dazu, Zip
+aus einem Build dieses Stands, Text aus `RELEASE.md`. `scripts/check-published-release.mjs`
+prüft das dort genauso — es fragt nach dem Objekt zum Tag, nicht nach einer
+History.
+
+**Das bestehende private Release bleibt und wird zum internen Archiv.** Damit
+gibt es zwei Archive zum selben Tag, und das ist genau die Konstellation, aus
+der der Vorfall bei v1.2.0 entstand — nur diesmal absichtlich. Es braucht
+deshalb eine Regel und keinen guten Willen: **verbindlich ist das öffentliche**,
+das private trägt einen Hinweis im Release-Text, dass es das interne Archiv ist.
+Ein Zip zurückzuziehen, das jemand geladen hat, geht nicht; ein Release
+umzubenennen schon.
+
+#### CI ohne die 40 Gate-Bilder
+
+Die gute Nachricht steht schon im Repo: **das Contrastmap-Gate braucht keine
+Fixtures.** Sein Korpus sind 20 Frames aus `eval/onboarding.ts`,
+`eval/constructed.ts` und `eval/overlap.ts` — Code, kein Datensatz. Es läuft
+öffentlich unverändert.
+
+| Job | öffentlich | Grund |
+|---|---|---|
+| `verify` (Typecheck, Tests, Build, Lint) | **läuft** | keine Fixtures nötig |
+| `contrast-gate` | **läuft** | Korpus ist Code |
+| `release` / `release-verify` | **läuft** | — |
+| `eval-gate` (UEyes, 40 Bilder) | **läuft nicht** | die Bilder wandern nicht mit |
+
+**Der Job wird im öffentlichen Repo entfernt, nicht übersprungen.** Ein Job, der
+„skipped" meldet, weil Daten fehlen, ist genau der Ausfall, der das Eval-Gate
+monatelang stillgelegt hat — ein grüner Haken ohne Messung. Stattdessen gehört in
+die öffentliche README ein Satz: die Vorhersagegüte wird intern gegen UEyes
+bewacht, öffentlich läuft die Regressionsprüfung der Messung. Das ist weniger,
+aber es ist wahr.
+
+#### Synchronhalten — der Punkt, an dem es üblicherweise scheitert
+
+**Zwei Repos mit denselben Dateien laufen auseinander, sobald jemand in das
+falsche committet, und nichts merkt es.** Ein Mirror-Skript hilft nicht: es
+verschiebt das Problem auf die Frage, wer wann spiegelt.
+
+**Die Richtung umdrehen ist die Lösung.** Nicht „intern ist die Quelle, öffentlich
+ein Abbild", sondern:
+
+| Repo | Inhalt |
+|---|---|
+| **öffentlich** | **die Quelle der Wahrheit.** Code, Tests, Harness, Workflows, Doku |
+| **privat** | nur, was nicht hinaus darf: `eval/fixtures/` (die 40 Bilder + Ground Truth), interne Notizen, die Herkunfts-History als Archiv |
+
+Damit gibt es **keine Datei, die in beiden liegt**, und nichts kann divergieren.
+Die private Seite wird ein kleines Repo, das die Fixtures beisteuert — als
+Submodul, als Actions-Secret mit einer Download-Adresse, oder von Hand für einen
+Messlauf. Der Eval-Gate-Job läuft dann dort, gegen den öffentlichen Code als
+Abhängigkeit.
+
+**Falls es trotzdem zwei Kopien derselben Dateien geben soll**, dann nicht auf
+Zuruf: eine Prüfung, die die Abweichung findet, statt Vertrauen. Konkret ein Job
+im privaten Repo, der den öffentlichen Stand holt und die Hashes der gemeinsamen
+Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster wie
+überall in diesem Repo: kein grüner Haken ohne Nachweis.
+
+#### Reihenfolge
+
+1. Entscheidungen aus Punkt 1, 4, 5 und zur Markenfarbe. **Ohne sie nichts anlegen.**
+2. Öffentliches Repo anlegen, Initial-Commit aus dem bereinigten Stand.
+3. Tag `v1.2.0`, Release, Zip — dann `check-published-release.mjs`.
+4. `eval-gate.yml` im öffentlichen Repo entfernen, README um den Satz dazu ergänzen.
+5. Privates Repo auf Fixtures und Archiv zurückschneiden, Release-Text als
+   internes Archiv kennzeichnen.
+6. Erst danach das private Repo aus der Verteilung nehmen.
+
 ### Zusammenfassung: was blockiert, was nur aufzuräumen ist
 
 | Punkt | Art | Blockiert? |
 |---|---|---|
-| Herkunft `meinestadt.de` in 7 Dateien, 76 Commits | Freigabe-Entscheidung | **ja, Entscheidung nötig** |
-| `Meine Jobs` als Fixture-Ebenenname | interner Produktname | **ja** — aber in HEAD in einer Zeile behebbar, nicht in der History |
-| `repository.meinestadt.de` in 76 Commits | Security | **ja** — Variante A behebt HEAD, History nur per Rewrite |
-| `#FFDD00` in Logo und ausgeliefertem Bundle | Marke | **ja, Entscheidung nötig** |
+| Herkunft in 7 Dateien der History (HEAD sauber) | Freigabe-Entscheidung | **ja, Entscheidung nötig** |
+| interner Produktname als Fixture-Ebenenname | nur History — in HEAD bereits entfernt | **ja**, nur per Rewrite oder frisches Repo |
+| interner Registry-Host in 76 Commits | Security | **HEAD behoben (1.3)**, History nur per Rewrite oder frisches Repo |
+| Markenfarbe in Logo und ausgeliefertem Bundle | Marke | **ja, Entscheidung nötig** |
 | Keine `LICENSE` | Recht | **ja, Entscheidung nötig** |
 | 40 UEyes-Screenshots Dritter | Recht | **ja, Security-Vorlage** |
 | Private Autoren-Adresse in 77 Commits | persönlich | Hinweis |
-| Elf Branches, davon sechs veraltet | Aufräumen | nein |
+| Branches | Aufräumen | **erledigt** — sechs entfernt, fünf übrig |
 | Bilder in `assets/messungen/` | — | nein, alle neutral |
 | UEyes-Nennung | — | nein, vollständig |
 
@@ -4317,6 +4436,47 @@ Der Rest des 5-Sekunden-Budgets aus NFR-1 entfällt auf PNG-Decode, Compositing
 und PNG-Encode — alles Canvas-2D und GPU-beschleunigt. Zwischen den Schritten
 wird per `setTimeout(0)` an den Eventloop zurückgegeben, damit das Figma-UI nicht
 blockiert (NFR-3).
+
+---
+
+## Praxis: Prüfungen, die etwas finden können
+
+### Eine Abfrage, die nichts findet, ist noch kein Beleg
+
+**Regel: jede Abfrage, deren Ergebnis „nichts gefunden" ist, braucht einen
+Nachweis, dass sie etwas finden KANN.** Ein Muster, das vorhanden sein muss, mit
+durch dieselbe Abfrage — findet sie das nicht, ist das Ergebnis kein Ergebnis.
+
+Das ist dieselbe Regel wie „das Gate muss rot werden können", angewendet auf
+Abfragen statt auf Prüfungen. Sie steht hier, weil sie in diesem Projekt
+**sechsmal** gebraucht wurde:
+
+| # | Wo | Der Ausfall |
+|---|---|---|
+| 1 | Eval-Gate (A-7) | dreimal grün, ohne zu messen: erst roter Vorlauf, dann leerer Cache, dann die eingefrorene Referenz statt der ausgelieferten Engine |
+| 2 | `cold-fold` | Unit-Test grün, Regel in der Pipeline wirkungslos — der Test rief sie direkt auf, die Pipeline fütterte sie mit etwas anderem |
+| 3 | Kontrastmessung, Textfarbe | jeder Knoten übersprungen, alle Tests grün — den Fixtures fehlte `fillLuminance` |
+| 4 | Kontrastmessung, Kantenglättung | jeder Wert falsch, alle Tests grün — die Fixtures zeichneten hartkantige Balken |
+| 5 | Release v1.2.0 | Workflow grün, am Tag lag kein installierbares Zip — die Prüfung konnte die Frage zu ihrem Zeitpunkt nicht stellen |
+| 6 | Die Suche für diesen Abschnitt | „null Treffer" für **jedes** Muster, auch für `Figmaps` — zsh trennt eine unquotierte Variable nicht an Zeilenumbrüchen, `git grep` bekam 77 SHAs als ein Argument, der Fehler lief nach `/dev/null` |
+
+Nummer 6 ist der billigste Fall und der lehrreichste: das Ergebnis war eine
+vollständige Entwarnung zu einer Frage, an der eine Veröffentlichungsentscheidung
+hängt. Nichts daran sah falsch aus. Gefunden wurde es ausschließlich, weil die
+Abfrage vorher gegen `Figmaps` und `UEyes` laufen musste und dort ebenfalls null
+lieferte.
+
+**Was daraus folgt, praktisch:**
+
+- Eine Suche über Commits, Dateien oder eine API beginnt mit einem Muster, dessen
+  Treffer feststeht. Erst danach das gesuchte Muster.
+- `2>/dev/null` ist bei einer Suche, deren Ergebnis eine Entscheidung trägt, ein
+  Fehler. Es unterdrückt genau die Meldung, die den kaputten Aufruf verrät.
+- Zählungen ausweisen, nicht nur Listen: „0 von 211" ist überprüfbar, „keine
+  Auffälligkeiten" nicht.
+- Bei einer Prüfung im CI: einen Lauf mitliefern, der scheitern **muss**. Das
+  Eval-Gate, das Contrastmap-Gate und die Lockfile-Prüfung tun das; jede neue
+  Prüfung tut es auch.
 
 ---
 

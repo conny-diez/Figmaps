@@ -39,7 +39,11 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: node scripts/ci-lockfile.mjs
+      # Prüfen statt reparieren. Die eingecheckte Datei ist seit 1.3 frei von
+      # `resolved`-Adressen; kommt eine zurück (ein `npm install` auf einer
+      # Maschine mit interner Registry genügt), soll das auffallen und nicht
+      # still behoben werden.
+      - run: node scripts/ci-lockfile.mjs --check
       - run: npm ci
 
       # Ein Release ist kein Ort für ungeprüften Code. Derselbe Lauf wie in CI,
