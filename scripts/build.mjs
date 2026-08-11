@@ -103,13 +103,50 @@ const uiOptions = {
 }
 
 /**
+ * Kommentare weg, Code unverändert — damit der Realm-Wächter Aussagen ÜBER
+ * `figma.*` nicht für Aufrufe hält.
+ *
+ * WARUM DAS NÖTIG IST. Der Wächter grept über den Bundle-Text. Im
+ * Produktionsbuild sind die Kommentare wegminifiziert und er sieht nur Code; im
+ * **Dev**-Build stehen sie drin, und dieses Repo dokumentiert die
+ * Realm-Trennung ausgerechnet in Kommentaren, die `figma.createImage` und
+ * `figma.mixed` beim Namen nennen. Ergebnis: jeder `--dev`-Build meldete eine
+ * Verletzung, die es nicht gab, und setzte `exitCode = 1`.
+ *
+ * Das ist die Fehlerrichtung, die dieses Projekt am teuersten bezahlt hat — eine
+ * Prüfung, die etwas anderes ansieht als das, was sie prüfen soll. Hier fiel sie
+ * nach „falsch rot" aus, was man sieht; die gefährliche Richtung wäre „falsch
+ * grün" gewesen.
+ *
+ * `minifyWhitespace` statt eines eigenen Kommentar-Entferners: esbuild kennt die
+ * Grammatik. Ein Regex-Stripper würde an einem `//` in einem String oder einer
+ * Regex-Literal scheitern — und zwar nach falsch grün.
+ *
+ * WAS BLEIBT: Zeichenketten werden nicht entfernt, also meldet der Wächter
+ * weiter einen Treffer, wenn irgendwo im iframe-Code `"figma.etwas"` als String
+ * steht (etwa in einer Fehlermeldung). Nachgemessen: heute kommt das nicht vor,
+ * und die Fehlerrichtung ist die sichere — falsch rot sieht man beim nächsten
+ * Build, falsch grün erst in Figma. Ein AST-Lauf wäre die vollständige Lösung
+ * und ist es für einen Fall, den es nicht gibt, nicht wert.
+ *
+ * Geprüft wurde beides: ein echter `figma.createImage(1)` im iframe-Bundle wird
+ * erkannt, auch hinter einem Kommentar derselben Form versteckt.
+ */
+async function withoutComments(source) {
+  const result = await esbuild.transform(source, { minifyWhitespace: true, loader: 'js' })
+  return result.code
+}
+
+/**
  * Guards the realm split of PRD §6.3 — the single most common failure mode in
  * this project. The main thread has no DOM; the iframe has no `figma`.
  */
 async function assertRealmSeparation() {
-  const main = await readFile('build/main.js', 'utf8')
+  const main = await withoutComments(await readFile('build/main.js', 'utf8'))
   const html = await readFile('build/ui.html', 'utf8')
-  const uiJs = html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'))
+  const uiJs = await withoutComments(
+    html.slice(html.indexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>')),
+  )
 
   const problems = []
   const domLeaks = main.match(/\b(document|window|createElement|XMLHttpRequest|OffscreenCanvas)\s*\.|\bfetch\s*\(/g)
