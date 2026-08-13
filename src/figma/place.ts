@@ -74,8 +74,37 @@ export function isMeasuredMap(kind: MapKind): boolean {
  * is simply absent — and on a single-viewport phone screen two of the four
  * shipped rules cannot fire at all, so an empty result is the common case, not
  * the exception.
+ *
+ * **1.3: DER SATZ DARF NICHT BEHAUPTEN, GEPRÜFT ZU HABEN, WAS DER RAHMEN NICHT
+ * ENTHÄLT.** Vorher stand hier „Keine der geprüften Auffälligkeiten trifft zu" —
+ * über einem Rahmen, der ausschließlich die *Vorhersage*-Regeln enthält. Die
+ * Kontrastmessung ist nicht darin: sie reist in `PLACE_RESULT.contrastFindings`
+ * mit und wird hier nicht gelesen.
+ *
+ * Das war kein Formulierungsfehler, sondern ein **falsches Bestanden in einer
+ * Barrierefreiheitsprüfung** — und dazu ein sichtbarer Widerspruch im
+ * ausgelieferten Artefakt: der Satz stand neben einer Contrastmap, in der rote
+ * Rahmen und Werte unter 4,5:1 zu sehen waren. Wer die Frames in eine
+ * Präsentation kopierte, nahm beides mit.
+ *
+ * Der Rahmen heißt deshalb `Vorhersage-Befunde`, trägt „Vorhersage-Befunde" als
+ * Überschrift, und der Leerzustand verweist ausdrücklich dorthin, wo die
+ * Kontrastwerte stehen. `place.test.ts` hält fest, dass der Leerzustand keinen
+ * Umfang behauptet, den der Rahmen nicht hat.
+ *
+ * Die Lücke selbst bleibt und ist eigens vermerkt: die richtige Behebung ist,
+ * die Messwerte **mit** auf den Canvas zu schreiben — als eigener Block, denn
+ * eine Messung darf nicht in derselben Liste stehen wie eine Vorhersage (C4).
  */
-const EMPTY_FINDINGS = 'Keine der geprüften Auffälligkeiten trifft zu.'
+const EMPTY_FINDINGS = 'Keine Vorhersage-Auffälligkeiten. Kontrastwerte siehe Contrastmap.'
+
+/**
+ * Wie der Rahmen heißt — in der Überschrift und im Ebenennamen.
+ *
+ * „Befunde" war zu weit: es ist das Wort, unter dem das Panel **alle** Befunde
+ * führt, auch die gemessenen. Der Rahmen enthält nur die vorhergesagten.
+ */
+const FINDINGS_TITLE = 'Vorhersage-Befunde'
 
 const INK = { title: { r: 0.1, g: 0.1, b: 0.12 }, body: { r: 0.16, g: 0.16, b: 0.2 }, quiet: { r: 0.45, g: 0.45, b: 0.5 } }
 
@@ -138,9 +167,13 @@ export function metaLine(meta: MapMeta | undefined, kind?: MapKind): string {
   if (kind && isMeasuredMap(kind)) return MEASURED_LINE
 
   const parts = [DISCLAIMER]
-  if (meta) {
-    parts.push(`Blickverhalten: ${meta.screenBehaviour}`, `Betrachtungsdauer: ${meta.duration}`)
-  }
+  // Jedes Stück einzeln und nur, wenn es da ist. 1.3: die Felder sind optional
+  // geworden, weil ein Pflichtfeld eine Behauptung erzwingt — fehlt der
+  // Referenzprior, nennt die Zeile keine Kategorie und keine Dauer, sondern
+  // sagt, was stattdessen gerechnet hat (`ui/map-meta.ts`).
+  if (meta?.screenBehaviour) parts.push(`Blickverhalten: ${meta.screenBehaviour}`)
+  if (meta?.duration) parts.push(`Betrachtungsdauer: ${meta.duration}`)
+  if (meta?.fallback) parts.push(meta.fallback)
   parts.push(ENGINE_VERSION)
   return parts.join(' · ')
 }
@@ -232,7 +265,10 @@ export async function placeMaps(
   // Vertical, because the CC BY line runs the full width under all maps —
   // once per run instead of once per image.
   const wrapper = figma.createFrame()
-  wrapper.name = `[Figmaps] ${node.name}${meta ? ` — ${meta.duration}` : ''} — ${timestamp(new Date())}`
+  // Die Dauer nur, wenn eine gerechnet wurde. `meta ? …` war falsch: seit 1.3 ist
+  // `duration` optional, und ein vorhandenes `meta` ohne sie hätte
+  // „— undefined" in den Ebenennamen geschrieben.
+  wrapper.name = `[Figmaps] ${node.name}${meta?.duration ? ` — ${meta.duration}` : ''} — ${timestamp(new Date())}`
   wrapper.layoutMode = 'VERTICAL'
   wrapper.primaryAxisSizingMode = 'AUTO'
   wrapper.counterAxisSizingMode = 'AUTO'
@@ -268,7 +304,7 @@ export async function placeMaps(
     // Vorhersage-Parameter — er wandert mit, wenn jemand den Frame kopiert.
     child.name = isMeasuredMap(map.kind)
       ? `${MAP_LABELS[map.kind]} · ${MEASURED_TITLE_SUFFIX}`
-      : `${MAP_LABELS[map.kind]}${meta ? ` · ${meta.duration}` : ''} · ${ENGINE_VERSION}`
+      : `${MAP_LABELS[map.kind]}${meta?.duration ? ` · ${meta.duration}` : ''} · ${ENGINE_VERSION}`
     row.appendChild(child)
 
     paragraph(child, {
@@ -357,7 +393,7 @@ async function appendFindingsFrame(
   const bodyFont = await loadBodyFont()
 
   const frame = column(cfg.findingsWidth, Math.round(cfg.findingsFontSize * 0.9), cfg.findingsFontSize * 2)
-  frame.name = `Befunde · ${ENGINE_VERSION}`
+  frame.name = `${FINDINGS_TITLE} · ${ENGINE_VERSION}`
   frame.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }]
   frame.cornerRadius = 12
   row.appendChild(frame)
@@ -365,7 +401,7 @@ async function appendFindingsFrame(
   // If any paragraph fails, the half-built frame must not stay behind: an empty
   // white box next to the maps looks like a result, and is worse than nothing.
   try {
-    paragraph(frame, { font: titleFont, size: cfg.titleFontSize, text: 'Befunde — vorhergesagt', colour: INK.title })
+    paragraph(frame, { font: titleFont, size: cfg.titleFontSize, text: FINDINGS_TITLE, colour: INK.title })
 
     if (segments?.segmented) {
       paragraph(frame, {

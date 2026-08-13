@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Bitmap } from '../../engine/ops'
 import type { NodeSignal } from '../../messages'
-import { isSystemChrome, isSystemChromeName, SYSTEM_CHROME_REASON } from '../system-chrome'
+import { isSystemChrome, isSystemChromeName } from '../system-chrome'
 import { measureContrast } from '../measure'
 import { measureNonTextContrast } from '../non-text'
 
@@ -68,14 +68,14 @@ describe('beide Pfade nehmen dieselbe Ausnahme', () => {
   it('1.4.3 überspringt die Uhrzeit und sagt warum', () => {
     const { results, skipped } = measureContrast({ image, signals: [bar, time, wifi, echt], frameWidth: 200, frameHeight: 100 })
     expect(results.map((entry) => entry.nodeId)).not.toContain('time')
-    expect(skipped.find((entry) => entry.nodeId === 'time')?.reason).toBe(SYSTEM_CHROME_REASON)
+    expect(skipped.find((entry) => entry.nodeId === 'time')?.reason).toBe('chrome')
   })
 
   it('1.4.11 überspringt die Symbole daneben — sonst bliebe halbes Chrome stehen', () => {
     const { results, skipped } = measureNonTextContrast({ image, signals: [bar, time, wifi, echt], frameWidth: 200, frameHeight: 100 })
     expect(results.map((entry) => entry.nodeId)).not.toContain('wifi')
     expect(results.map((entry) => entry.nodeId)).not.toContain('bar')
-    expect(skipped.find((entry) => entry.nodeId === 'wifi')?.reason).toBe(SYSTEM_CHROME_REASON)
+    expect(skipped.find((entry) => entry.nodeId === 'wifi')?.reason).toBe('chrome')
     // Das echte Bedienelement bleibt drin.
     expect(results.map((entry) => entry.nodeId)).toContain('echt')
   })

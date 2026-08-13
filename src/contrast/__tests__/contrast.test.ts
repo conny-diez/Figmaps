@@ -9,6 +9,7 @@ import { relativeLuminance } from '../../figma/traverse'
 import type { Bitmap } from '../../engine/ops'
 import type { NodeSignal } from '../../messages'
 import { measureContrast, pixelLuminance } from '../measure'
+import { SKIP_TEXT } from '../measurable'
 import {
   BORDERLINE_MARGIN,
   CONTRAST_LARGE,
@@ -254,7 +255,10 @@ describe('measureContrast', () => {
     })
     expect(results).toEqual([])
     expect(skipped).toHaveLength(1)
-    expect(skipped[0].reason).toContain('einfarbige')
+    // Seit 1.3 ein Code statt eines Satzes — die Warnung im Panel zählt die
+    // Gründe, und dafür braucht jeder einen Namen. Der Satz steht in `SKIP_TEXT`.
+    expect(skipped[0].reason).toBe('keine-textfarbe')
+    expect(SKIP_TEXT[skipped[0].reason]).toContain('einfarbige')
   })
 
   it('sortiert das am deutlichsten durchgefallene Element nach oben', () => {

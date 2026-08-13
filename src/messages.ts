@@ -114,6 +114,18 @@ export type NodeSignal = {
   nameHints: string[]
   /** Relative luminance of the dominant solid fill, `[0,1]`. */
   fillLuminance?: number
+  /**
+   * Eigendrehung des Knotens in Grad, relativ zum Elternknoten. Fehlt, wenn der
+   * Knotentyp keine Drehung kennt.
+   *
+   * Nur die Kontrastmessung liest es, und sie liest es, weil `x/y/width/height`
+   * hier die **achsenparallele** Bounding-Box sind: bei einem gedrehten
+   * Textknoten ist diese Box größer als der Text und überwiegend mit Pixeln
+   * gefüllt, die nicht hinter ihm liegen. Ohne dieses Feld ist das aus dem
+   * Signal nicht zu erkennen — und die Messung meldete eine Zahl über
+   * Fremdpixel (`contrast/measurable.ts`).
+   */
+  rotation?: number
 }
 
 export type FrameSummary = {
@@ -214,12 +226,32 @@ export type RenderedMap = {
  * not the thing, and the panel now says „Blickverhalten" above the same choice.
  */
 export type MapMeta = {
-  /** Which reference population, e.g. „Mobile App" or „Webseite (automatisch)". */
-  screenBehaviour: string
-  /** Viewing duration the prediction is calibrated for, e.g. „Blick (1 s)". */
-  duration: string
-  /** CC BY 4.0 notice for the bundled data, or absent when none ships. */
+  /**
+   * Which reference population **actually** produced the map, e.g. „Mobile App"
+   * or „Webseite (automatisch)".
+   *
+   * **Optional seit 1.3, und das ist der ganze Punkt.** Bis dahin war das Feld
+   * verpflichtend und wurde aus `priorAssetIdFor(…)` gefüllt — also aus der
+   * Geometrie des Frames, einer Aussage darüber, welcher Prior *gewählt* wurde.
+   * Fehlte das Asset, rechnete die analytische Glocke und dieselbe Zeile stand
+   * mit denselben Worten unter einer anderen Karte. Ein Pflichtfeld erzwingt
+   * eine Behauptung; ein optionales erlaubt Schweigen. Gefüllt wird es nur noch
+   * aus `AnalyzeResult.priorResolution` — siehe `ui/map-meta.ts`.
+   */
+  screenBehaviour?: string
+  /** Viewing duration the map was **computed** with, e.g. „Blick (1 s)". */
+  duration?: string
+  /** CC BY 4.0 notice — only when a derived asset actually entered the output. */
   attribution?: string
+  /**
+   * Was stattdessen gerechnet hat, wenn kein Referenzprior gelesen werden konnte.
+   *
+   * Steht in der Kopfzeile an der Stelle, an der sonst Blickverhalten und
+   * Betrachtungsdauer stehen. Eine Karte, die die Ersatzrechnung zeigt, sagt das
+   * — statt eine Zeile zu tragen, die von der intakten nicht zu unterscheiden
+   * ist.
+   */
+  fallback?: string
 }
 
 /**

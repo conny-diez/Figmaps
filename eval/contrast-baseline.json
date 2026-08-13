@@ -1,0 +1,130 @@
+{
+  "variants": 6,
+  "frames": [
+    {
+      "label": "Onboarding-Screen 393 x 852",
+      "measured": 8,
+      "failed": 0,
+      "notMeasurable": 1
+    },
+    {
+      "label": "desktop-lang-0",
+      "measured": 21,
+      "failed": 14,
+      "notMeasurable": 0
+    },
+    {
+      "label": "desktop-lang-1",
+      "measured": 24,
+      "failed": 16,
+      "notMeasurable": 0
+    },
+    {
+      "label": "desktop-lang-2",
+      "measured": 27,
+      "failed": 18,
+      "notMeasurable": 0
+    },
+    {
+      "label": "desktop-lang-3",
+      "measured": 21,
+      "failed": 14,
+      "notMeasurable": 0
+    },
+    {
+      "label": "desktop-lang-4",
+      "measured": 24,
+      "failed": 8,
+      "notMeasurable": 0
+    },
+    {
+      "label": "desktop-lang-5",
+      "measured": 27,
+      "failed": 18,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-1vp-0",
+      "measured": 6,
+      "failed": 4,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-1vp-1",
+      "measured": 9,
+      "failed": 6,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-1vp-2",
+      "measured": 12,
+      "failed": 8,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-1vp-3",
+      "measured": 6,
+      "failed": 4,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-1vp-4",
+      "measured": 9,
+      "failed": 3,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-1vp-5",
+      "measured": 12,
+      "failed": 8,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-lang-0",
+      "measured": 24,
+      "failed": 16,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-lang-1",
+      "measured": 27,
+      "failed": 18,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-lang-2",
+      "measured": 30,
+      "failed": 20,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-lang-3",
+      "measured": 24,
+      "failed": 16,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-lang-4",
+      "measured": 27,
+      "failed": 9,
+      "notMeasurable": 0
+    },
+    {
+      "label": "mobile-lang-5",
+      "measured": 30,
+      "failed": 20,
+      "notMeasurable": 0
+    },
+    {
+      "label": "Verdeckung und Drehung 420 x 420 (Gegenprobe)",
+      "measured": 3,
+      "failed": 2,
+      "notMeasurable": 3
+    }
+  ],
+  "totals": {
+    "measured": 371,
+    "failed": 222,
+    "notMeasurable": 4
+  }
+}

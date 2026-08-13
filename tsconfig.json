@@ -21,5 +21,5 @@
     "noEmit": true,
     "types": ["@figma/plugin-typings", "node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "eval/**/*.ts", "scripts/**/*.mjs"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "eval/**/*.ts", "scripts/**/*.ts", "scripts/**/*.mjs"]
 }

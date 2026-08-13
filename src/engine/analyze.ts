@@ -10,6 +10,7 @@ import { ENGINE_CONFIG } from './config'
 import type { Bitmap, ImageOps } from './ops'
 import { analysisSourceSize, cropBitmap, fitWithin } from './ops-pure'
 import { composeSections, planSections, sectionSalience, type SegmentPlan, type Section } from './segments'
+import type { PriorResolution } from './priors'
 import type { AttentionEngine, ScalarMap } from './types'
 import type { NodeSignal } from '../messages'
 
@@ -74,6 +75,20 @@ export type AnalyzeResult = {
    * `NaN`, wenn die Engine ihre Teile nicht ausweist.
    */
   contentLevel: number
+  /**
+   * Welcher Ortsprior **tatsächlich** gerechnet hat — nicht welcher angefordert
+   * war.
+   *
+   * 1.3, das Text-Bindungs-Prinzip: die Fußzeile jeder Karte nennt Kategorie und
+   * Betrachtungsdauer, und bis 1.2 kamen beide aus der Anforderung. Fehlte das
+   * Asset, wich die Engine stumm aus und die Zeile behauptete weiter, was gerade
+   * nicht galt. Diese Angabe reist mit dem Ergebnis, damit die Beschriftung sie
+   * lesen kann statt sie zu rekonstruieren.
+   *
+   * `null`, wenn die Engine sie nicht ausweist — dann nennt die Beschriftung
+   * keine Kategorie.
+   */
+  priorResolution: PriorResolution | null
 }
 
 export type AnalyzeHooks = {
@@ -198,6 +213,7 @@ export async function analyzeFrame(
     aboveFold: plan.segmented ? parts[0].map : null,
     plan,
     sectionSalience: parts.map((part) => sectionSalience(part.map)),
+    priorResolution: engine.priorResolution?.(input.frameWidth, input.frameHeight) ?? null,
     imageTerms: parts.every((part) => part.imageTerm !== null)
       ? parts.map((part) => part.imageTerm as ScalarMap)
       : [],

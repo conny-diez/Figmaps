@@ -44,6 +44,21 @@ type FrameOutcome = {
 }
 
 /**
+ * Was die Ergebnis-Sektionen zeigen, samt dem Frame, zu dem es gehört.
+ *
+ * Der Name ist Teil des Zustands und nicht ein zweites State daneben: eine
+ * Beschriftung, die getrennt vom Inhalt gesetzt wird, kann von ihm abweichen —
+ * genau der Fehler, den 1.3 an der Fußzeile der Karten behoben hat.
+ */
+type FrameDetail = {
+  frameName: string
+  findings: FindingPayload[]
+  contrastFindings: ContrastFinding[]
+  nonTextFindings: ContrastFinding[]
+  segments: SegmentInfo
+}
+
+/**
  * Epic D — only profiles the harness has shown to beat the center-bias
  * baseline are offered. Three profiles of which one is noise are worse than
  * one profile, so the control disappears entirely while only `scan` is proven.
@@ -420,10 +435,19 @@ function App(): preact.JSX.Element {
   const [outcomes, setOutcomes] = useState<FrameOutcome[]>([])
   const [ranking, setRanking] = useState<ClickRanking[]>([])
   const [errors, setErrors] = useState<string[]>([])
-  const [findings, setFindings] = useState<FindingPayload[]>([])
-  const [contrastFindings, setContrastFindings] = useState<ContrastFinding[]>([])
-  const [nonTextFindings, setNonTextFindings] = useState<ContrastFinding[]>([])
-  const [segments, setSegments] = useState<SegmentInfo | null>(null)
+  /**
+   * Die Ergebnis-Sektionen zeigen **einen** Frame — den letzten, der fertig
+   * wurde. Der Name steht deshalb im selben Zustand wie der Inhalt.
+   *
+   * Vorher lagen Befunde, Kontrastwerte und Abschnitte in vier getrennten
+   * States, und jeder wurde je Frame überschrieben. Die Ergebniszeile darüber
+   * zählte den ganzen Lauf — die Sektionen darunter beschrieben einen Frame und
+   * sagten nicht, welchen. Dieselbe Fehlerklasse wie die Fußzeile der Karten,
+   * und mit derselben Antwort: der Name gehört an den Inhalt, nicht daneben.
+   * Ein Objekt statt vier States, damit die beiden nicht auseinanderlaufen
+   * können.
+   */
+  const [detail, setDetail] = useState<FrameDetail | null>(null)
 
   // Refs, because the message handler is installed once and must not close over
   // stale state.
@@ -447,11 +471,18 @@ function App(): preact.JSX.Element {
         isCancelled: () => cancelledRef.current,
         onStep: (label, fraction) => setProgress((prev) => ({ ...prev, label, fraction })),
       })
-      if (result.ranking.length > 0) setRanking(result.ranking)
-      setFindings(result.findings)
-      setContrastFindings(result.contrastFindings)
-      setNonTextFindings(result.nonTextFindings)
-      setSegments(result.segments)
+      // Ohne die Bedingung wäre die Liste leer, wenn der letzte Frame keine
+      // Kandidaten hatte — mit ihr stand sie aus einem FRÜHEREN Frame da, und
+      // eine Rangliste, die zu einem anderen Screen gehört als die Befunde
+      // darunter, ist schlimmer als keine.
+      setRanking(result.ranking)
+      setDetail({
+        frameName: data.frameName,
+        findings: result.findings,
+        contrastFindings: result.contrastFindings,
+        nonTextFindings: result.nonTextFindings,
+        segments: result.segments,
+      })
       send({
         type: 'PLACE_RESULT',
         frameId: data.frameId,
@@ -561,8 +592,7 @@ function App(): preact.JSX.Element {
     cancelledRef.current = false
     setOutcomes([])
     setRanking([])
-    setFindings([])
-    setSegments(null)
+    setDetail(null)
     errorsRef.current = []
     setErrors([])
     setPhase('working')
@@ -584,6 +614,30 @@ function App(): preact.JSX.Element {
 
   const isFinished = phase === 'done' || phase === 'error'
   const createdCount = outcomes.reduce((sum, outcome) => sum + outcome.maps.length, 0)
+  // 1.3, Text-Bindungs-Prinzip: beides aus den Karten, die es gibt.
+  //
+  // Vorher zählte die Zeile `outcomes.length` — und darin steckt auch ein Frame,
+  // der gar keine Karte erzeugt hat (`maps: []` bei `RENDER_FAILED`). „2 Maps für
+  // 2 Frames erstellt" stand dann über einem Lauf, in dem ein Frame leer
+  // ausgegangen war.
+  const framesWithMaps = outcomes.filter((outcome) => outcome.maps.length > 0).length
+  /**
+   * Der Frame-Name vor einer Sektions-Beschriftung — nur, wenn mehr als ein
+   * Frame gelaufen ist.
+   *
+   * Dieselbe Regel und dieselbe Form wie bei den Warnungen ein paar Zeilen
+   * weiter unten (`${outcome.frameName}: ${warning}`). Bei einem Frame wäre der
+   * Name Rauschen; bei mehreren ist „Befunde" ohne ihn eine Behauptung über den
+   * ganzen Lauf, während darunter ein Frame steht.
+   */
+  const sectionLabel = (label: string): string =>
+    outcomes.length > 1 && detail ? `${detail.frameName}: ${label}` : label
+  // Und ob eine Above-the-fold-Map entstanden ist, hängt nicht an der
+  // Segmentierung, sondern daran, ob die Heatmap eingeschaltet war: die Fold-Map
+  // wird im Rumpf des Heatmap-Zweigs erzeugt (`ui/pipeline.ts`). Mit
+  // ausgeschalteter Heatmap versprach die Zusammenfassung eine Karte, die es
+  // nicht gab.
+  const hasFoldMap = outcomes.some((outcome) => outcome.maps.includes('fold'))
   const allWarnings = outcomes.flatMap((outcome) =>
     outcome.warnings.map((warning) => (outcomes.length > 1 ? `${outcome.frameName}: ${warning}` : warning)),
   )
@@ -819,15 +873,16 @@ function App(): preact.JSX.Element {
                 <span class="result__count">{createdCount}</span>
                 <span class="result__text">
                   {createdCount === 1 ? 'Map' : 'Maps'} für{' '}
-                  {outcomes.length === 1 ? '1 Frame' : `${outcomes.length} Frames`} erstellt
+                  {framesWithMaps === 1 ? '1 Frame' : `${framesWithMaps} Frames`} erstellt
                 </span>
               </div>
-              {(segments?.segmented || errors.length > 0) && (
+              {(detail?.segments.segmented || errors.length > 0) && (
                 <ul class="summary">
-                  {segments?.segmented && (
+                  {detail?.segments.segmented && (
                     <li>
-                      In {segments.sectionCount} Abschnitten à {segments.viewportHeight} px analysiert, mit
-                      Above-the-fold-Map
+                      {outcomes.length > 1 ? `${detail.frameName}: ` : ''}
+                      In {detail.segments.sectionCount} Abschnitten à {detail.segments.viewportHeight} px analysiert
+                      {hasFoldMap ? ', mit Above-the-fold-Map' : ''}
                     </li>
                   )}
                   {errors.length > 0 && <li>{errors.length} Frame(s) mit Fehlern</li>}
@@ -835,11 +890,11 @@ function App(): preact.JSX.Element {
               )}
             </section>
 
-            {findings.length > 0 && (
+            {detail && detail.findings.length > 0 && (
               <section class="section">
-                <p class="section__label">Befunde</p>
+                <p class="section__label">{sectionLabel('Befunde')}</p>
                 <ul class="findings">
-                  {findings.map((finding) => (
+                  {detail.findings.map((finding) => (
                     <li key={finding.id} class={`findings__item findings__item--${finding.severity}`}>
                       <span class="findings__bar" aria-hidden="true" />
                       <div class="findings__body">
@@ -869,14 +924,14 @@ function App(): preact.JSX.Element {
                 jeder nachrechnen kann. In einer Liste vermischt würde das eine
                 das andere abwerten — und zwar in die falsche Richtung, denn die
                 belastbarere Aussage verlöre. */}
-            {contrastFindings.length > 0 && (
+            {detail && detail.contrastFindings.length > 0 && (
               <section class="section">
-                <p class="section__label">Kontrast (gemessen)</p>
+                <p class="section__label">{sectionLabel('Kontrast (gemessen)')}</p>
                 <p class="section__hint">
                   Nach WCAG 2.1 AA geprüft. Keine Vorhersage — diese Werte sind nachmessbar.
                 </p>
                 <ul class="findings">
-                  {contrastFindings
+                  {detail.contrastFindings
                     .filter((entry) => entry.status !== 'bestanden')
                     .map((entry) => (
                       <li key={entry.nodeId} class={`findings__item findings__item--${entry.status === 'durchgefallen' ? 'problem' : 'attention'}`}>
@@ -898,7 +953,7 @@ function App(): preact.JSX.Element {
                     ))}
                 </ul>
                 <p class="section__hint">
-                  {contrastFindings.filter((entry) => entry.status === 'bestanden').length} weitere Textelemente
+                  {detail.contrastFindings.filter((entry) => entry.status === 'bestanden').length} weitere Textelemente
                   erfüllen die Anforderung.
                 </p>
               </section>
@@ -909,16 +964,16 @@ function App(): preact.JSX.Element {
                 eine Heuristik über Name und Prototype-Interaktion. 1.4.3
                 darüber ist reine Tatsache. Die beiden dürfen nicht denselben
                 Anstrich bekommen. */}
-            {nonTextFindings.length > 0 && (
+            {detail && detail.nonTextFindings.length > 0 && (
               <section class="section">
-                <p class="section__label">Kontrast von Bedienelementen</p>
+                <p class="section__label">{sectionLabel('Kontrast von Bedienelementen')}</p>
                 <p class="section__hint">
                   Nach WCAG 2.1 AA (1.4.11), 3:1 für die Begrenzung gegen die angrenzende Farbe. Welche Elemente
                   Komponenten sind, schätzt das Plugin aus Name und Prototype-Interaktion — Elemente mit eigener
                   Beschriftung sind ausgenommen, weil die Beschriftung sie identifiziert.
                 </p>
                 <ul class="findings">
-                  {nonTextFindings.map((entry) => (
+                  {detail.nonTextFindings.map((entry) => (
                     <li key={entry.nodeId} class="findings__item findings__item--attention">
                       <span class="findings__bar" aria-hidden="true" />
                       <div class="findings__body">
@@ -944,7 +999,7 @@ function App(): preact.JSX.Element {
             {CLICKMAP_IN_PANEL && ranking.length > 0 && (
               <section class="section">
                 <div class="section__head">
-                  <p class="section__label">Klick-Ranking</p>
+                  <p class="section__label">{sectionLabel('Klick-Ranking')}</p>
                   <span class="section__note">vorhergesagt</span>
                 </div>
                 <ol class="ranking">

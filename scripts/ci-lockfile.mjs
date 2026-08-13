@@ -29,10 +29,60 @@
 // `integrity` bleibt in jedem Eintrag stehen und wird von `npm ci` geprüft. Was
 // wegfällt, ist ausschließlich die *Bezugsquelle*, nicht die Zusicherung, was
 // ankommen muss. Ein Paket mit falschem Inhalt schlägt weiterhin fehl.
+//
+// ZWEI BETRIEBSARTEN, und die zweite ist seit 1.3 die wichtigere
+//
+//   (ohne Schalter)  entfernt die Adressen aus der angegebenen Datei
+//   --check          prüft nur und schlägt fehl, wenn welche drinstehen
+//
+// Seit 1.3 ist die **eingecheckte** Datei bereits frei von `resolved`-Adressen,
+// die Bereinigung auf dem Runner also ein Leerlauf. Was bleibt, ist die Gefahr,
+// dass ein `npm install` auf einer intern konfigurierten Maschine sie
+// zurückschreibt und jemand das mitcommittet — lautlos, denn es funktioniert ja
+// alles. `--check` macht daraus eine Invariante, die im Test und in CI rot wird,
+// statt einer Reparatur, die niemand sieht.
+//
+// Die mutierende Betriebsart bleibt, und zwar aus einem konkreten Grund: das
+// Eval-Gate baut seine Referenz in einem Worktree von `origin/main`, und jeder
+// Commit von vor dieser Änderung trägt die Adressen für immer in der History.
+// Läuft der Vergleich gegen einen solchen Stand, muss dort weiter bereinigt
+// werden.
 import { readFileSync, writeFileSync } from 'node:fs'
 
-const path = process.argv[2] ?? 'package-lock.json'
+const args = process.argv.slice(2)
+const checkOnly = args.includes('--check')
+const path = args.find((arg) => !arg.startsWith('--')) ?? 'package-lock.json'
 const lockfile = JSON.parse(readFileSync(path, 'utf8'))
+
+if (checkOnly) {
+  const offenders = Object.entries(lockfile.packages ?? {})
+    .filter(([, entry]) => typeof entry.resolved === 'string')
+    .map(([name, entry]) => [name, entry.resolved])
+  if (offenders.length === 0) {
+    const count = Object.values(lockfile.packages ?? {}).filter((e) => typeof e.integrity === 'string').length
+    console.log(`${path}: keine resolved-Adressen, ${count} integrity-Hashes vorhanden.`)
+    process.exit(0)
+  }
+  // Die Hosts werden **gezählt und benannt**, aber der volle Pfad nicht
+  // ausgegeben: die Meldung landet in einem CI-Log, und ein Log ist kein Ort,
+  // an dem eine interne Adresse zum ersten Mal auftauchen soll.
+  const hosts = new Set(
+    offenders.map(([, url]) => {
+      try {
+        return new URL(url).host
+      } catch {
+        return '(unlesbar)'
+      }
+    }),
+  )
+  console.error(`✖ ${path}: ${offenders.length} Einträge tragen eine resolved-Adresse.`)
+  console.error(`  Betroffene Hosts: ${[...hosts].length} verschieden.`)
+  console.error('')
+  console.error('Das passiert nach einem `npm install` auf einer Maschine mit interner Registry.')
+  console.error('Beheben mit:  node scripts/ci-lockfile.mjs package-lock.json')
+  console.error('`integrity` bleibt dabei stehen, die Installation ist danach exakt dieselbe.')
+  process.exit(1)
+}
 
 let cleared = 0
 let withoutIntegrity = 0

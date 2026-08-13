@@ -107,8 +107,88 @@ npm run visual-check                              # die zwei Prüffälle als Bil
 npm run side-effects -- --before 0.3 --after 0.5  # Feuerraten vorher/nachher
 ```
 
-Die `id` in `manifest.json` ist ein lokaler Platzhalter. Beim Publishing in die
-Community vergibt Figma eine echte ID, die dann eingetragen wird.
+Die `id` in `manifest.json` ist ein lokaler Platzhalter. Beim Publishing vergibt
+Figma eine echte ID, die dann eingetragen wird.
+
+### Welcher Weg wofür da ist
+
+**Es gibt drei Wege, wie dieses Plugin in ein Figma kommt, und sie sind nicht
+gleichwertig.** Ohne diese Tabelle pflegen wir in vier Wochen zwei Verteilwege
+und wissen nicht mehr, welcher der verbindliche ist.
+
+| Weg | für wen | Stand |
+|---|---|---|
+| **Privates Publishing in der Organisation** | **alle Nutzer** — Designerinnen, Reviewer, jeder ohne Repo-Zugriff | **der verbindliche Weg**, sobald er steht. Noch offen, siehe unten |
+| **Release-Zip am Tag** | Entwicklung, Archiv, Notlage | steht (`v1.2.0`), bleibt — aber **nicht** der Weg, den man Kollegen nennt |
+| **Dev-Import aus dem Worktree** | nur Entwicklung, nur lokal | steht (`npm run watch`) |
+
+**Warum der GitHub-Weg als Verteilweg nicht taugt, und zwar unabhängig davon,
+wie gut er geprüft ist.** Das Repo ist privat. Wer keinen Zugriff hat, sieht das
+Release nicht, bekommt auf jede Asset-URL 404 und kann das Zip nicht laden — und
+Designerinnen haben typischerweise keinen Repo-Zugriff. Dazu kommt alles, was
+der Weg an Handgriffen verlangt: das richtige Archiv erwischen (die beiden
+automatischen „Source code"-Archive sind Quellcode ohne `build/`), entpacken, an
+einen dauerhaften Ort legen, „Import plugin from manifest…" finden, die richtige
+`manifest.json` wählen. Jeder dieser Handgriffe ist eine Stelle, an der es
+scheitert, und einer davon hat schon gescheitert.
+
+**Privates Publishing löst das vollständig.** Das Plugin erscheint in Figma unter
+den Plugins der Organisation, Installation ist ein Klick, Aktualisierung
+passiert ohne Zutun. Damit entfallen Zip, Manifest-Import, Archiv-Verwechslung
+und der Release-Prüfer **als Verteilweg**.
+
+**Was bleibt, und warum.** Der Tag-Release bleibt als **Archiv**: er ist der
+einzige Ort, an dem ein geprüfter, reproduzierbarer Stand pro Version liegt —
+gebaut aus einem Commit, mit `check-release.mjs` gegen die Ortsprior-Nutzdaten
+geprüft, entpackt nachgemessen. Das ist wertvoll, wenn eine Frage lautet „was
+genau war in 1.2.0 drin", und es ist der Rückfallweg, wenn Publishing einmal
+nicht geht. `release-verify.yml` bewacht weiterhin, dass dieses Archiv nicht
+still leer ist — dieselbe Prüfung, anderer Zweck.
+
+**Die Regel, damit es nicht wieder auseinanderläuft:** einem Kollegen wird
+**nur** der Publishing-Weg genannt. Steht das private Publishing, wird der
+Dev-Import aus dem Worktree in Figma entfernt — sonst stehen zwei Einträge
+namens „Figmaps" mit derselben Plugin-Id im Entwicklungs-Menü, und niemand
+sieht, welcher gerade läuft. Genau das war beim Start dieses Branches der Fall
+(einer aus `~/Downloads/figmaps-1.2.0`, einer aus dem Worktree).
+
+#### Was für das private Publishing noch fehlt
+
+Geprüft gegen Figmas Angaben zum Publish-Dialog (Stand August 2026) und gegen
+das, was im Repo liegt.
+
+| Feld | verlangt | im Repo | fehlt |
+|---|---|---|---|
+| Name | — | `Figmaps` | — |
+| **Icon** | empfohlen **128 × 128 px** | nur `assets/logo.svg` | **der Export.** Kein PNG in dieser Größe ist versioniert |
+| **Thumbnail / Cover** | empfohlen **1920 × 1080 px** | nichts in der Nähe (größtes Bild: 1648 × 710, eine Messgrafik) | **ganz** |
+| **Tagline** | ein Satz | nirgends | **ganz** — und es ist nicht die Repo-Beschreibung, siehe unten |
+| **Beschreibung** | Fließtext | nirgends als veröffentlichbarer Text | **ganz.** `RELEASE.md` sind Release-Notizen, die README hat über 4.000 Zeilen |
+| Kategorie | eine auswählen | — | Entscheidung |
+| **Support-Kontakt** | **Pflicht** | — | Entscheidung. **Nicht** „Issues im Repo" — genau die Leute, für die wir das machen, kommen dort nicht hin |
+| Carousel-Bilder | optional, bis 9 | die Messgrafiken unter `assets/messungen/` wären Kandidaten | — |
+| Playground-Datei | optional | — | — |
+| Sicherheitsangaben | optional | `networkAccess: none` im Manifest | eine wahre und starke Aussage, die man machen sollte |
+| Plugin-Id | Figma vergibt sie beim Publishing | Platzhalter `1000000000000000001` | muss danach in `manifest.json` zurückwandern |
+
+Zwei Punkte, die nicht auf der Liste stehen und trotzdem entscheiden:
+
+- **Der Plan.** Privates Publishing gibt es laut Figma nur in den Plänen
+  **Organization und Enterprise**. Steht das nicht, ist der ganze Weg zu.
+- **Keine Prüfung durch Figma.** „Figma doesn't review any plugins you choose to
+  share privately within an organization." Das ist bequem und verschiebt die
+  Verantwortung vollständig zu uns: was hier an Text steht, steht ungeprüft vor
+  Kollegen.
+
+**Und ein Befund, der hierher gehört, weil er dieselbe Klasse ist wie der Rest
+dieses Kapitels.** Die Repo-Beschreibung — die im veröffentlichten Release als
+Text stand — lautet „A Figma Plugin for creating Heatmaps, Focusmaps and
+Contrastmaps". Das ist die Reihenfolge von 1.1: Vorhersage zuerst. Seit 1.2 ist
+sie falsch, und diese README begründet an anderer Stelle ausführlich, warum: wer
+das Plugin öffnet, bekommt zuerst eine **Kontrastprüfung nach WCAG** und
+zusätzlich eine Aufmerksamkeitsvorhersage, nicht umgekehrt. Tagline und
+Beschreibung sind neu zu schreiben und nicht aus dem Vorhandenen zu übernehmen —
+sonst tragen wir die alte Reihenfolge in den Store.
 
 ### Ein Release bauen
 
@@ -148,6 +228,740 @@ zwei — und das Panel zeigte etwas anderes an, als das Release heißt.
 `package-lock.json` trägt die alte Version weiter und bleibt unangetastet;
 `npm ci` stört das nicht (nachgemessen, nicht angenommen). Die offene Frage am
 Lockfile ist eine andere und steht unter den offenen Punkten.
+
+#### Der Entwurf ist die Stelle, an der v1.2.0 schiefgegangen ist
+
+**Es gab zwei Release-Objekte zum Tag `v1.2.0`.** Den Entwurf des Workflows, an
+dem `figmaps-1.2.0.zip` hing, und ein von Hand angelegtes, veröffentlichtes
+Release ohne jedes Asset und mit der Repo-Beschreibung als Text. Wer dem Tag
+folgte, bekam nur die beiden automatischen „Source code"-Archive — Quellcode ohne
+`build/`, und der Figma-Import scheitert daran. Gemerkt hat es ein Kollege.
+
+Der Release-Workflow war dabei grün, und er hatte alles geprüft, was er prüfen
+konnte. Nur die letzte Frage nicht:
+
+> Liegt die Datei dort, wo eine Nutzerin sie sucht?
+
+**Ein Entwurf kann diese Frage nicht beantworten**, und das ist keine
+Nachlässigkeit, sondern eine Eigenschaft von GitHub: ein Entwurf hängt nicht am
+Tag, bekommt eine `untagged-…`-URL, und `GET /releases/tags/<tag>` findet ihn
+überhaupt nicht (nachgemessen — der Aufruf lieferte das veröffentlichte Objekt
+mit null Assets und den Entwurf gar nicht). Die Antwort entsteht erst bei der
+Veröffentlichung, also muss die Prüfung dort laufen.
+
+Daraus sind drei Änderungen geworden:
+
+| | vorher | jetzt |
+|---|---|---|
+| **Anlegen** | `gh release create --draft` | erst fragen, was zum Tag existiert: nichts → Entwurf anlegen; genau eines → **ergänzen**; mehr als eines → abbrechen |
+| **Nachweis am Tag-Push** | keiner | das Asset wird am Objekt **nachgesehen**, Größe und Link stehen in der Zusammenfassung, und bei einem Entwurf steht ausdrücklich dort, dass am Tag noch nichts liegt |
+| **Nachweis am Tag** | keiner | `release-verify.yml` am `release: published`-Ereignis **lädt die Datei aus dem Release und packt sie aus** |
+
+**Warum `gh release create` nicht bleiben konnte.** Nachgemessen mit zwei
+Aufrufen auf denselben, nicht existierenden Tag: es entstehen **zwei**
+`untagged-`Objekte, ohne Fehler und ohne Hinweis. Ein Entwurf ist nicht an den
+Tag gebunden, es gibt also nichts, womit er kollidieren könnte — ein erneuter
+Lauf auf demselben Tag doppelt still.
+
+```bash
+npm run check-published-release -- v1.2.0
+```
+
+Der Prüfer (`scripts/check-published-release.mjs`) stellt fünf Fragen, und jede
+einzelne hätte den Vorfall gefunden:
+
+1. Trägt **genau ein** Objekt diesen Tag? (Bei v1.2.0: zwei.)
+2. Findet die Tag-Suche etwas, und ist es kein Entwurf?
+3. Hängt das erwartete Zip dran und ist es nicht leer? (Bei v1.2.0: kein Asset.)
+4. Lädt es sich herunter, entpacken, liegen `manifest.json` und `build/` richtig,
+   und sind die Ortsprior-Nutzdaten im ausgelieferten Bundle? — geprüft an der
+   **Datei**, nicht an ihren Metadaten.
+5. Enthält der veröffentlichte Text den Download-Hinweis aus `RELEASE.md`? (Bei
+   v1.2.0: der Text war 65 Zeichen lang, die Repo-Beschreibung.)
+
+Der Hinweis steht in `RELEASE.md` zwischen zwei Markern
+(`<!-- download-hinweis:anfang -->`), damit es für ihn **eine** Quelle gibt und
+der Prüfer nicht gegen eine Kopie vergleicht.
+
+Geladen wird über den Asset-Endpunkt der API mit Token — das Repo ist privat, ein
+anonymer Abruf liefert 404, und das wäre fehlende Anmeldung und kein Defekt.
+
+**Dieselbe Klasse wie das Eval-Gate, das dreimal grün war, ohne zu messen** — mit
+einem Unterschied: hier sah die Prüfung nicht das Falsche an, sie lief zu früh.
+Und gemerkt hat es diesmal ein Nutzer, nicht wir.
+
+---
+
+## Vor einem öffentlichen Repo zu klären
+
+Bestandsaufnahme, Stand 11.08.2026. **Nichts davon ist entschieden**, und drei
+der fünf Punkte sind keine technischen Fragen.
+
+**Suchraum:** 77 Commits, erreichbar von den 11 Branches und dem Tag `v1.2.0`
+auf `origin` — das ist, was öffentlich würde. Die 145 weiteren Commits im
+lokalen Repo sind Conductor-Checkpoints unter `refs/conductor-*` und werden
+nicht gepusht.
+
+> **Zur Methode, weil sie beim ersten Versuch falsch war.** Der erste Suchlauf
+> meldete für *jedes* Muster null Treffer — auch für `Figmaps`, was unmöglich
+> ist. Ursache: zsh trennt eine unquotierte Variable nicht an Zeilenumbrüchen,
+> `git grep` bekam die 77 SHAs als ein einziges Argument, und die Fehlermeldung
+> lief nach `/dev/null`. Aufgefallen ist es nur durch eine **Positivkontrolle**
+> mit Mustern, die es geben muss. Jede Zahl unten steht hinter einem Lauf, der
+> `Figmaps` (75 Commits) und `UEyes` (73) findet.
+
+### 1. Git-History — und der Unterschied zu HEAD
+
+**Die beiden Fragen sind verschieden, und die Antworten fallen weit auseinander.**
+
+#### HEAD ist sauber, bis auf zwei Stellen
+
+Die Bereinigung von 1.2 hat gehalten. Auf `main` enthält **keine** der Dateien,
+die damals angefasst wurden, noch ein Vorkommen:
+
+| Datei | HEAD |
+|---|---|
+| `NOTICE.md` | sauber |
+| `src/engine/config.ts` | sauber |
+| `src/figma/__tests__/traverse.test.ts` | sauber |
+| `src/figma/__tests__/place.test.ts` | sauber — der interne Produktname als Fixture-Ebenenname ist weg |
+| `eval/fixtures/README.md` | sauber |
+| `eval/fixtures-cli.ts` | sauber |
+| `README.md` | sauber auf `main` (0 Zeilen für jedes Muster) |
+
+Übrig auf HEAD sind genau zwei:
+
+1. **`package-lock.json`** — 211 Adressen der internen Registry. Siehe Punkt 3;
+   seit 1.3 behoben.
+2. **`assets/logo.svg`, `assets/logo-light.svg`, `src/ui/logo.tsx`** — die
+   Markenfarbe, und über `logo.tsx` auch in `build/ui.html`, also im Release-Zip
+   und in jedem veröffentlichten Plugin.
+
+#### Die History ist es nicht
+
+| Muster | Dateiinhalte in 77 Commits | Dateinamen | Commit-Messages |
+|---|---|---|---|
+| Firmenname | 76 Commits, 7 Dateien | keine | **keine** |
+| Firmenname mit Leerzeichen | keine | keine | keine |
+| interner Produktname | 22 Commits, 1 Datei | keine | keine |
+| interner Registry-Host | 76 Commits, 2 Dateien | keine | keine |
+| Markenfarbe (primär) | 75 Commits, 3 Dateien | keine | keine |
+| Markenfarbe (sekundär) | keine | keine | keine |
+
+Die sieben Dateien sind dieselben wie oben. **Was in HEAD entfernt wurde, steht
+in der History weiter** — und aus ihr lässt es sich nicht durch einen Commit
+nehmen, sondern nur durch ein Umschreiben aller Commits mit neuen SHAs. Deshalb
+Punkt 6.
+
+Inhaltlich sichtbar würde: dass dieses Werkzeug in einem Unternehmen entstanden
+ist, für welches Produkt, mit welchem Forschungsplan (First-Click-Test, ~50
+Teilnehmer über Lyssna oder Maze), und dass die Lizenzfrage zu UEyes intern
+offen war. Keine Zugangsdaten, keine Tokens, keine Kundendaten.
+
+> **Die konkreten Zeichenketten stehen hier nicht.** Dieser Abschnitt beschreibt,
+> was bei einer Veröffentlichung sichtbar würde — er darf sie nicht selbst
+> sichtbar machen. Beim ersten Schreiben tat er genau das: die erste Fassung
+> nannte Host, Produktnamen und Markenfarbe im Klartext und war damit die
+> einzige Datei auf HEAD, die alle drei Muster wieder enthielt. Aufgefallen ist
+> das nur, weil die Suche nach HEAD getrennt von der History wiederholt wurde.
+> Die Werte liegen im Ticket, nicht im Repo.
+
+Zwei Nebenbefunde:
+
+- **Autorschaft.** Alle 77 Commits stehen auf einer privaten Mailadresse, nicht
+  der dienstlichen. Das wird mit öffentlich und ist nicht rückholbar.
+- **Branches.** Von elf Remote-Branches sind neun entfernt — jeder einzeln
+  geprüft: PR gemergt, Inhalt in `main`, PR-Diffs bleiben abrufbar. Übrig sind
+  `main` und der jeweils aktive Arbeitsbranch. **„Reines Aufräumen" war es
+  nicht:** keiner der sechs ersten war Vorfahre von `main`, zusammen 27 eigene
+  Commits. Dass nichts verloren geht, folgte erst aus den Squash-Merges — und das
+  musste geprüft werden, nicht angenommen.
+- **Gelöschte Branches.** Ihre Objekte sind über keinen Ref mehr erreichbar,
+  können aber bis zur serverseitigen Garbage Collection per SHA abrufbar sein.
+  Wer keinen SHA kennt, findet sie nicht.
+
+### 2. Versionierte Bilder
+
+**Kein einziges Bild zeigt ein reales Produktdesign des Unternehmens.** Nachgesehen, nicht
+angenommen — jedes Bild geöffnet, dazu die Pixelfarben ausgezählt.
+
+| Datei | zeigt | real oder Nachbau |
+|---|---|---|
+| `assets/messungen/a4-onboarding.png` | Onboarding-Frame + 4 Heatmap-Varianten | **Nachbau** (Generator) |
+| `assets/messungen/a6-schaerfe-onboarding.png` | derselbe Frame, Schärfevergleich | **Nachbau** |
+| `assets/messungen/a8-onboarding-cutoff.png` | derselbe Frame, Cutoff-Vergleich | **Nachbau** |
+| `assets/messungen/a8-baender-grauer-frame.png` | grauer Testframe, Abschnittsbänder | **Nachbau** |
+| `assets/messungen/c-contrastmap-onboarding.png` | Contrastmap auf dem Onboarding-Frame | **Nachbau** |
+| `assets/messungen/c-contrastmap-desktop.png` | Contrastmap auf dem Desktop-Frame | **Nachbau** |
+
+Alle sechs sind Ausgaben von `eval/onboarding.ts` bzw. `eval/constructed.ts`:
+Text als abstrakte Glyphenbalken, Kacheln als Farbflächen, Beschriftungen
+gattungstypisch erfunden. **Markenfarbe in keinem einzigen** — ausgezählt über
+alle Pixel; das Gelb der Testframes ist `#FFC800` und nicht die Markenfarbe.
+
+**Aber:** `assets/logo.svg`, `assets/logo-light.svg` und `src/ui/logo.tsx`
+tragen die Markenfarbe, und über `logo.tsx` landet sie in `build/ui.html` — also im
+Release-Zip und in jedem veröffentlichten Plugin. Ob das Logo die Markenfarbe
+tragen darf, wenn das Repo öffentlich ist und das Plugin außerhalb der
+Organisation erscheint, ist eine Marken- und keine Code-Frage.
+
+**Und die 40 Bilder, die niemand auf der Liste hatte:**
+`eval/fixtures/gate-web/images/` und `gate-mobile/images/` sind je 20 **echte
+Screenshots fremder Apps und Websites** aus UEyes — nicht unsere Designs, aber
+reale Produktoberflächen Dritter. Dazu je 20 Heatmaps und 20 Fixmaps, die
+Ground Truth und keine Screens sind. Siehe Punkt 5.
+
+### 3. `package-lock.json` — was daraus ablesbar wäre
+
+Alle 211 `resolved`-Felder zeigen auf **einen** Host:
+
+```
+https://<interner-host>:443/artifactory/api/npm/<proxy-repo>/@esbuild/darwin-arm64/-/darwin-arm64-0.28.1.tgz
+```
+
+Ablesbar wäre daraus (die echten Werte im Ticket, nicht hier — siehe die Notiz
+unter Punkt 1):
+
+| | |
+|---|---|
+| Hostname | vollständig, **mit explizitem Port** `:443` |
+| Produkt | JFrog Artifactory (aus `/artifactory/api/…`) |
+| API-Pfadlayout | `/artifactory/api/npm/<repo>/<paket>/-/<datei>` |
+| interne Repo-Benennung | `remote-npmjs.org-repo` — die Namenskonvention für Proxy-Repos |
+| Umfang | 211 Pakete werden über diesen Proxy bezogen |
+
+Dazu zwei Prosa-Stellen in `README.md`, die den Host im Klartext nennen.
+
+**Es gibt eine Variante, die reproduzierbare Installationen erhält und die Hosts
+nicht nennt — nachgemessen, nicht behauptet:**
+
+| Variante | interne Hosts | Paketmenge | Version + `integrity` | `npm ci` |
+|---|---|---|---|---|
+| **A — `resolved` entfernen** (`scripts/ci-lockfile.mjs` auf die eingecheckte Datei) | **0** | 211, unverändert | **0 von 211 abweichend** | 163 Pakete, erfolgreich gegen die öffentliche Registry |
+| **B — Lockfile neu erzeugen** gegen `registry.npmjs.org` | 0 | 211, unverändert | **38 Versionen wandern** (u. a. esbuild 0.28.1 → 0.28.2) | — |
+
+**A ist umgesetzt** (1.3). Die 211 Adressen sind aus der eingecheckten Datei
+entfernt, `scripts/ci-lockfile.mjs --check` bewacht die Invariante im Test und in
+CI, und `scripts/__tests__/lockfile.test.ts` belegt beide Richtungen — dass die
+echte Datei besteht und dass die Prüfung an einer wiedereingeschleppten Adresse
+fehlschlägt. Entfernt wurde genau die Bezugsquelle, jede Zusicherung steht: `integrity` bleibt in allen 211 Einträgen und wird von
+`npm ci` geprüft. Ein Paket mit falschem Inhalt schlägt weiterhin fehl. Die
+Installation ist danach **exakt** dieselbe — dieselben Pakete, dieselben
+Versionen, dieselben Hashes.
+
+**B ist möglich, aber keine reine Metadaten-Änderung.** Ein neu erzeugtes
+Lockfile löst die Semver-Bereiche neu auf und aktualisiert 38 Pakete. Bei
+gleicher Version wichen keine Hashes ab (also kein Manipulationssignal), aber
+ein Abhängigkeits-Update gehört in einen eigenen, gewollten Schritt und nicht in
+eine Offenlegungsmaßnahme.
+
+Für Security zusammengefasst: HEAD ist bereinigt, aber der Host steht in 76
+Commits und lässt sich nicht durch eine Änderung an HEAD aus der History nehmen — das erforderte ein
+Umschreiben aller Commits (`filter-repo`) und damit neue SHAs für alles.
+Alternativ bleibt das Repo privat, oder es wird mit neuer History öffentlich
+gemacht.
+
+### 4. Lizenz — offen, und nicht technisch
+
+**Es gibt keine `LICENSE`-Datei.** Ein öffentliches Repo ohne Lizenz steht unter
+„alle Rechte vorbehalten": Lesen und Forken über GitHub ist erlaubt, jede
+Nutzung, Änderung oder Weitergabe nicht. Für ein Werkzeug, das Kollegen und
+womöglich Dritte benutzen sollen, ist das vermutlich nicht gewollt — die
+Entscheidung, **ob** und **welche** Lizenz, gehört aber nicht in ein
+Commit-Diff. Zu bedenken ist dabei, dass das Repo abgeleitete UEyes-Daten
+enthält (CC BY 4.0), die eine eigene Lizenz behalten; eine Projektlizenz gilt
+für unseren Code, nicht für sie.
+
+### 5. UEyes-Fixtures unter CC BY 4.0 — reicht die Nennung?
+
+**Ja, für die Anforderungen der Lizenz.** CC BY 4.0 erlaubt Weitergabe
+ausdrücklich, auch öffentlich und kommerziell; Pflicht ist die Nennung. Die vier
+Elemente aus §3(a) sind vorhanden und geprüft:
+
+| verlangt | wo |
+|---|---|
+| Urheber genannt | `NOTICE.md`, dazu `citation` in beiden `index.json` |
+| Lizenz benannt und verlinkt | `CC BY 4.0` + `creativecommons.org/licenses/by/4.0/` |
+| Änderungen angegeben | `NOTICE.md` und die `notes` beider Sets („auf dem Analyseraster", „maximum-gepoolt", „einmal mehr resampled") |
+| Quelle nachvollziehbar | DOI `10.1145/3544548.3581096` |
+
+Zusätzlich trägt `src/engine/priors/generated.ts` die Nennung im Kopf, und die
+Datengrundlage steht unter jeder platzierten Vorhersage-Karte.
+
+**Was mit einem öffentlichen Repo trotzdem hinzukommt, und es ist nicht die
+Lizenz.** Die 40 Bilder in `images/` sind Screenshots **fremder** Apps und
+Websites. UEyes stellt den Datensatz unter CC BY 4.0 — ob diese Lizenz die in den
+Screenshots abgebildeten Oberflächen Dritter mitumfassen kann, können die
+Datensatz-Autoren nicht für deren Rechteinhaber erklären. Für interne Nutzung ist
+das ein kleines Risiko; öffentliche Weiterverbreitung von 40 Bildern ist eine
+größere Fläche. Das gehört vor Security und nicht in eine Selbsteinschätzung.
+
+#### Woher die 40 Bilder wirklich kommen — Korrektur
+
+**Eine frühere Fassung dieses Abschnitts nannte Rico „den Ursprungsdatensatz
+derselben Gattung" für alle 40 Bilder. Das war falsch, und zwar in einer
+Richtung, die eine Vorlage an Security in die Irre geführt hätte:** Rico ist die
+Quelle von *Enrico*, und für UEyes ist es die Quelle **einer** der vier
+Kategorien. Wer prüft, muss fünf Vorgeschichten ansehen, nicht eine.
+
+#### Die 40 Gate-Bilder: Vorlage für Security
+
+**Die Einzelherkunft ist nicht rekonstruierbar, und das ist die tragende
+Aussage.** UEyes hat je Kategorie 495 Bilder aus einem größeren Kandidatenpool
+**ausgewählt** und nennt nicht, welches Bild aus welchem Upstream stammt. Aus dem
+Datensatzpapier (arXiv 2402.05202, Abschnitt 3), wörtlich:
+
+> „We collected 494 webpage images from the Alexa 500 dataset, 1,507 images from
+> the Visual Complexity and Aesthetics dataset, and 200 images from the Imp1k
+> dataset. We extended the breadth of the webpage image set by capturing 103
+> additional webpage screenshots."
+
+> „We extracted a sample of 1,761 images from among the 46,064 mobile UI images
+> from the RICO dataset. We extended the set with 42 further mobile UI images."
+
+| Kategorie | Kandidaten | ausgewählt | mögliche Vorgeschichten |
+|---|---:|---:|---:|
+| webpage | 2.304 | 495 | **4** |
+| mobile | 1.803 | 495 | **2** |
+
+**Die Formulierung für die Vorlage:** nicht „20 aus RICO, 20 aus drei Quellen",
+sondern
+
+> **40 Bilder mit nicht trennbarer Einzelherkunft. Fünf mögliche Vorgeschichten.
+> Für jede Kategorie gilt der restriktivste in Frage kommende Upstream.**
+
+Eine Präzisierung, die die Aussage nicht aufweicht, sondern schärft: trennbar ist
+die Herkunft bis auf die **Kategorie**, nicht bis aufs Bild. Unsere 20
+Mobile-Bilder haben zwei mögliche Vorgeschichten, unsere 20 Web-Bilder vier. Der
+„restriktivste Upstream gilt" wird damit **pro Kategorie** angewandt — und das
+Ergebnis ist für beide Kategorien unbequem, aber aus verschiedenen Gründen.
+
+#### Die fünf Upstreams, Lizenzlage einzeln
+
+| Upstream | was es ist | Lizenz | Stand |
+|---|---|---|---|
+| **Visual Complexity and Aesthetics** (1.507, webpage) | Harvard Dataverse, `doi:10.7910/DVN/XEYNYW`, enthält `stimuli.zip` mit den Screenshots (695 MB) | **CC0 1.0** | **belegt** über die Dataverse-API |
+| **RICO** (1.761, mobile) | interactionmining.org | **keine Lizenz, sondern ein Nutzungsvertrag**: Zugang darf nur an Personen weitergegeben werden, die den Bedingungen zustimmen; „The screenshots contained in the Rico dataset may contain copyrighted work" | **belegt**, Volltext gelesen |
+| **Alexa Top 500** (494, webpage) | **kein Bilddatensatz.** Die Literaturangabe lautet „Alexa Top 500 Websites. 2022. expireddomains.net/alexa-top-websites" — eine **Domainliste** | **es existiert keine Upstream-Lizenz.** Die Bilder sind Screenshots lebender Websites, aufgenommen anhand dieser Liste; der einzige Rechtsanspruch darüber ist die CC-BY-Erklärung der UEyes-Autoren | **belegt** über die Literaturangabe |
+| **eigene Aufnahmen der Autoren** (103 webpage, 42 mobile) | Teil des UEyes-Deposits | **CC BY 4.0** über Zenodo — die abgebildeten Oberflächen bleiben fremd | belegt für das Deposit, **abgeleitet** für die Einzelbilder |
+| **Imp1k** (200 webpage) | predimportance.mit.edu, Fosco et al., UIST 2020 | **OFFEN.** Projektseite, Suche und Repo nennen keine Lizenz; die Seite sagt nur „the dataset and interface are made available" | **offen** |
+
+**Was offen bleibt: eine von fünf** — Imp1k. Alle anderen sind belegt, wobei
+„belegt" bei den eigenen Aufnahmen der Autoren heißt: das Deposit trägt CC BY 4.0,
+also gilt es für sie; einzeln ausgewiesen sind sie nicht.
+
+#### Was daraus für die beiden Kategorien folgt
+
+**Mobile (20 Bilder).** Möglich sind RICO oder eigene Aufnahme. Restriktivster
+Upstream ist **RICO** — und dessen Bedingungen sind mit einer öffentlichen
+Weitergabe schwer vereinbar: Zugang nur an Personen, die vorher zustimmen. Ein
+öffentliches Repo kann das nicht sicherstellen. Für diese 20 ist die Antwort
+absehbar nein, unabhängig von CC BY 4.0 auf der UEyes-Ebene.
+
+**Webpage (20 Bilder).** Möglich sind vier. Der restriktivste ist **nicht
+bestimmbar**, weil Imp1k offen ist — und der zweite Problemfall ist Alexa Top 500,
+wo es überhaupt keine Upstream-Lizenz gibt, sondern nur Screenshots fremder
+Websites. Dass Visual Complexity and Aesthetics CC0 trägt, hilft hier nicht: bei
+nicht trennbarer Herkunft nützt der freizügigste Upstream nichts.
+
+**Die eigentliche Frage an Security ist damit eine juristische und keine
+technische:** kann eine CC-BY-4.0-Erklärung der Datensatz-Autoren die in den
+Screenshots abgebildeten Oberflächen Dritter mitumfassen — und wenn nein, ändert
+das etwas daran, dass wir 40 solcher Bilder öffentlich weitergeben würden? Für
+die interne Nutzung ist die Lage unstrittig; die Weitergabe ist der Schritt, der
+sie aufwirft.
+
+**Ein Weg, der die Frage umgeht:** die Ground Truth (Heatmaps und Fixmaps) ist
+unsere Ableitung und zeigt keine fremde Oberfläche. Sie könnte öffentlich bleiben,
+die `images/` nicht. Dem Gate fehlt dann die Eingabe — es sei denn, die Bilder
+kommen zur Laufzeit aus dem privaten Repo, und genau so ist die Skizze in Punkt 6
+gebaut.
+
+#### Die RICO-Frage betrifft die Gegenwart, nicht die Zukunft
+
+**Das ist keine Frage über ein künftiges öffentliches Repo.** Die 20 Bilder mit
+möglicher RICO-Herkunft liegen **seit 1.2 im privaten Repo**, und darauf haben
+Kollegen Zugriff. RICOs Bedingung lautet:
+
+> „Researcher may provide research associates and colleagues with access to the
+> Database provided that they first agree to be bound by these terms and
+> conditions."
+
+Wer bei uns Repo-Zugriff hat, sieht diese Bilder — **ohne RICOs Bedingungen je
+gesehen zu haben.** Wenn die Klausel für sie gilt, findet die fragliche
+Weitergabe also nicht künftig statt, sondern seit dem 10.08.2026.
+
+**Zwei Lesarten, und die Entscheidung liegt nicht bei uns:**
+
+| | |
+|---|---|
+| **A** | Wir haben die Bilder aus dem **UEyes-Deposit auf Zenodo unter CC BY 4.0** bezogen, nicht von RICO. Wir haben RICO nie heruntergeladen und dessen Vertrag nie akzeptiert — der bindet, wer den Datensatz bezieht. CC BY erlaubt Weitergabe. Dann ist der heutige Zustand in Ordnung. |
+| **B** | UEyes konnte für den RICO-abgeleiteten Teil keine weitergehenden Rechte einräumen, als es selbst hielt. Dann reist die Zugangsklausel mit den Bildern, und der heutige Zustand ist bereits eine Weitergabe an Personen, die nicht zugestimmt haben. |
+
+Für **A** spricht ein harter Umstand: wir haben mit RICO nie einen Vertrag
+geschlossen. Für **B** spricht der allgemeine Satz, dass niemand mehr Rechte
+übertragen kann als er hat. Das ist genau die Art Frage, die eine
+Selbsteinschätzung nicht beantworten darf.
+
+**Und dieselbe Form wie beim Registry-Host:** die Bilder stehen in der History
+seit 1.2. Aus HEAD sind sie entfernbar, aus den Commits nicht.
+
+#### Gibt es eine Variante, die den Regressionsschutz erhält, ohne die Bilder zu verbreiten?
+
+**Ja, mit einer klar benannten Einschränkung — und ein naheliegender Weg fällt an
+einer Zahl aus.**
+
+**Was nicht geht: pro Lauf aus Zenodo holen.** Das UEyes-Deposit ist **eine
+einzige Zip von 12,91 GB** (nachgesehen über die Zenodo-API, `md5:c2d53e6a…`).
+Ein Teilabruf von 40 Bildern ist damit nicht vorgesehen; 12,9 GB pro CI-Lauf
+sind keine Option, und ein Cache dafür ist genau das, was schon einmal
+stillschweigend verfallen ist.
+
+**Was geht: die 40 Bilder gar nicht erst committen.** Von den 120 Dateien der
+beiden Gate-Sets sind nur 40 das Problem:
+
+| Verzeichnis | Dateien | zeigt fremde Oberflächen | bleibt? |
+|---|---:|---|---|
+| `images/` | 40 | **ja** — Screenshots fremder Apps und Websites | **nein** |
+| `heatmaps/3s/` | 40 | nein — ein Graustufen-Blobfeld aus Blickdaten | ja |
+| `fixmaps/3s/` | 40 | nein — binäre Fixationspunkte | ja |
+| `index.json` | 2 | nein — Metadaten, Lizenz, Zitat | ja |
+
+Nachgesehen, nicht angenommen: eine Heatmap ist ein schwarzes Bild mit hellen
+Flecken, in dem von der Oberfläche darunter nichts zu erkennen ist. Die Ground
+Truth ist unsere Ableitung aus Blickdaten und zeigt kein fremdes Werk.
+
+Der Vorschlag konkret:
+
+1. `images/` aus der Versionierung nehmen, `.gitignore` entsprechend zurückbauen.
+2. Ein **Manifest** committen: die 40 Bild-IDs mit ihrem sha256. Das macht die
+   Auswahl reproduzierbar und den Bezug überprüfbar, ohne ein Bild zu enthalten.
+3. Ein Skript, das die 40 aus einer **lokalen** UEyes-Kopie zieht und gegen das
+   Manifest prüft — der Pfad als Parameter, wie schon bei `--ueyes`.
+4. Das Gate läuft dort, wo die Daten liegen: auf der Maschine oder dem privaten
+   Runner, der UEyes bezogen hat. Genau die Skizze aus Punkt 6, nur mit der
+   Verschärfung, dass **auch das private Repo die Bilder nicht hält.**
+
+**Der Preis, und er ist derselbe wie 2026-08:** das Gate läuft in keinem CI ohne
+Datenzugang. Genau daran ist es damals monatelang still ausgefallen. Was diese
+Variante heute tragbar macht und damals nicht, ist eine einzige Zeile:
+`scripts/gate-coverage.mjs` **spricht die Abwesenheit aus**, in jedem Lauf. Ein
+fehlendes Gate ist dann eine Aussage in der Zusammenfassung und kein grüner
+Haken.
+
+**Was die Variante nicht löst:** die Bilder stehen weiter in der History. Für den
+heutigen Zustand ändert sie also, wer sie **künftig** neu bekommt, nicht, wer sie
+schon hat. Vollständig wäre nur ein frisches Repo — Punkt 6.
+
+#### Anfrage an die Imp1k-Autoren — abschickfertig
+
+Imp1k ist der eine der fünf Upstreams, dessen Bedingungen sich nicht ermitteln
+ließen: weder `predimportance.mit.edu` noch das Repo noch die Veröffentlichung
+nennen eine Lizenz. Anschreiben ist der einzige Weg. Adressat ist die auf der
+Projektseite genannte Kontaktadresse; Autoren sind Fosco, Casser, Bedi,
+O'Donovan, Hertzmann und Bylinskii (UIST 2020).
+
+Auf Englisch, weil die Autoren an MIT und Adobe sitzen.
+
+```text
+Subject: Licence terms for Imp1k — internal evaluation and subset redistribution
+
+Dear authors,
+
+we are evaluating an internal, unpublished Figma plugin that predicts visual
+attention on user interfaces. For that we use the UEyes dataset (Jiang et al.,
+CHI 2023), published on Zenodo under CC BY 4.0.
+
+UEyes states that 200 of its webpage images and 398 of its poster images come
+from Imp1k. We keep a 40-image subset of UEyes (20 webpage, 20 mobile) as a
+regression test set. Because UEyes selected 495 images per category from a
+larger candidate pool and does not record per-image provenance, we cannot tell
+which of our images originate from Imp1k — we have to assume that some may.
+
+We could not find a licence or terms-of-use statement for Imp1k on
+predimportance.mit.edu, in the linked repository, or in the paper. Hence three
+questions:
+
+1. Under which terms is Imp1k made available?
+2. Do those terms cover using Imp1k-derived images internally to evaluate a tool
+   that is not published?
+3. Do they cover redistributing a small subset of the images — for example as a
+   test fixture in a source repository that may later become public?
+
+We are not asking for anything beyond what the terms already permit; we need to
+know what they are, so that we can decide whether such a subset may be shared at
+all. If the answer to (3) is no, that is a useful answer and we will keep the
+images out of any distribution.
+
+Thank you for the dataset and for your time.
+
+Kind regards,
+Constantin Diessenbacher
+```
+
+**Was die Anfrage bewusst nicht tut:** sie bittet nicht um eine Ausnahme und
+nicht um eine Erlaubnis. Sie fragt nach den Bedingungen — denn die Antwort „nein"
+ist genauso brauchbar wie „ja" und beendet die offene Stelle in der Vorlage.
+
+### 6. Frisches öffentliches Repo statt History-Rewrite — Skizze
+
+**Warum kein Rewrite.** 76 von 77 Commits sind betroffen. `git filter-repo`
+erzeugt für jeden einen neuen SHA; damit zeigt der Tag `v1.2.0` ins Leere, das
+veröffentlichte Release verliert seinen Bezug, jeder Link auf einen Commit in
+einem PR oder Ticket bricht, und die vorhandenen Klone werden inkompatibel. Der
+Aufwand steht in keinem Verhältnis zu 27 Commits alter Zwischenstände.
+
+**Nichts davon ist angelegt.** Das Folgende ist die Skizze zur Entscheidung.
+
+#### Was mitwandert, was zurückbleibt
+
+| | |
+|---|---|
+| **wandert** | `src/`, `eval/` (ohne `fixtures/`), `scripts/`, `assets/fonts/`, `assets/messungen/`, `manifest.json`, `package.json`, das bereinigte `package-lock.json`, `.github/workflows/`, `README.md`, `NOTICE.md`, `RELEASE.md`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.js` |
+| **bleibt** | die 77 Commits samt Herkunft; die 40 UEyes-Screenshots (Punkt 5); dieser Abschnitt und Punkt 1–5, die von Interna sprechen; die private Autorenadresse |
+| **entscheidungsabhängig** | `assets/logo.svg`, `assets/logo-light.svg`, `src/ui/logo.tsx` — solange die Markenfarbe drin ist, wandert das Logo nicht mit |
+
+**Ein Initial-Commit, keine gefilterte History.** Ein „Initial public release,
+extrahiert aus interner Entwicklung" ist ehrlich und billig. Eine kuratierte
+Teil-History wäre teuer, fehleranfällig und würde die Herkunft ohnehin nur
+verwischen statt entfernen. Die Autorenidentität wird dabei einmal bewusst
+gesetzt (`git -c user.email=…`), nicht aus der lokalen Konfiguration übernommen.
+
+#### Tag und Release
+
+Im öffentlichen Repo neu: Tag `v1.2.0` auf dem Initial-Commit, Release dazu, Zip
+aus einem Build dieses Stands, Text aus `RELEASE.md`. `scripts/check-published-release.mjs`
+prüft das dort genauso — es fragt nach dem Objekt zum Tag, nicht nach einer
+History.
+
+**Das bestehende private Release bleibt und wird zum internen Archiv.** Damit
+gibt es zwei Archive zum selben Tag, und das ist genau die Konstellation, aus
+der der Vorfall bei v1.2.0 entstand — nur diesmal absichtlich. Es braucht
+deshalb eine Regel und keinen guten Willen: **verbindlich ist das öffentliche**,
+das private trägt einen Hinweis im Release-Text, dass es das interne Archiv ist.
+Ein Zip zurückzuziehen, das jemand geladen hat, geht nicht; ein Release
+umzubenennen schon.
+
+#### CI ohne die 40 Gate-Bilder
+
+Die gute Nachricht steht schon im Repo: **das Contrastmap-Gate braucht keine
+Fixtures.** Sein Korpus sind 20 Frames aus `eval/onboarding.ts`,
+`eval/constructed.ts` und `eval/overlap.ts` — Code, kein Datensatz. Es läuft
+öffentlich unverändert.
+
+| Job | öffentlich | Grund |
+|---|---|---|
+| `verify` (Typecheck, Tests, Build, Lint) | **läuft** | keine Fixtures nötig |
+| `contrast-gate` | **läuft** | Korpus ist Code |
+| `release` / `release-verify` | **läuft** | — |
+| `eval-gate` (UEyes, 40 Bilder) | **läuft nicht** | die Bilder wandern nicht mit |
+
+**Der Job wird im öffentlichen Repo entfernt, nicht übersprungen.** Ein Job, der
+„skipped" meldet, weil Daten fehlen, ist genau der Ausfall, der das Eval-Gate
+monatelang stillgelegt hat — ein grüner Haken ohne Messung. Stattdessen gehört in
+die öffentliche README ein Satz: die Vorhersagegüte wird intern gegen UEyes
+bewacht, öffentlich läuft die Regressionsprüfung der Messung. Das ist weniger,
+aber es ist wahr.
+
+#### Die Lücke: das Eval-Gate hat nach dem Schnitt kein Zuhause
+
+**Die Skizze oben ist an dieser Stelle unvollständig, und die Lücke ist genau das
+Netz, dessen Ausfall in 1.2 dreimal gefunden wurde.** Das Eval-Gate braucht
+**Code und Fixtures**. Der Code wird öffentlich, die Fixtures bleiben privat, und
+„privat hält keinen Code" heißt: der Regressionsschutz der Vorhersage-Engine
+läuft nirgends.
+
+Zu unterscheiden ist dabei, was der Schnitt kostet und was nicht:
+
+| | braucht Fixtures | läuft öffentlich |
+|---|---|---|
+| `verify` (Typecheck, Tests, Build, Lint) | nein | **ja** |
+| Contrastmap-Gate | nein — der Korpus ist Code | **ja** |
+| Lockfile-Invariante | nein | **ja** |
+| Release + Release-Prüfer | nein | **ja** |
+| **Eval-Gate (Vorhersage, 40 Bilder)** | **ja** | **nein** |
+
+Betroffen ist also genau eine Prüfung — aber die für die Karte, die das Produkt
+verkauft.
+
+#### Die Variante: privates Repo hält Fixtures **und** einen schlanken Workflow
+
+```
+figmaps-eval-data  (privat, klein)
+├─ fixtures/gate-web/…        20 Bilder + Ground Truth
+├─ fixtures/gate-mobile/…     20 Bilder + Ground Truth
+├─ eval-baseline.json         die Erwartung, eingecheckt
+└─ .github/workflows/gate.yml checkt den ÖFFENTLICHEN Code aus, legt die
+                              Fixtures hinein, fährt das Gate
+```
+
+Der Workflow ist kurz: öffentliches Repo auf einen Ref auschecken, Fixtures
+hineinkopieren, `npm ci`, `npm run eval -- --gate --baseline eval-baseline.json`.
+Kein Code-Duplikat — der Code kommt bei jedem Lauf aus der öffentlichen Quelle,
+und damit kann nichts divergieren.
+
+**Die Erwartung wird eingecheckt**, wie `contrast-baseline.json`. Heute rechnet
+das Gate seine Referenz in einem Worktree von `origin/main` — das setzt voraus,
+dass beide Stände im selben Repo liegen, und genau das gilt nach dem Schnitt
+nicht mehr. Eine eingecheckte Zahl im privaten Repo macht jede Bewegung dort zu
+einer Zeile im Diff.
+
+#### Gegen welchen Ref, und wann
+
+Alle drei, für verschiedene Zwecke — sie ersetzen sich nicht:
+
+| Auslöser | prüft | Zweck | Ergebnis |
+|---|---|---|---|
+| `repository_dispatch`, gesendet vom öffentlichen Repo bei Push auf `main` | den Merge-Commit | Regression **nach** dem Merge | Commit-Status am öffentlichen Commit |
+| Push eines Tags `v*` (dispatch) | den Tag | **Release-Voraussetzung** | ohne grünes Gate kein Release |
+| `schedule`, nächtlich | `main` | Drift in Toolchain und Abhängigkeiten | Issue im privaten Repo |
+| `workflow_dispatch` mit Ref | beliebig | von Hand, etwa gegen einen PR-Branch | Status am angegebenen Commit |
+
+Der Tag-Lauf ist der wertvollste: er ist der eine Moment, an dem eine schlechte
+Karte tatsächlich Nutzer erreicht, und er ist erzwingbar — `release-verify.yml`
+kann den Status zum Tag zur Bedingung machen.
+
+#### Wie ein öffentlicher PR von einem roten Gate erfährt
+
+**Ein PR aus einem Fork erfährt es nicht, und er kann es nicht.** Das ist keine
+Nachlässigkeit im Entwurf, sondern eine Eigenschaft von GitHub: ein
+`pull_request`-Lauf aus einem Fork bekommt **keine Secrets**. Ohne Secret keine
+Fixtures und kein Dispatch ins private Repo. Damit ist die Vorab-Durchsetzung für
+Fork-PRs verloren — und das ist der Punkt, an dem solche Aufstellungen
+üblicherweise faulen, weil jemand die Lücke mit einem übersprungenen Job
+schließt, der grün aussieht.
+
+Drei Wege, absteigend nach Aufwand:
+
+**(1) Kein Vorab-Gate für Fork-PRs — GEWÄHLT.** Die Durchsetzung wandert an
+zwei Stellen, die beide funktionieren: nach dem Merge auf `main` (Status wird rot,
+`main` ist sichtbar kaputt, der Merger ist zuständig) und vor dem Release (kein
+Release ohne grünes Gate zum Tag). In der öffentlichen README steht ein Satz
+dazu. **Der Eval-Gate-Job wird im öffentlichen Repo entfernt, nicht
+übersprungen** — ein Job, der „skipped" meldet, weil Daten fehlen, ist derselbe
+Ausfall, der das Gate monatelang stillgelegt hat.
+
+*Kostet:* eine Regression kann auf `main` landen und wird Minuten später
+gefunden, nicht vorher.
+
+**Bedingung, und sie ist nicht verhandelbar: die Abwesenheit muss sichtbar sein.**
+Jeder PR-Lauf schreibt in seine Zusammenfassung, welche Netze ihn abdecken und
+welche nicht, und wo die Durchsetzung für das Fehlende stattfindet —
+`scripts/gate-coverage.mjs`, eingehängt im `verify`-Job. Das Skript sieht nach, ob
+die Fixtures da sind, statt es zu behaupten; damit läuft es in beiden Repos
+unverändert und sagt in jedem die Wahrheit. Es wird nie rot, es ist ein
+Beipackzettel.
+
+Ohne diese Zeile hätte ein grüner Haken im öffentlichen Repo **formal dieselbe
+Form** wie die sechs dokumentierten Fälle: eine Prüfung, die grün ist, ohne das zu
+messen, was man ihr zuschreibt. Der Unterschied zwischen „läuft nicht, hier steht
+warum und wo stattdessen" und „läuft nicht" ist der ganze Unterschied.
+
+**(2) Für PRs aus demselben Repo mitlaufen lassen — verworfen.** Nicht-Fork-PRs
+bekommen Secrets, der öffentliche Workflow könnte die Fixtures mit einem Token
+holen. Bei einem Committer träfe das praktisch alle PRs.
+
+*Verworfen aus zwei Gründen, und der zweite ist der stärkere:* ein Token mit
+Leserecht am privaten Repo in den Secrets eines **öffentlichen** Repos ist eine
+**Kopplung, die man später bereut** — sie überlebt jede Umorganisation, jeden
+Wechsel der Zuständigkeit, und sie ist genau dann noch da, wenn niemand mehr weiß,
+warum. Der Gewinn ist bei einem Committer klein. Dazu bliebe die Lücke für
+Fork-PRs bestehen, nur unsichtbarer, weil sie dann wie eine Ausnahme aussieht.
+
+**(3) Privater Poller, der Status auf offene PRs schreibt.** Das private Repo
+fragt regelmäßig die offenen PRs des öffentlichen ab (der Fork-Head ist
+öffentlich, also abrufbar), fährt das Gate und schreibt einen Commit-Status
+zurück. Ein von außen gesetzter Status **kann** über Branch Protection zur
+Merge-Bedingung gemacht werden — das ist die einzige Variante, die
+Vorab-Durchsetzung wirklich zurückholt.
+
+*Kostet:* Latenz in der Größe des Poll-Intervalls, und eine Falle, die genannt
+werden muss: **eine Merge-Bedingung, deren Status nie eintrifft, blockiert jeden
+Fork-PR für immer.** Wer (3) verlangt, muss den Poller so bauen, dass er
+**immer** einen Status setzt, auch „nicht anwendbar". Sonst ist die Durchsetzung
+nicht gewonnen, sondern in eine Blockade verwandelt.
+
+#### Eine Alternative, die naheliegt und nicht hilft
+
+Den Eval-Harness gleich ganz privat halten und nur das Plugin veröffentlichen.
+Das verschiebt das Problem: der Harness importiert aus `src/`, bräuchte also den
+öffentlichen Code als Abhängigkeit — dieselbe repo-übergreifende Konstruktion,
+nur ohne den Vorteil, dass die Messungen nachvollziehbar sind. Und die
+Glaubwürdigkeit dieser README hängt daran, dass der Harness lesbar ist.
+
+#### Was das für die Reihenfolge bedeutet
+
+Der Schritt „`eval-gate.yml` im öffentlichen Repo entfernen" aus der Liste oben
+ist **erst zulässig, wenn das private Gate läuft und einen Status schreibt.**
+Sonst gibt es ein Fenster, in dem die Vorhersage gar nicht bewacht ist — und ein
+solches Fenster hat in diesem Projekt schon einmal Monate gedauert.
+
+#### Synchronhalten — der Punkt, an dem es üblicherweise scheitert
+
+**Zwei Repos mit denselben Dateien laufen auseinander, sobald jemand in das
+falsche committet, und nichts merkt es.** Ein Mirror-Skript hilft nicht: es
+verschiebt das Problem auf die Frage, wer wann spiegelt.
+
+**Die Richtung umdrehen ist die Lösung.** Nicht „intern ist die Quelle, öffentlich
+ein Abbild", sondern:
+
+| Repo | Inhalt |
+|---|---|
+| **öffentlich** | **die Quelle der Wahrheit.** Code, Tests, Harness, Workflows, Doku |
+| **privat** | nur, was nicht hinaus darf: `eval/fixtures/` (die 40 Bilder + Ground Truth), interne Notizen, die Herkunfts-History als Archiv |
+
+Damit gibt es **keine Datei, die in beiden liegt**, und nichts kann divergieren.
+Die private Seite wird ein kleines Repo, das die Fixtures beisteuert — als
+Submodul, als Actions-Secret mit einer Download-Adresse, oder von Hand für einen
+Messlauf. Der Eval-Gate-Job läuft dann dort, gegen den öffentlichen Code als
+Abhängigkeit.
+
+**Falls es trotzdem zwei Kopien derselben Dateien geben soll**, dann nicht auf
+Zuruf: eine Prüfung, die die Abweichung findet, statt Vertrauen. Konkret ein Job
+im privaten Repo, der den öffentlichen Stand holt und die Hashes der gemeinsamen
+Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster wie
+überall in diesem Repo: kein grüner Haken ohne Nachweis.
+
+#### Reihenfolge
+
+1. Entscheidungen aus Punkt 1, 4, 5 und zur Markenfarbe. **Ohne sie nichts anlegen.**
+2. Öffentliches Repo anlegen, Initial-Commit aus dem bereinigten Stand.
+3. Tag `v1.2.0`, Release, Zip — dann `check-published-release.mjs`.
+4. **Das private Gate aufsetzen — und `eval-gate.yml` im öffentlichen Repo erst
+   entfernen, wenn es läuft UND einmal beweisbar rot geworden ist.** Nicht
+   vorher. Ein Gate, von dem niemand gesehen hat, dass es rot werden kann, ist
+   ein grüner Haken; dieses Repo hat das dreimal am eigenen Eval-Gate erlebt. Der
+   Beweis ist billig — ein Lauf mit absichtlich verschlechterter Engine, wie ihn
+   `eval-gate.yml` heute schon als Schritt „Das Gate muss rot werden können"
+   führt. Solange dieser Beweis fehlt, bleibt der öffentliche Job stehen, auch
+   wenn er doppelt läuft.
+5. Privates Repo auf Fixtures und Archiv zurückschneiden, Release-Text als
+   internes Archiv kennzeichnen.
+6. Erst danach das private Repo aus der Verteilung nehmen.
+
+### Stand: das Thema ruht
+
+**Alles Weitere zum öffentlichen Repo ruht, bis Freigabe und Lizenz geklärt
+sind.** Dieser Abschnitt bleibt als Bestandsaufnahme stehen — er ist die Grundlage
+der Entscheidung und nicht ihr Ergebnis. Offen und außerhalb dieses Repos zu
+klären: die Freigabe der Herkunft, die Markenfrage am Logo, die Projektlizenz,
+die Imp1k-Bedingungen (Anfrage oben) und die RICO-Frage über den heutigen Zustand.
+
+### Zusammenfassung: was blockiert, was nur aufzuräumen ist
+
+| Punkt | Art | Blockiert? |
+|---|---|---|
+| Herkunft in 7 Dateien der History (HEAD sauber) | Freigabe-Entscheidung | **ja, Entscheidung nötig** |
+| interner Produktname als Fixture-Ebenenname | nur History — in HEAD bereits entfernt | **ja**, nur per Rewrite oder frisches Repo |
+| interner Registry-Host in 76 Commits | Security | **HEAD behoben (1.3)**, History nur per Rewrite oder frisches Repo |
+| Markenfarbe in Logo und ausgeliefertem Bundle | Marke | **ja, Entscheidung nötig** |
+| Keine `LICENSE` | Recht | **ja, Entscheidung nötig** |
+| 20 Bilder möglicher RICO-Herkunft **liegen heute schon** im Repo | Recht — Frage über die Gegenwart | **ja, Security-Vorlage** |
+| Imp1k-Bedingungen unbekannt | Recht | **ja** — Anfrage formuliert, siehe oben |
+| Private Autoren-Adresse in 77 Commits | persönlich | Hinweis |
+| Branches | Aufräumen | **erledigt** — neun entfernt, zwei übrig |
+| Bilder in `assets/messungen/` | — | nein, alle neutral |
+| UEyes-Nennung | — | nein, vollständig |
 
 ---
 
@@ -386,7 +1200,8 @@ eval/                      Epic A — läuft offline in Node
 └─ fixtures/               nicht im Repo — siehe fixtures/README.md
 
 assets/
-└─ logo.svg                Produkt-Logo (Quelle für Panel-Mark und Store-Icon)
+└─ logo.svg                Produkt-Logo. Quelle für die Panel-Mark; der
+                           128er-Export fürs Publishing fehlt noch
 ```
 
 ### Ablauf eines Laufs
@@ -1866,7 +2681,9 @@ Code, der Rest ist das Set.
 ## Contrastmap (1.2 C)
 
 ```bash
-npm run contrast-check      # die Karte auf zwei Frames, Bild und Befunde
+npm run contrast-check      # die Karte auf drei Frames, Bild und Befunde
+npm run measurable          # 1.3: wie viele Elemente verwirft die Plausibilitätsprüfung?
+npm run contrast-gate       # 1.3: Regressions-Gate — je Frame gemessen/durchgefallen/nicht messbar
 ```
 
 **Die dritte Karte, und die einzige, die keine Vorhersage ist.** Sie hat keinen
@@ -2075,12 +2892,12 @@ mehr, sondern ein Muster — also einmal systematisch durchgegangen, was
 | **Kantenglättung** an Glyphen | **Ja, tat es.** Minimum über Pixel traf immer ein Mischpixel | **behoben**, eigener Test mit bekannten Farbpaaren |
 | **Textfarbe** (`fillLuminance`) | **Ja, tat es.** Ohne sie misst die Contrastmap gar nicht | **behoben**, beide Generatoren setzen sie |
 | **Deckkraft < 1** an Fill oder Knoten | **Ja.** Die Farbe aus dem Layer-Baum ist dann nicht die, die man sieht — der gemeldete Kontrast wäre **besser** als die Wirklichkeit | **behoben ohne Testfall**: `traverse.ts` setzt `fillLuminance` nur noch, wenn Paint und Knoten voll deckend sind. Lieber „nicht messbar" als eine geschönte Zahl |
-| **Überlappende Elemente / Verdeckung** | **Ja, offen.** Ein Knoten, der von einem späteren Element überdeckt wird, wird gegen Pixel gemessen, die gar nicht zu ihm gehören. Die Generatoren zeichnen überschneidungsfrei | **offen** — braucht einen Frame mit bewusster Verdeckung |
+| **Überlappende Elemente / Verdeckung** | **Ja, tat es.** Ein Knoten, der von einem späteren Element überdeckt wird, wurde gegen Pixel gemessen, die gar nicht zu ihm gehören. Die Generatoren zeichnen überschneidungsfrei | **behoben in 1.3**: aus dem Baum bestimmt, gemeldet als nicht messbar. Der Frame mit bewusster Verdeckung existiert jetzt (`eval/overlap.ts`) |
 | **Verläufe als Hintergrund** | **Vermutlich nein.** Der `varies`-Pfad ist getestet, aber nur mit einem synthetischen Verlauf, nicht aus einem Generator | **offen**, geringes Risiko |
 | **Text auf Fotos** | **Vermutlich nein**, gleicher Pfad wie Verläufe. Die Onboarding-Kacheln haben Bildflächen, aber der Text liegt darunter, nie darauf | **offen**, geringes Risiko |
 | **Subpixel-Positionen** | **Möglich.** Alle Rechtecke der Generatoren liegen auf ganzen Pixeln; Figma liefert Bruchteile. `luminancesIn` rundet, kann also eine Pixelreihe daneben greifen — bei kleinem Text anteilig viel | **offen** |
-| **Rotation** | **Ja, vermutlich.** Ein gedrehter Textknoten hat eine achsenparallele Bounding-Box voller Hintergrund; die dominante Fläche wäre dann der Grund neben dem Text statt der dahinter | **offen** |
-| **Effekte (Schatten, Blur), Masken, Clipping** | **Möglich.** Ein Schatten unter Text verschiebt den gemessenen Hintergrund; eine Maske kann Pixel zeigen, die nicht zum Knoten gehören | **offen** |
+| **Rotation** | **Ja, tat es.** Ein gedrehter Textknoten hat eine achsenparallele Bounding-Box voller Hintergrund; die dominante Fläche war dann der Grund neben dem Text statt der dahinter | **behoben in 1.3**: `node.rotation` reist im Signal mit, geprüft am Knoten **und** an seinen Vorfahren |
+| **Effekte (Schatten, Blur), Masken, Clipping** | **Möglich.** Ein Schatten unter Text verschiebt den gemessenen Hintergrund; eine Maske kann Pixel zeigen, die nicht zum Knoten gehören | **teilweise behoben in 1.3**: schneidet die Maske den Text ganz weg, fällt das auf (Textkern fehlt). Ein Schatten, der den Grund nur verschiebt, bleibt offen |
 | **`figma.mixed`** (mehrere Schriftgrößen, mehrere Fills in einem Knoten) | Nein — der Übersprungpfad existiert und meldet den Grund | abgedeckt durch Konstruktion |
 
 **Was das über die Testframes sagt.** Sie sind gut für Geometrie und für die
@@ -2092,10 +2909,181 @@ zählt, und prüft gegen Zahlen, die feststehen.
 
 **Die drei offenen Punkte mit echtem Risiko** (Verdeckung, Rotation, Subpixel)
 haben eines gemeinsam: bei allen dreien ist die **Bounding-Box nicht das, was
-man sieht**. Der naheliegende nächste Schritt ist deshalb keine weitere
-Fixture-Variante, sondern eine Plausibilitätsprüfung in der Messung selbst — ob
-die dominante Fläche überhaupt groß genug ist, um der Hintergrund *dieses*
-Elements zu sein. Nicht in diesem Schritt gebaut.
+man sieht**. In 1.3 sind sie angegangen — aber nicht alle drei auf dieselbe
+Weise, und das ist der Kern der Sache.
+
+### 1.3 — was feststellbar ist, wird festgestellt und nicht geschätzt
+
+Die drei Fälle sehen gleich aus und sind es nicht:
+
+| | woher die Antwort kommt | wie 1.3 damit umgeht |
+|---|---|---|
+| **Rotation** | `node.rotation` steht am Knoten | abgelesen, Knoten **und** Vorfahren |
+| **Verdeckung** | Zeichenreihenfolge und Geometrie stehen im Baum | ausgerechnet, Flächenvereinigung über alle späteren malenden Elemente |
+| **Subpixel, Masken, Effekte** | entsteht erst beim Rendern | Netz am Ergebnis, nicht an der Ursache |
+
+**Für die ersten beiden wäre eine Plausibilitätsheuristik der falsche Weg.** Sie
+würde eine Tatsache *raten*, die im Baum steht — und jede Fehlschätzung wäre
+entweder eine erfundene Zahl oder ein verworfenes messbares Element. Wenn eine
+Antwort ablesbar ist, wird sie abgelesen. Der Code steht in
+[`src/contrast/measurable.ts`](src/contrast/measurable.ts).
+
+Beide melden **„nicht messbar" mit Grund** statt eine Zahl über fremde Pixel.
+Das ist die brauchbarere Auskunft: „verdeckt" sagt einem Menschen, was zu tun
+ist, „3,1:1" über die Pixel einer Plakette sagt etwas Falsches über die Datei.
+
+Drei Entscheidungen, die jede für sich eine Fehlmeldungsklasse ausschließen:
+
+- **Drehung über die Vorfahren.** `rotation` ist in Figma relativ zum
+  Elternknoten: ein gerader Text in einer gedrehten Gruppe steht selbst auf
+  null und trotzdem schief. Nur den Knoten zu prüfen fände die Gruppe und nicht
+  ihren Inhalt — dieselbe Schleife wie bei `isSystemChrome`, aus demselben
+  Grund.
+- **Drehung nicht als `!== 0`.** Figma leitet `rotation` aus
+  `relativeTransform` ab, und Auto-Layout- und Instanzketten liefern dort Reste
+  wie `-1.4e-14`. Die Schwelle ist 0,1° und ist keine Toleranz, sondern
+  Rechengenauigkeit: bei 0,1° wächst ein 500 px breiter Textrahmen um
+  500 · sin(0,1°) = 0,87 px, also um weniger als ein Pixel.
+- **Als Verdecker zählt nur, was später gezeichnet wird *und* malt.** Ein
+  Element *vor* dem Text liegt hinter ihm und ist genau der Hintergrund, den
+  die Messung sucht — ein Scrim unter weißer Schrift darf sie nicht verwerfen.
+  Eine Gruppe ohne Fill umfasst den Text und verändert kein Pixel; ohne diese
+  Bedingung wäre in einer echten Datei fast jeder Text „verdeckt". Und die
+  Fläche wird **vereinigt**, nicht summiert: drei Icons zu je 5 %, die sich
+  gegenseitig überdecken, sind als Summe 15 % und in Wahrheit weniger — bei
+  einer Schwelle von 10 % entscheidet das.
+
+### Wie streng die Plausibilitätsprüfung sein darf — gezählt, bevor sie lief
+
+**Jede dieser Schwellen tauscht falsche Zahlen gegen fehlende Aussagen.** Der
+Tausch ist nur günstig, solange er selten greift: eine Prüfung, die ein Drittel
+der Textelemente verwirft, hat die Contrastmap nicht genauer gemacht, sondern
+abgeschafft. Die Zahl stand deshalb vor der Entscheidung.
+
+```bash
+npm run measurable
+```
+
+**Korpus: 19 Frames mit Layer-Baum, 369 Textknoten** — Onboarding-Screen plus
+sechs Varianten je konstruierter Form. Das ist alles, was dieses Repo hat.
+
+> **Die Gate-Bilder tragen dazu nichts bei, und zwar nicht ein einziges
+> Element.** `gate-web` und `gate-mobile` sind UEyes-Screenshots; der Import
+> legt ausdrücklich kein `signals/` an, weil ein Screenshot keine Ebenen hat.
+> Ohne Layer-Baum gibt es keinen Textknoten, keine Textfarbe und keine
+> Schriftgröße — die Contrastmap misst auf ihnen **null** Elemente. Das ist eine
+> Null mit Grund, nicht „null Probleme", und es ist dieselbe Lücke, an der
+> `dead-cta` und `cta-below-fold` hängen (PRD Set 2).
+
+| | Elemente |
+|---|---:|
+| Textknoten im Korpus | 369 |
+| gemessen **ohne** Prüfung (Stand 1.2) | 368 |
+| gemessen **mit** Prüfung (Stand 1.3) | **368** |
+| Verlust | **0** |
+
+Das eine übersprungene Element ist die Statusleiste, und die war es vorher auch.
+Der Abstand zur nächsten Schwelle ist in jeder Richtung mindestens zehnfach:
+
+| Größe | kleinster Wert im Korpus | Schwelle | Abstand |
+|---|---:|---:|---:|
+| `textCoreShare` | 0,133 | 0,010 | 13× |
+| `occludedShare` | 0,000 | 0,100 | — |
+| Drehung (Grad) | 0,000 | 0,100 | — |
+
+**Was diese Messung nicht sagt.** Wie häufig Drehung und Verdeckung in echten
+Dateien vorkommen. Die Generatoren erzeugen beides nicht, jeder Treffer im
+Korpus *wäre* eine Fehlmeldung — die Messung beantwortet also „verwirft die
+Prüfung Messbares" (nein) und nicht „findet sie, was sie finden soll". Das
+zweite steht in `measurable.test.ts` und im dritten Prüffall von
+`npm run contrast-check`, an Fällen, die den Mangel absichtlich herstellen.
+
+#### Die Gegenprobe: der Frame mit bewusster Verdeckung existiert jetzt
+
+[`eval/overlap.ts`](eval/overlap.ts) — der Frame, den die Tabelle oben seit 1.2
+als fehlend führt. Er ist eine **Gegenprobe, keine Stichprobe**: er zeigt, dass
+die Erkennung greift, nicht wie oft der Fall vorkommt, und seine Zahlen gehören
+in keine Quote. Deshalb liegt er in einer eigenen Datei und wird getrennt
+ausgewiesen.
+
+| Knoten | Fläche | Kern | verdeckt | Antwort |
+|---|---:|---:|---:|---|
+| Kontrolle, dunkel auf hell | 0,675 | 0,295 | 0,000 | gemessen, 17,2:1 |
+| Zeile unter einer Plakette | 0,432 | 0,158 | **0,480** | verdeckt |
+| Zeile mit 18° Drehung | 0,915 | 0,085 | 0,000 | gedreht |
+| Zeile, von einer Maske entfernt | 1,000 | **0,000** | 0,000 | Textkern fehlt |
+| Weiß über Verlauf | 0,034 | 0,289 | 0,000 | gemessen, 1,1:1 |
+| Weiß über Textur | 0,059 | 0,295 | 0,000 | gemessen, 1,1:1 |
+
+Die **Kontrollen** sind der wichtigere Teil. Eine Prüfung, die alles verwirft,
+ist kein Fortschritt gegenüber einer, die alles meldet.
+
+#### „Zeigt der Rahmen diesen Text überhaupt" — eine Anwesenheits-, keine Kontrastprüfung
+
+Der Unterschied ist der ganze Wert der Prüfung, denn die naheliegende Lesart
+wäre zirkulär: eine Forderung nach *Trennung* zwischen Textkern und Umgebung
+würde genau die Elemente verwerfen, die das Werkzeug finden soll — schlecht
+lesbaren Text.
+
+Gezählt wird deshalb nur, ob die im Baum **angemeldete** Textfarbe im Rahmen
+vorkommt, im selben Fenster, das die Hintergrundsuche ausblendet. Liegen Text
+und Grund dicht beieinander, sind das *viele* Pixel: hellgrau auf Weiß mit
+1,3:1 besteht die Prüfung mühelos und kommt als Befund heraus. Sie schlägt nur
+an, wenn die Farbe praktisch nicht vorkommt — dann zeigt der Rahmen etwas
+anderes als diesen Text, und das ist der Masken- und Clipping-Fall. Ein eigener
+Test hält das fest, weil ein späterer Umbau in Richtung „genügend Trennung" die
+Contrastmap um ihre wichtigsten Befunde bringen würde.
+
+#### Die zweite Hälfte der Idee ist gemessen und **nicht** ausgeliefert
+
+Die naheliegende Prüfung war: *ist die dominante Fläche überhaupt groß genug, um
+der Hintergrund dieses Elements zu sein?* Drei gemessene Zahlen schließen jede
+Schwelle dafür aus:
+
+| Fall | Flächenanteil | soll |
+|---|---:|---|
+| normale Elemente, kleinster Wert im Korpus | 0,551 | messbar |
+| weißer Text über Verlauf Schwarz→Weiß | **0,034** | messbar (1.2 C5) |
+| weißer Text über gleichverteiltem Rauschen | **0,059** | verwerfen? |
+
+**Das Rauschen liegt über dem Verlauf, nicht darunter.** Der Grund ist die
+sRGB-Kurve: gleichverteilte Bytes häufen sich im dunklen Ende der Luminanz, und
+der unterste Bin sammelt rund ein Zehntel der Pixel. Eine Schwelle zwischen
+beiden gibt es damit nicht — jeder Wert, der die Textur trifft, verwirft auch den
+Verlauf. Und der Verlauf ist in C5 („Grenzen, ehrlich benannt") ausdrücklich als
+messbar erklärt: weiß über einem Verlauf, der bis Weiß läuft, **ist** am hellen
+Ende unlesbar, und genau das gibt die Messung aus — schlechtester Wert, „der
+Hintergrund wechselt", Fahne mit „~". Diese richtige Aussage gegen „nicht
+messbar" zu tauschen wäre ein Rückschritt.
+
+Umgekehrt liegt jede Schwelle unter 0,034 unterhalb dessen, was selbst reines
+Rauschen erreicht — sie würde nie greifen. Eine Prüfung, die nie greift, ist
+keine.
+
+Die Größe wird weiter berechnet, steht in `ContrastResult.backgroundShare` und in
+der Tabelle von `npm run contrast-check`. Wer die Entscheidung neu aufmachen
+will, braucht keine neue Messung, nur eine Zahl statt `null` — dieselbe
+Konstruktion wie `shipped: false` bei den Vorhersageregeln.
+
+**Was das über die Reihenfolge sagt.** Von zwei Ideen für das Netz hat die
+Zählung eine widerlegt. Ohne sie wären beide ausgeliefert worden, und eine davon
+hätte einen dokumentierten Befund still weggenommen — genau die Fehlerklasse,
+die diese README auf fünf Anläufen verfolgt.
+
+#### Gezählt und benannt, nicht aufgezählt
+
+Die Warnung lautet jetzt
+
+> Contrastmap: 3 Textelement(e) nicht messbar (2 verdeckt, 1 gedreht).
+
+und nicht mehr eine Aufzählung der *vorkommenden* Gründe. Bis 1.2 stand in
+`skipped` ein Satz je Element, und die Warnung konnte deshalb nur die Menge der
+Gründe zeigen, nie ihre Häufigkeit — bei zwölf übersprungenen Elementen sagte sie
+nicht, ob elf davon dieselbe Ursache hatten. Seit 1.3 ist jeder Grund ein Code
+mit einem kurzen Zählwort und einem ganzen Satz; die Reihenfolge ist bei
+Gleichstand festgelegt, damit sich der Wortlaut zwischen zwei Läufen auf
+demselben Frame nicht ändert. Eine Warnung, die das tut, sieht wie ein Befund
+aus.
 
 ### Der Kopf der Contrastmap läuft nicht durch die Vorhersage-Vorlage
 
@@ -2193,9 +3181,23 @@ Hintergrund wechselt und der Wert eine Näherung nach unten ist. In der Karte
 trägt die Fahne dann ein `~`.
 
 Elemente, die gar nicht messbar sind, werden **gezählt und benannt** statt still
-ausgelassen: mehrfarbiger Text ohne einfarbigen Fill, fehlende Schriftgröße,
-Text, der seinen Rahmen vollständig füllt. Eine Messung, die Elemente
-verschweigt, sagt „in Ordnung", wo sie „ich weiß es nicht" meint.
+ausgelassen. Eine Messung, die Elemente verschweigt, sagt „in Ordnung", wo sie
+„ich weiß es nicht" meint.
+
+Die vollständige Liste der Gründe steht in
+[`src/contrast/measurable.ts`](src/contrast/measurable.ts) — je Grund ein kurzes
+Zählwort für die Warnung und ein ganzer Satz für die Einzelausgabe:
+
+| Grund | woran es liegt | seit |
+|---|---|---|
+| Betriebssystem-Chrome | Statusleiste, Home-Indicator | 1.2 |
+| keine einfarbige Textfarbe | Verlauf, Bild, mehrere Fills, Deckkraft unter 1 | 1.2 |
+| keine Schriftgröße | `figma.mixed` — ohne sie ist die WCAG-Schwelle nicht bestimmt | 1.2 |
+| kein Hintergrund im Rahmen | Text füllt seinen Rahmen vollständig, auch der Ring außen trägt nichts | 1.2 |
+| **gedreht** | die achsenparallele Box ist nicht der Textbereich | **1.3** |
+| **verdeckt** | ein später gezeichnetes Element liegt über dem Textbereich | **1.3** |
+| **Text im Rahmen nicht zu sehen** | die angemeldete Textfarbe kommt dort nicht vor — Maske, Clipping | **1.3** |
+| kein tragender Hintergrund | *gemessen und nicht ausgeliefert*, siehe oben | — |
 
 ### Panel (C6)
 
@@ -3285,50 +4287,45 @@ Was für beide gilt: nach dem Umbau ist neu zu kalibrieren, und dafür fehlt
 weiterhin das Set mit echten Layer-Bäumen (PRD Set 2). An UEyes ist keine der
 beiden messbar — ein Screenshot hat keine Ebenen.
 
-#### Für 1.3 vorgemerkt: der Rückfall auf die analytische Glocke ist unsichtbar
+#### In 1.3 behoben: der Rückfall auf die analytische Glocke sagt sich an
 
+Der Befund stand hier vollständig und ist es wert, in seiner Form zu bleiben:
 `check-release.mjs` bewacht die Nutzdaten des Ortspriors, weil sein Fehlen
-**still** bleibt. Der Prüfer steht aber im Build, nicht im Plugin. Zur Laufzeit
-sagt nichts, welcher Prior tatsächlich gerechnet hat.
+**still** bleibt — aber der Prüfer steht im Build, nicht im Plugin. Zur Laufzeit
+sagte nichts, welcher Prior tatsächlich gerechnet hat.
 
 **Der Rückfall selbst** (`engine/heuristic.ts`): `priorMap(…) ?? positionPrior(…)`
 — ein `??` ohne Protokoll, ohne Rückgabewert, ohne Warnung.
 
-**Was die Fußzeile sagt.** `metaLine` schreibt „Blickverhalten: Mobile App
-(automatisch)". Die Kategorie kommt aus `priorAssetIdFor(…)`, also aus der
-Geometrie des Frames. Sie ist eine Aussage darüber, welcher Prior **gewählt**
-wurde, nicht darüber, welcher **geladen** ist — `hasPriorAsset()` existiert und
-wird an dieser Stelle nicht gefragt. Fehlt das Asset, steht dieselbe Zeile mit
-denselben Worten unter einer Karte, die die 1.0-Glocke gezeichnet hat.
+**Was die Fußzeile sagte.** `metaLine` schrieb „Blickverhalten: Mobile App
+(automatisch)". Die Kategorie kam aus `priorAssetIdFor(…)`, also aus der
+Geometrie des Frames, und war damit eine Aussage darüber, welcher Prior
+**gewählt** wurde, nicht darüber, welcher **geladen** ist.
 
-Zwei Fälle, beide heute unsichtbar:
+Zwei Fälle, beide bis 1.2 unsichtbar:
 
-| Fall | was fehlt | was der Nutzer sieht |
+| Fall | was fehlt | was der Nutzer bis 1.2 sah |
 |---|---|---|
-| **Kategorie fehlt** | z. B. `mobile@3s` | „Blickverhalten: Mobile App (automatisch)", unverändert. Im Panel verschwindet „Mobile App" aus dem Dropdown (`availablePriorCategories`) — aber „Automatisch erkennen" ist die Voreinstellung und leitet weiter dorthin |
-| **Betrachtungsdauer fehlt** | z. B. `web@7s` | `priorMap` weicht stumm auf `web@3s` aus, die Kopfzeile behauptet weiter „Betrachtungsdauer: 7 s". Nach Epic D ist das ein **gemessener** Unterschied (+0,012 bis +0,021 CC) — die Zeile behauptet also genau die Eigenschaft, die gerade nicht gilt |
+| **Kategorie fehlt** | z. B. `mobile@3s` | „Blickverhalten: Mobile App (automatisch)", unverändert. Im Panel verschwand „Mobile App" aus dem Dropdown (`availablePriorCategories`) — aber „Automatisch erkennen" ist die Voreinstellung und leitete weiter dorthin |
+| **Betrachtungsdauer fehlt** | z. B. `web@7s` | `priorMap` wich stumm auf `web@3s` aus, die Kopfzeile behauptete weiter „Betrachtungsdauer: 7 s". Nach Epic D ist das ein **gemessener** Unterschied (+0,012 bis +0,021 CC) — die Zeile behauptete also genau die Eigenschaft, die gerade nicht galt |
 
-Sichtbar ist nur ein Grenzfall: fallen **alle zwölf** Assets weg, wird
-`shipsPriorAsset()` falsch und die Zeile „Datengrundlage: UEyes …" fehlt. Das
+Sichtbar war nur ein Grenzfall: fielen **alle zwölf** Assets weg, wurde
+`shipsPriorAsset()` falsch und die Zeile „Datengrundlage: UEyes …" fehlte. Das
 ist das Verschwinden einer Zeile, keine Meldung — und der Alles-oder-nichts-Fall
 ist der unwahrscheinlichste.
 
-**Warum es hierher gehört.** Das ist dieselbe Klasse wie die Textfarbe, die
+**Warum es hierher gehörte.** Dieselbe Klasse wie die Textfarbe, die
 Kantenglättung, die Deckkraft, `dead-cta` und B4: eine Größe ist falsch oder
-fehlt, und die Ausgabe sieht unverändert aus. Fünf Anläufe, fünfmal dasselbe
-Muster.
+fehlt, und die Ausgabe sieht unverändert aus.
 
-**Mögliche Richtung** — der Kanal existiert schon: `pipeline.ts` führt
-`warnings: string[]`, dort steht bereits der Bänder-Hinweis. Vor dem Lauf
-`hasPriorAsset(resolvedPrior, PROFILE_DURATIONS[profile])` fragen; ist die
-Antwort nein, eine Warnung setzen und die Kopfzeile qualifizieren, statt eine
-Kategorie zu nennen, die nicht gerechnet hat. Der Test dazu ist billig und
-fehlt heute ganz: eine leere Asset-Tabelle darf keine Kopfzeile erzeugen, die
-von der intakten nicht zu unterscheiden ist.
-
-Nicht gemessen, nicht gebaut — und anders als der Rest dieser Liste braucht es
-kein Set mit echten Layer-Bäumen, sondern nur die Entscheidung, dass ein
-Werkzeug seine eigene Ersatzrechnung ansagt.
+**Behoben in 1.3**, und nicht durch die naheliegende Abfrage. `hasPriorAsset()`
+vor dem Lauf zu fragen hätte eine zweite Ableitung derselben Frage erzeugt, eine
+für die Rechnung und eine für den Text. Stattdessen entscheidet
+`resolvePriorAsset()` einmal, `priorMap` und die Beschriftung lesen dieselbe
+Antwort. Der ganze Weg steht unter
+[„Das Text-Bindungs-Prinzip (1.3)"](#das-text-bindungs-prinzip-13) — samt dem
+Test, der hier als fehlend vermerkt war, und samt fünf weiteren Stellen
+derselben Art.
 
 Sprachregeln (C-2), von den Tests erzwungen:
 
@@ -3338,6 +4335,254 @@ Sprachregeln (C-2), von den Tests erzwungen:
 - Kein Ausrufezeichen, keine Warn-Emoji, **kein Gesamtscore** — ein Score von
   0–100 würde die Unsicherheit des Modells verstecken und zum Optimierungsziel
   werden
+
+---
+
+## Das zweite Gate: die Contrastmap (1.3)
+
+```bash
+npm run contrast-gate              # prüft gegen die eingecheckte Erwartung
+npm run contrast-gate -- --write   # schreibt sie neu (bewusste Änderung)
+```
+
+**Das Gate aus A-7 deckt die Contrastmap nicht ab, und das lässt sich nicht
+beheben.** Es bewertet 40 UEyes-Bilder; ein Screenshot hat keine Ebenen, also
+keinen Textknoten, keine Textfarbe und keine Schriftgröße. Auf dem Gate-Set misst
+die Contrastmap **null** Elemente. Die belastbarste Ausgabe des Plugins — die
+einzige, die als überprüfbare Tatsache auftritt — hatte damit keinen
+Regressionsschutz.
+
+**Und das ist nicht theoretisch.** Alle drei Messfehler von 1.2 saßen nicht in
+der Rechnung, sondern in der Pipeline auf echten Frames:
+
+| Fehler | Wirkung | Unit-Tests |
+|---|---|---|
+| Textfarbe fehlte in den Fixtures | **jeder** Knoten wurde übersprungen | grün |
+| Kantenglättung fehlte in den Fixtures | **jeder** Wert war falsch, alles auf 3–4:1 gestaucht | grün |
+| Messung lief auf dem Analysebild | zwischen den Glyphen kein reiner Hintergrund mehr | grün |
+
+Die Unit-Tests prüfen die Rechnung. Was fehlte, war eine Zahl über den ganzen
+Weg.
+
+### Drei abzählbare Zahlen je Frame
+
+| Spalte | was sie zählt |
+|---|---|
+| `measured` | gemessene Textelemente |
+| `failed` | davon durchgefallen |
+| `notMeasurable` | nicht messbar |
+
+Bewegt sich eine davon, wird das Gate rot. **Keine Toleranz**, anders als beim
+ersten Gate: dort steht ein CC-Mittelwert über 20 Bilder, und ein Rauschband von
+0,02 ist dort sinnvoll. Hier stehen abzählbare Elemente. „Ein Element mehr
+durchgefallen" ist eine Verbesserung oder ein Fehler, aber nie Rauschen.
+
+Der Korpus sind die 19 Frames mit Layer-Baum **plus die Gegenprobe**. Die gehört
+dazu, obwohl sie in keine Quote gehört: sie ist der einzige Frame mit Drehung und
+Verdeckung, und ohne sie stünde in `notMeasurable` überall bis auf die
+Statusleiste eine Null — das Gate könnte dann nicht merken, wenn die Erkennung aus
+1a stillschweigend aufhört zu greifen.
+
+Stand bei Einführung: **371 gemessen, 222 durchgefallen, 4 nicht messbar** über
+20 Frames. Die Zahl der Durchgefallenen ist hoch, weil die Generatoren graue
+Sekundärtexte auf Weiß zeichnen — für ein Gate ist das gleichgültig, es vergleicht
+zwei Läufe auf demselben Korpus.
+
+### Warum die Erwartung im Repo liegt und nicht aus `main` gerechnet wird
+
+Zwei Gründe, der zweite ist der stärkere:
+
+1. **Derselbe wie beim ersten Gate.** Ein Vergleichswert, der woanders liegt,
+   kann still ausfallen — das Referenz-Set lag in einem Actions-Cache, und das
+   Gate meldete monatelang „übersprungen".
+2. **Der Korpus ist Code, nicht Daten.** Ein Baseline-Lauf im `main`-Worktree
+   würde `main`s Generatoren gegen `main`s Messung stellen und wäre immer grün.
+   Eine eingecheckte Erwartung macht dagegen jede Bewegung der Zahlen zu einer
+   **Zeile im Diff**, die ein Mensch im PR sieht. Ein Vergleich, der nur im Log
+   stattfindet, zeigt sie niemandem.
+
+Die Erwartung zu aktualisieren ist erlaubt und manchmal richtig. Sie *still* zu
+aktualisieren ist es nicht: ein CI-Schritt weist eigens aus, wenn
+`eval/contrast-baseline.json` im PR verändert wurde, samt Diff in der
+Zusammenfassung. Er macht den Check nicht rot — er macht die Bewegung sichtbar.
+
+### Der Beweis, dass es rot werden kann
+
+Wie beim ersten Gate, und aus demselben Grund: das erste war dreimal grün, ohne
+zu messen. Zwei Erreichbarkeitstests, die verschiedene Hälften prüfen — beide
+laufen im CI **und** als Test:
+
+| Lauf | trifft | was passieren muss |
+|---|---|---|
+| `--limits-off` | 1a: Drehung und Verdeckung | die Gegenprobe wird wieder vollständig „gemessen", `notMeasurable 3 → 0` |
+| `--max-edge 200` | den historischen Fehler Nr. 3 | die Messung auf verkleinertem Bild, `measured … → 0` auf mehreren Frames |
+
+Passiert einer davon, ist der Schritt rot mit einer Meldung, die sagt, was das
+bedeutet: das Gate sieht etwas Falsches an.
+
+**Beim zweiten Selbsttest fällt etwas auf, das den Aufbau bestätigt.** Bei 200 px
+Kantenlänge meldet die Messung nicht falsche Werte, sondern **„Text im Rahmen
+nicht zu sehen"** — der Textkern ist verschwunden, und die Prüfung aus 1b fängt
+genau das. Der historische Fehler Nr. 3 wäre 2026 also nicht nur vom Gate
+gesehen, sondern von der Messung selbst gemeldet worden.
+
+### Das Gate läuft zweimal, und das ist keine Doppelung
+
+`eval/__tests__/contrast-gate.test.ts` gibt die Rückmeldung beim Entwickeln, in
+jedem `npm test`. Der CI-Schritt beweist, dass der ganze Weg bis zum Exit-Code
+rot wird. Beim ersten Gate hat genau diese Unterscheidung gefehlt: der Vergleich
+war richtig gerechnet und der Job trotzdem grün, weil davor etwas anderes
+schiefgegangen war.
+
+Der Test prüft zusätzlich, was ein Vergleich zweier Zahlenlisten leicht übersieht:
+einen Frame, der aus dem Korpus **fällt**. Das ist die gefährlichste Abweichung —
+die Summen sinken, und das sieht aus wie „weniger Befunde".
+
+---
+
+## Das Text-Bindungs-Prinzip (1.3)
+
+**Jede Herkunftsangabe muss aus dem stammen, was tatsächlich gelaufen ist, nicht
+aus dem, was angefordert wurde.**
+
+Der Satz ist keine Stilregel, sondern die Zusammenfassung von drei Fehlern in
+1.2, die dieselbe Form hatten: der Text, der eine Ausgabe beschreibt, entstand
+**parallel** zur Ausgabe, und niemand prüfte, ob er stimmt.
+
+| Fall | der Text | die Sache |
+|---|---|---|
+| „Contrastmap — vorhergesagt" | kam aus der Vorlage für Vorhersage-Karten | die Karte ist eine Messung |
+| vier README-Statuszeilen | standen auf dem Stand, an dem sie geschrieben wurden | der Code war weiter |
+| „Betrachtungsdauer: 7 s" | kam aus der Einstellung | `priorMap` war stumm auf 3 s ausgewichen |
+
+Alle drei sind einzeln behoben worden. Der gemeinsame Grund war es nicht — und
+solange er steht, entsteht die nächste solche Zeile beim nächsten Feature.
+
+### Die Fußzeile kommt aus dem geladenen Asset
+
+Der Fall aus der 1.3-Notiz unten. `metaLine` schrieb „Blickverhalten: Mobile App
+(automatisch) · Betrachtungsdauer: Lesen (7 s)". Die Kategorie kam aus
+`priorAssetIdFor(…)`, also aus der **Geometrie des Frames**; die Dauer aus der
+**Einstellung**. Beides sind Aussagen darüber, welcher Prior *gewählt* wurde.
+Welcher *gerechnet* hat, stand nirgends.
+
+**Die Behebung ist nicht die Abfrage, sondern der Ort der Antwort.** Man könnte
+vor dem Lauf `hasPriorAsset(…)` fragen und die Zeile danach bauen — dann gäbe es
+wieder zwei Ableitungen derselben Frage, eine für die Rechnung und eine für den
+Text, und sie könnten wieder auseinanderlaufen. Stattdessen:
+
+1. `resolvePriorAsset(id, duration)` in
+   [`src/engine/priors/index.ts`](src/engine/priors/index.ts) ist die **einzige**
+   Stelle, an der entschieden wird, welche Karte gilt. `priorMap` benutzt sie.
+   Der Rückfall auf 3 s stand vorher als `??`-Kette in derselben Funktion und
+   war von außen nicht zu sehen; jetzt hat er einen Rückgabewert.
+2. `HeuristicAttentionEngine.priorResolution()` beantwortet „was rechnet für
+   diesen Frame" — und `computeFeatures` liest die Antwort **aus genau diesem
+   Aufruf**. Es gibt also keine zweite Ableitung, die abweichen könnte.
+3. `AnalyzeResult.priorResolution` trägt sie zur Oberfläche.
+4. [`src/ui/map-meta.ts`](src/ui/map-meta.ts) baut Kopfzeile und Warnung daraus.
+
+Geprüft wird dabei die **Nutzlast** und nicht nur die Anwesenheit des Schlüssels
+— genau der Fall, den `check-release.mjs` im Build bewacht. Ein Eintrag mit
+leerem `data` wäre sonst „geladen", und die Zeile wieder eine Behauptung.
+
+Was jetzt in welchem Fall steht:
+
+| Fall | Kopfzeile | Warnung |
+|---|---|---|
+| Asset da, Dauer passt | „Blickverhalten: Mobile App (automatisch) · Betrachtungsdauer: Scan (3 s)" | — |
+| **Dauer fehlt** (`web@7s`) | nennt **Scan (3 s)** — die gerechnete | „Für Lesen (7 s) liegt kein Ortsprior im Build — gerechnet wurde mit Scan (3 s)." |
+| **Kategorie fehlt** (alle `mobile@*`) | nennt **keine** Kategorie und **keine** Dauer, sondern „ohne Referenzdaten, analytische Positionsannahme" | „… gerechnet hat die analytische Positionsannahme von 1.0." |
+| Engine ohne Auskunft | nennt weder Kategorie noch Dauer | — |
+
+Drei Folgeentscheidungen, jede mit einem Grund:
+
+- **`MapMeta.screenBehaviour` und `duration` sind optional geworden.** Ein
+  Pflichtfeld *erzwingt* eine Behauptung; ein optionales erlaubt Schweigen. Das
+  war die eigentliche Ursache: der Typ ließ die ehrliche Antwort nicht zu.
+- **Fällt der Referenzprior weg, fehlt auch die Betrachtungsdauer.** Keine
+  Auslassung, sondern eine Folge von Epic D: die Dauer ist ein Effekt des
+  *Ortspriors* und nicht der Gewichte. Ohne Prior ändert der Umschalter nichts
+  mehr, und eine Zeile, die ihn nennt, behauptet eine Abhängigkeit, die es
+  gerade nicht gibt.
+- **Die Datengrundlage („Datengrundlage: UEyes …") hängt daran, dass wirklich
+  ein Wert daraus eingegangen ist** — nicht daran, dass das Bundle einen trägt.
+  Dieselbe Begründung, mit der sie unter reinen Messkarten schon weggelassen
+  wird: sie belegt eine Abhängigkeit. Die CC-BY-Pflicht für die Weitergabe
+  bleibt davon unberührt, sie steht in [`NOTICE.md`](NOTICE.md).
+
+Der Warnkanal ist der, der schon da war: `pipeline.ts` führt
+`warnings: string[]`, dort steht auch der Bänder-Hinweis. Er musste nicht gebaut
+werden — er musste gefragt werden.
+
+### Der Test, der ganz fehlte — und warum er fehlte
+
+> Eine leere Asset-Tabelle darf keine Kopfzeile erzeugen, die von der intakten
+> nicht zu unterscheiden ist.
+
+`src/ui/__tests__/map-meta.test.ts`, **für Kategorie und Betrachtungsdauer
+getrennt**. Getrennt, weil die beiden verschieden ausfallen: fehlt die
+Kategorie, gibt es überhaupt keinen Datenprior und die analytische Glocke
+rechnet; fehlt nur die Dauer, weicht `priorMap` auf 3 s aus und rechnet weiter
+mit Daten — die Kategorie stimmt dann, die Dauer nicht. Ein Test, der bloß
+„irgendetwas ist anders" prüft, ließe den zweiten Fall durch.
+
+**Dass es diesen Test nicht gab, ist selbst Teil des Befunds.** Die Kopfzeile
+entstand in `ui/pipeline.ts`, und die dekodiert PNGs und zeichnet auf ein Canvas
+— im Node-Test nicht lauffähig. Der Fall war also nicht prüfbar, ohne einen
+Browser zu starten. Nicht Nachlässigkeit, sondern eine Zuständigkeit am falschen
+Ort: `ui/map-meta.ts` ist rein, und damit kostet der Test nichts. Die Tabelle
+wird als Parameter übergeben statt gemockt — dieselbe Injektion, die `blur` und
+`priorProvider` in der Engine schon tragen. Ein Mock prüft, dass eine Funktion
+gerufen wird; die übergebene Tabelle prüft, was dabei herauskommt.
+
+### Wo sonst eine Beschriftung parallel zu ihrer Sache entsteht
+
+Einmal durchsucht: Map-Titel, Ebenennamen, Panel-Header, Befundtexte, Fußzeile
+der Ausgabe-Frames. **Es sind mehr als die drei bekannten Stellen.** Fünf
+weitere, davon vier behoben:
+
+| Stelle | die Beschriftung sagt | tatsächlich | Stand |
+|---|---|---|---|
+| Panel, Zusammenfassung | „In 4 Abschnitten à 780 px analysiert, **mit Above-the-fold-Map**" | die Fold-Map entsteht im Rumpf des Heatmap-Zweigs. Heatmap aus ⇒ keine Fold-Map, Satz unverändert | **behoben** — aus `outcome.maps` |
+| Panel, Ergebniszeile | „2 Maps für **2 Frames** erstellt" | gezählt wurde `outcomes.length`, und darin steckt auch ein Frame mit `maps: []` | **behoben** — nur Frames mit Karten |
+| Panel, Klick-Rangliste | die Liste stand da | `if (ranking.length > 0) setRanking(…)` ließ sie bei einem Batch aus einem **früheren** Frame stehen, neben Befunden eines anderen | **behoben** — immer gesetzt |
+| Ausgabe-Frame „Befunde" | „Keine der geprüften Auffälligkeiten trifft zu." | der Rahmen enthält **nur** die Vorhersage-Regeln. `contrastFindings` reist in `PLACE_RESULT` mit und wird in `main.ts` nicht gelesen — der Satz stand also neben einer Contrastmap mit roten Rahmen und Werten unter 4,5:1. **Ein falsches Bestanden in einer Barrierefreiheitsprüfung**, und beides wanderte zusammen in jede Präsentation | **behoben** — Rahmen und Überschrift heißen `Vorhersage-Befunde`, der Leerzustand lautet „Keine Vorhersage-Auffälligkeiten. Kontrastwerte siehe Contrastmap." Die Lücke bleibt, siehe unten |
+| Contrastmap ohne Textknoten | eine Karte mit dem Titel „Contrastmap — gemessen" | in einem Frame aus reinen Bildebenen gibt es nichts zu messen, und weil dann auch `skipped` leer ist, war die Warnung stumm. Eine Karte, die nichts zu messen hatte, sieht aus wie eine, die nichts gefunden hat | **behoben** — eigene Warnung |
+| Panel bei mehreren Frames | „Befunde", „Kontrast (gemessen)" ohne Frame-Namen | die Sektionen zeigen den **letzten** Frame, die Ergebniszeile darüber den ganzen Lauf | **behoben** — Frame-Name als Präfix, wie bei den Warnungen; der Name liegt im selben Zustand wie der Inhalt |
+
+Was **nicht** betroffen ist, und warum das die interessantere Hälfte ist: der
+Map-Titel (`mapTitle(kind)`), die Ebenennamen der Karten-Spalten, die
+Fold-Beschriftungen (`Fold 1`, `Fold 2`), `elementCaption` und die Zählung
+`createdCount` — alle leiten aus dem Ergebnis ab, das sie beschreiben, und
+können deshalb nicht abweichen. Die Behebung von „Contrastmap — vorhergesagt" in
+1.2 hat genau das getan, und die Stelle ist seither die einzige der drei, die
+strukturell dicht ist.
+
+#### Zwei offene Punkte, ausdrücklich nicht in diesem Schritt
+
+- **Die Messwerte stehen nicht auf dem Canvas.** Die richtige Behebung des
+  „Befunde"-Rahmens ist nicht, seinen Satz einzuschränken, sondern die
+  Kontrastwerte mitzuschreiben — als **eigener Block**, denn eine Messung darf
+  nicht in derselben Liste stehen wie eine Vorhersage (C4). Die Nutzlast reist
+  bereits mit (`PLACE_RESULT.contrastFindings`), sie wird nur nicht gelesen. Das
+  ist eine sichtbare Änderung an der Ausgabe und gehört in einen eigenen Schritt;
+  bis dahin sagt der Rahmen, worüber er spricht.
+#### Der Frame-Name gehört an den Inhalt, nicht daneben
+
+Die Ergebnis-Sektionen des Panels zeigen **einen** Frame — den letzten, der
+fertig wurde —, während die Ergebniszeile darüber den ganzen Lauf zählt. Die
+Antwort stand schon im Code: die Warnungen tragen bei mehr als einem Frame
+`${frameName}: ` als Präfix. Dieselbe Regel gilt jetzt für „Befunde", „Kontrast
+(gemessen)", „Kontrast von Bedienelementen", das Klick-Ranking und die
+Abschnittszeile.
+
+Dazu eine Änderung an der Form, nicht nur am Text: die vier getrennten States
+(`findings`, `contrastFindings`, `nonTextFindings`, `segments`) sind ein Objekt
+geworden, das den Frame-Namen **enthält**. Eine Beschriftung, die getrennt vom
+Inhalt gesetzt wird, kann von ihm abweichen — und genau das ist die Fehlerklasse
+dieses Kapitels. Vier `setState`-Aufrufe nebeneinander waren die Bauform, die sie
+möglich gemacht hat.
 
 ---
 
@@ -3542,13 +4787,54 @@ blockiert (NFR-3).
 
 ---
 
+## Praxis: Prüfungen, die etwas finden können
+
+### Eine Abfrage, die nichts findet, ist noch kein Beleg
+
+**Regel: jede Abfrage, deren Ergebnis „nichts gefunden" ist, braucht einen
+Nachweis, dass sie etwas finden KANN.** Ein Muster, das vorhanden sein muss, mit
+durch dieselbe Abfrage — findet sie das nicht, ist das Ergebnis kein Ergebnis.
+
+Das ist dieselbe Regel wie „das Gate muss rot werden können", angewendet auf
+Abfragen statt auf Prüfungen. Sie steht hier, weil sie in diesem Projekt
+**sechsmal** gebraucht wurde:
+
+| # | Wo | Der Ausfall |
+|---|---|---|
+| 1 | Eval-Gate (A-7) | dreimal grün, ohne zu messen: erst roter Vorlauf, dann leerer Cache, dann die eingefrorene Referenz statt der ausgelieferten Engine |
+| 2 | `cold-fold` | Unit-Test grün, Regel in der Pipeline wirkungslos — der Test rief sie direkt auf, die Pipeline fütterte sie mit etwas anderem |
+| 3 | Kontrastmessung, Textfarbe | jeder Knoten übersprungen, alle Tests grün — den Fixtures fehlte `fillLuminance` |
+| 4 | Kontrastmessung, Kantenglättung | jeder Wert falsch, alle Tests grün — die Fixtures zeichneten hartkantige Balken |
+| 5 | Release v1.2.0 | Workflow grün, am Tag lag kein installierbares Zip — die Prüfung konnte die Frage zu ihrem Zeitpunkt nicht stellen |
+| 6 | Die Suche für diesen Abschnitt | „null Treffer" für **jedes** Muster, auch für `Figmaps` — zsh trennt eine unquotierte Variable nicht an Zeilenumbrüchen, `git grep` bekam 77 SHAs als ein Argument, der Fehler lief nach `/dev/null` |
+
+Nummer 6 ist der billigste Fall und der lehrreichste: das Ergebnis war eine
+vollständige Entwarnung zu einer Frage, an der eine Veröffentlichungsentscheidung
+hängt. Nichts daran sah falsch aus. Gefunden wurde es ausschließlich, weil die
+Abfrage vorher gegen `Figmaps` und `UEyes` laufen musste und dort ebenfalls null
+lieferte.
+
+**Was daraus folgt, praktisch:**
+
+- Eine Suche über Commits, Dateien oder eine API beginnt mit einem Muster, dessen
+  Treffer feststeht. Erst danach das gesuchte Muster.
+- `2>/dev/null` ist bei einer Suche, deren Ergebnis eine Entscheidung trägt, ein
+  Fehler. Es unterdrückt genau die Meldung, die den kaputten Aufruf verrät.
+- Zählungen ausweisen, nicht nur Listen: „0 von 211" ist überprüfbar, „keine
+  Auffälligkeiten" nicht.
+- Bei einer Prüfung im CI: einen Lauf mitliefern, der scheitern **muss**. Das
+  Eval-Gate, das Contrastmap-Gate und die Lockfile-Prüfung tun das; jede neue
+  Prüfung tut es auch.
+
+---
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-414 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
+500 Unit-Tests gegen **synthetische** Eingaben mit bekannter Wahrheit — weißes
 Bild ⇒ flache Feature-Map, schwarzes Quadrat ⇒ Peak an dessen Position,
 Prototype-Hotspot schlägt Namens-Treffer, gleiche Eingabe ⇒ identische Ausgabe.
 Echte Screens haben keine bekannte Wahrheit und eignen sich nicht für
@@ -3568,6 +4854,9 @@ Die für 1.1 tragenden Gruppen:
 | `src/findings/__tests__/end-to-end.test.ts` | C-1 — jede Regel ist über den **echten** Analysepfad auslösbar *und* zum Schweigen zu bringen |
 | `src/findings/__tests__/robustness.test.ts` | 1.2 — dieselben zwölf Fälle noch einmal unter verstellten Engine-Parametern |
 | `eval/__tests__/alpha.test.ts` | 1.2 — die Abkürzung im Alpha-Sweep rechnet dasselbe wie `combineFeatureParts` |
+| `src/contrast/__tests__/measurable.test.ts` | 1.3, 1a/1b — Drehung, Verdeckung und fehlender Textkern werden erkannt; die Textkern-Prüfung ist eine Anwesenheits- und keine Kontrastprüfung |
+| `src/ui/__tests__/map-meta.test.ts` | 1.3 — eine lückenhafte Asset-Tabelle erzeugt keine Kopfzeile, die von der intakten nicht zu unterscheiden ist. Kategorie und Dauer je einzeln |
+| `eval/__tests__/contrast-gate.test.ts` | 1.3 — das zweite Regressions-Gate, samt Beweis, dass es rot werden kann |
 
 ### Die Erreichbarkeitsfälle halten auch, wenn jemand an der Engine dreht
 
@@ -3657,8 +4946,10 @@ Zusätzlich für 1.1 (M4, M5):
 ## Offene Entscheidungen (PRD §11)
 
 1. ~~**Plugin-Name**~~ — entschieden: `Figmaps`. Das Logo liegt als
-   `assets/logo.svg` und wird beim Community-Publishing als Plugin-Icon
-   hochgeladen (die `manifest.json` hat kein Icon-Feld).
+   `assets/logo.svg` (die `manifest.json` hat kein Icon-Feld). **Offen bleibt der
+   Export:** Figma will 128 × 128 px, und kein PNG dieser Größe ist versioniert.
+   Ebenso fehlen Cover (1920 × 1080), Tagline und Beschreibung — siehe
+   „Was für das private Publishing noch fehlt".
 2. **`positionPrior` für RTL** — implementiert als Schalter
    `ENGINE_CONFIG.prior.mirrorHorizontally` (Default `false` = westliche
    Leserichtung). Noch nicht im UI exponiert, weil die Selection allein die
