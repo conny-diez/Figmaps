@@ -8,14 +8,35 @@
 
 # Figmaps — Figma Plugin
 
-**Beta 1.2.0** — „Messwerkzeug mit einem Vorhersage-Zusatz"
+**1.0.0 Beta 1** (`1.0.0-beta.1`) — „Messwerkzeug mit einem Vorhersage-Zusatz"
 
-Der Beta-Marker gilt für die **Vorhersage**, nicht für die Stabilität des Codes,
-und er steht an jeder Stelle, an der der Stand auftaucht: Plugin-Name „Figmaps
-(Beta)", Fenstertitel, Kopf des Panels („Beta 1.2.0"), Name jedes
-Wrapper-Frames auf dem Canvas, Titel und Pre-release-Marke des Release. Die
-**Contrastmap** ist davon ausdrücklich nicht betroffen — sie misst nach WCAG 2.1
-AA und ist nachrechenbar.
+Der Beta-Teil gilt für die **Vorhersage**, nicht für die Stabilität des Codes,
+und er steht an jeder Stelle, an der ein Ergebnis auftaucht: Plugin-Name
+„Figmaps (Beta)", Fenstertitel, Kopf des Panels, Name des Wrapper-Frames, die
+**Fußzeile unter jeder Karte** — die reist mit einer exportierten Map mit —,
+dazu Titel und Pre-release-Marke des Release. Die **Contrastmap** ist davon
+ausdrücklich nicht betroffen: sie misst nach WCAG 2.1 AA und ist nachrechenbar.
+
+### Zwei Zählungen mit denselben Ziffern
+
+**Diese Unterscheidung steht hier und nur hier; alles andere verweist hierauf.**
+
+| Zählung | Beispiel | wo sie vorkommt | was sie bezeichnet |
+|---|---|---|---|
+| **Release** | `1.0.0-beta.1`, angezeigt „1.0.0 Beta 1" | `package.json`, Git-Tag, Zip-Name, Panel, Ausgabe-Fußzeile, GitHub-Release | ein **ausgeliefertes Plugin**. Semver. Beginnt bei 1.0.0-beta.1 — es gibt kein Release davor |
+| **Entwicklungsiteration** | „1.1", „1.2", „1.2 A", „1.3" | README, PRD, Eval-Reports, Commit-Messages, `docs/` | ein **Arbeitsabschnitt** am Repo: eine Epic-Gruppe, eine Messreihe, ein Umbau. Nie etwas, das jemand installieren konnte |
+
+Die Ziffern überschneiden sich, und das ist der Grund für diese Tabelle: „in 1.2
+haben wir die Alpha-Kurve gemessen" spricht über eine **Iteration**. Ein Release
+mit der Nummer 1.2 hat es nie gegeben, und wer danach sucht, findet nichts.
+
+Die Regel, damit es lesbar bleibt: eine Release-Nummer steht **immer** in der
+Semver-Form oder mit dem Wort Release davor; eine Iteration bekommt das Wort
+„Iteration" oder steht in einem Zusammenhang, der über Messungen und Commits
+spricht. Der Text, der einen Vorgänger voraussetzt, liegt in
+[`docs/entwicklungsiterationen-1.1-1.2.md`](docs/entwicklungsiterationen-1.1-1.2.md)
+— nicht im Release-Text, weil ihn niemand kennt, der das Plugin zum ersten Mal
+installiert.
 
 Erzeugt für einen ausgewählten Frame Visualisierungen und legt sie als Bild
 rechts neben dem Original auf dem Canvas ab:
@@ -76,7 +97,7 @@ bestehende neu kalibriert und zwei Ideen widerlegt.
 | **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. Die Zahlen des Gates sind **kein Qualitätsbeleg** — siehe unten. |
 | **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
 | **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
-| **Beta-Marker, überall** | Der Kopf zeigt „Beta 1.2.0", der Fenstertitel und der Plugin-Name tragen ihn mit, jeder Wrapper-Frame heißt `[Figmaps Beta 1.2.0] …`, und das Release ist als Pre-release markiert. Eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
+| **Beta-Kennung, überall** | Der Kopf zeigt „1.0.0 Beta 1", Fenstertitel und Plugin-Name tragen sie mit, der Wrapper-Frame heißt `[Figmaps 1.0.0 Beta 1] …`, die Fußzeile unter jeder Karte nennt sie, und das Release ist als Pre-release markiert. Eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
 
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
 `hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt in
@@ -132,7 +153,7 @@ und wissen nicht mehr, welcher der verbindliche ist.
 | Weg | für wen | Stand |
 |---|---|---|
 | **Privates Publishing in der Organisation** | **alle Nutzer** — Designerinnen, Reviewer, jeder ohne Repo-Zugriff | **der verbindliche Weg**, sobald er steht. Noch offen, siehe unten |
-| **Release-Zip am Tag** | Entwicklung, Archiv, Notlage | steht (`v1.2.0`), bleibt — aber **nicht** der Weg, den man Kollegen nennt |
+| **Release-Zip am Tag** | Entwicklung, Archiv, Notlage | `v1.0.0-beta.1`, bleibt — aber **nicht** der Weg, den man Kollegen nennt |
 | **Dev-Import aus dem Worktree** | nur Entwicklung, nur lokal | steht (`npm run watch`) |
 
 **Warum der GitHub-Weg als Verteilweg nicht taugt, und zwar unabhängig davon,
@@ -154,7 +175,7 @@ und der Release-Prüfer **als Verteilweg**.
 einzige Ort, an dem ein geprüfter, reproduzierbarer Stand pro Version liegt —
 gebaut aus einem Commit, mit `check-release.mjs` gegen die Ortsprior-Nutzdaten
 geprüft, entpackt nachgemessen. Das ist wertvoll, wenn eine Frage lautet „was
-genau war in 1.2.0 drin", und es ist der Rückfallweg, wenn Publishing einmal
+genau war in 1.0.0-beta.1 drin", und es ist der Rückfallweg, wenn Publishing einmal
 nicht geht. `release-verify.yml` bewacht weiterhin, dass dieses Archiv nicht
 still leer ist — dieselbe Prüfung, anderer Zweck.
 
@@ -206,20 +227,40 @@ sonst tragen wir die alte Reihenfolge in den Store.
 ### Ein Release bauen
 
 ```bash
-git tag v1.2.0 && git push origin v1.2.0
+git tag v1.0.0-beta.1 && git push origin v1.0.0-beta.1
 ```
 
 `.github/workflows/release.yml` baut daraufhin, prüft und hängt
-`figmaps-beta-1.2.0.zip` an ein **Release im Entwurfsstatus**, betitelt
-„Figmaps Beta 1.2.0" und als **Pre-release** markiert — der Text (`RELEASE.md`)
+`figmaps-1.0.0-beta.1.zip` an ein **Release im Entwurfsstatus**, betitelt
+„Figmaps 1.0.0 Beta 1" und als **Pre-release** markiert — der Text (`RELEASE.md`)
 wird vor der Veröffentlichung gelesen. Ein Zip, das schon jemand geladen hat,
 lässt sich nicht zurückziehen.
 
-**Der Dateiname trägt die Beta, der Ordner im Zip nicht.** Die Datei liegt in
-einem Download-Verzeichnis und wird dort in einem halben Jahr wiedergefunden;
-der Ordner ist die Nachbarschaft der `manifest.json` und heißt wie der Tag. So
-heißt das Asset auch am veröffentlichten v1.2.0 — dort war es von Hand
-umbenannt worden, und der Repo-Stand zog nach.
+**Die Vorabkennung steckt in der Version, nicht in einem zusätzlichen Namen.**
+Weil `package.json` auf `1.0.0-beta.1` steht, heißen Tag, Zip und Ordner im Zip
+von selbst so; der Titel „Figmaps 1.0.0 Beta 1" kommt aus
+`scripts/version-label.mjs`, aus dem auch das Panel seine Beschriftung nimmt
+(`src/__tests__/version.test.ts` hält beide Fassungen gegeneinander).
+
+**Kommt der Versionsabgleich mit dem Bindestrich klar?** Ja, nachgemessen: der
+Schritt vergleicht `${GITHUB_REF_NAME#v}` mit `package.json`, und `#v` schneidet
+nur das führende `v` ab — `v1.0.0-beta.1` wird zu `1.0.0-beta.1` und ist gleich.
+Der Tag-Auslöser `v*` trifft die Form ebenfalls.
+
+**Und die Pre-release-Marke setzt der Workflow selbst**, abgeleitet aus der
+Version: enthält sie einen Bindestrich, ist `prerelease: true` Pflicht. Legt er
+den Entwurf an, steht sie von Anfang an; findet er ein bestehendes Objekt, zieht
+er sie nach. Das ist die **eine** Eigenschaft, die er einem von Hand angelegten
+Release überschreibt — ohne sie führt GitHub den Tag als „Latest release", und
+dann landet genau der Stand als Empfehlung bei Kollegen, der noch keine ist.
+
+**Kein Link auf `releases/latest`.** GitHub führt Pre-releases nie als „Latest";
+solange nur eine Vorabversion existiert, ist diese Adresse **tot**. Verlinkt wird
+deshalb die Release-**Liste** (`/releases`) oder der Tag
+(`/releases/tag/v1.0.0-beta.1`) — beides trägt auch bei Pre-releases. Im Repo
+gibt es heute keine einzige `releases/latest`-Adresse; nachgesehen über alle
+`*.md`, `*.yml`, `*.mjs`, `*.ts` (Treffer nur `ubuntu-latest` in den Workflows).
+Diese Zeile steht hier, damit die nächste nicht dazukommt.
 
 Im Zip liegt `manifest.json` neben `build/`, sodass „Import plugin from
 manifest…" direkt greift, dazu `NOTICE.md` und die `LIESMICH.txt`, die mit dem
@@ -257,6 +298,12 @@ Lockfile ist eine andere und steht unter den offenen Punkten.
 
 #### Der Entwurf ist die Stelle, an der v1.2.0 schiefgegangen ist
 
+> `v1.2.0` war ein **Entwicklungs-Tag** aus der Zeit vor der Release-Zählung —
+> siehe „Zwei Zählungen mit denselben Ziffern" oben. Mit der Umstellung auf
+> `1.0.0-beta.1` wird er samt Release entfernt, damit genau ein Release
+> existiert; der Vorfall unten bleibt beschrieben, weil die Prüfungen, die daraus
+> entstanden sind, weiterlaufen.
+
 **Es gab zwei Release-Objekte zum Tag `v1.2.0`.** Den Entwurf des Workflows, an
 dem `figmaps-1.2.0.zip` hing, und ein von Hand angelegtes, veröffentlichtes
 Release ohne jedes Asset und mit der Repo-Beschreibung als Text. Wer dem Tag
@@ -290,7 +337,7 @@ Tag gebunden, es gibt also nichts, womit er kollidieren könnte — ein erneuter
 Lauf auf demselben Tag doppelt still.
 
 ```bash
-npm run check-published-release -- v1.2.0
+npm run check-published-release -- v1.0.0-beta.1
 ```
 
 Der Prüfer (`scripts/check-published-release.mjs`) stellt fünf Fragen, und jede
@@ -732,8 +779,8 @@ ist genauso brauchbar wie „ja" und beendet die offene Stelle in der Vorlage.
 ### 6. Frisches öffentliches Repo statt History-Rewrite — Skizze
 
 **Warum kein Rewrite.** 76 von 77 Commits sind betroffen. `git filter-repo`
-erzeugt für jeden einen neuen SHA; damit zeigt der Tag `v1.2.0` ins Leere, das
-veröffentlichte Release verliert seinen Bezug, jeder Link auf einen Commit in
+erzeugt für jeden einen neuen SHA; damit zeigt jeder Versions-Tag ins Leere, ein
+veröffentlichtes Release verliert seinen Bezug, jeder Link auf einen Commit in
 einem PR oder Ticket bricht, und die vorhandenen Klone werden inkompatibel. Der
 Aufwand steht in keinem Verhältnis zu 27 Commits alter Zwischenstände.
 
@@ -755,7 +802,7 @@ gesetzt (`git -c user.email=…`), nicht aus der lokalen Konfiguration übernomm
 
 #### Tag und Release
 
-Im öffentlichen Repo neu: Tag `v1.2.0` auf dem Initial-Commit, Release dazu, Zip
+Im öffentlichen Repo neu: Tag `v1.0.0-beta.1` auf dem Initial-Commit, Release dazu, Zip
 aus einem Build dieses Stands, Text aus `RELEASE.md`. `scripts/check-published-release.mjs`
 prüft das dort genauso — es fragt nach dem Objekt zum Tag, nicht nach einer
 History.
@@ -952,7 +999,7 @@ Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster 
 
 1. Entscheidungen aus Punkt 1, 4, 5 und zur Markenfarbe. **Ohne sie nichts anlegen.**
 2. Öffentliches Repo anlegen, Initial-Commit aus dem bereinigten Stand.
-3. Tag `v1.2.0`, Release, Zip — dann `check-published-release.mjs`.
+3. Tag `v1.0.0-beta.1`, Release, Zip — dann `check-published-release.mjs`.
 4. **Das private Gate aufsetzen — und `eval-gate.yml` im öffentlichen Repo erst
    entfernen, wenn es läuft UND einmal beweisbar rot geworden ist.** Nicht
    vorher. Ein Gate, von dem niemand gesehen hat, dass es rot werden kann, ist
@@ -1040,7 +1087,7 @@ automatisch herunter.
 
 ### Panel: Design, Theming, Bedienelemente
 
-**Der Kopf trägt einen Beta-Marker.** Neben dem Produktnamen steht „Beta 1.2.0".
+**Der Kopf trägt die Fassung.** Neben dem Produktnamen steht „1.0.0 Beta 1".
 Der Marker ist eine Aussage über die **Vorhersage**, nicht über die Stabilität
 des Codes: die Engine ist gegen einen einzigen öffentlichen Datensatz gemessen,
 drei der sechs Befundregeln sind abgeschaltet, und für die eigenen Screens fehlt
@@ -1055,16 +1102,24 @@ Kommentar abhängt, ist genau so lange richtig, bis jemand die andere Stelle
 anfasst.
 
 **Und der Marker steht nicht nur im Kopf.** Dieselbe Konstante trägt den
-Fenstertitel, den Namen jedes Wrapper-Frames (`[Figmaps Beta 1.2.0] …`) und über
+Fenstertitel, den Namen jedes Wrapper-Frames (`[Figmaps 1.0.0 Beta 1] …`), die
+Fußzeile unter jeder Karte und über
 `manifest.json` den Namen im Figma-Menü („Figmaps (Beta)"); am Release sind es
 Titel und Pre-release-Marke, und `scripts/check-published-release.mjs` prüft
 beides nach. Der Grund ist, dass ein Ergebnis weiter wandert als das Panel
 reicht: der Wrapper-Frame landet in einer Datei, die jemand anderes öffnet.
 
-**Die volle Version, nicht `v1.2`.** Bis 1.3 zeigte der Kopf die verkürzte Form
-mit der Begründung, die Patch-Stelle sage nichts. Für eine Beta sagt sie das
-Wichtigste: wer ein Verhalten meldet, muss den Stand benennen können, und „v1.2"
-trifft auf 1.2.0 und 1.2.3 gleichermaßen zu.
+**Zwei Formen derselben Zahl.** `1.0.0-beta.1` ist Semver: so heißt der Tag, so
+heißt das Zip, so vergleicht der Workflow. Angezeigt wird „1.0.0 Beta 1" — ein
+Bindestrich mitten in einer Versionsnummer liest sich als Tippfehler oder wird
+überlesen. Umgeformt wird an genau einer Stelle (`humanVersion` in
+`src/version.ts`), und weil eine YAML-Datei kein TypeScript importieren kann,
+gibt es dieselbe Funktion als `scripts/version-label.mjs` — mit einem Test, der
+beide gegeneinander hält, statt zu hoffen.
+
+Vorher zeigte der Kopf die verkürzte Form `v1.2` mit der Begründung, die
+Patch-Stelle sage nichts. Für eine Vorabversion sagt sie das Wichtigste: wer ein
+Verhalten meldet, muss den Stand benennen können.
 
 Die Engine-Version (`hybrid-v1`) ist davon getrennt und steht weiterhin an den
 Maps: sie sagt, welche Vorhersage eine Karte erzeugt hat — eine andere Aussage
@@ -1312,6 +1367,9 @@ eval/                      Epic A — läuft offline in Node
 ├─ constructed.ts          C-1  Frames mit Layer-Baum — ohne die drei Regeln
 │                               mit Klick-Kandidaten unmessbar sind
 └─ fixtures/               nicht im Repo — siehe fixtures/README.md
+
+docs/                      Texte, die einen Vorgänger voraussetzen — aus dem
+└─ entwicklungsiterationen-1.1-1.2.md   Release-Text ausgelagert, nicht gelöscht
 
 logos/                     Marken-Assets, DESIGN.md §5
 ├─ figmaps-mark-dark.svg   128er-SVG, dunkler Grund — Quelle der Panel-Mark
@@ -5031,7 +5089,7 @@ App durchzugehen:
 | 2 | Frame auswählen | Name + Dimensionen erscheinen, Button aktiv |
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |
-| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps Beta 1.2.0] … — {Dauer} — …` rechts daneben, Viewport springt darauf, `2 Maps erstellt` |
+| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps 1.0.0 Beta 1] … — {Dauer} — …` rechts daneben, Viewport springt darauf, `2 Maps erstellt`; unter den Karten die Fußzeile „Figmaps 1.0.0 Beta 1“ |
 | 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt; **nichts** ins Bild gemalt außer Overlay und Fold-Marken |
 | 7 | Beschriftung neben den Maps | Unter jedem Titel eine Zeile „Algorithmische Vorhersage, keine Messdaten · Blickverhalten: … · Betrachtungsdauer: … · hybrid-v1"; CC-BY-Zeile genau **einmal** unten am Wrapper; nirgends „Ortsprior" |
 | 8 | Focusmap gegen die Heatmap halten | Kein harter Rand: ein in der Heatmap deutlich warmer Bereich ist auch in der Focusmap sichtbar, nur schwächer; völlig dunkel ist nur, was in der Heatmap kalt ist |

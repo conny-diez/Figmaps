@@ -63,6 +63,18 @@ const MEASURED_MAPS: ReadonlySet<MapKind> = new Set<MapKind>(['contrast'])
 const MEASURED_TITLE_SUFFIX = 'gemessen'
 const MEASURED_LINE = 'Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage'
 
+/**
+ * Welcher ausgelieferte Stand die Ausgabe erzeugt hat, z. B. `Figmaps 1.0.0
+ * Beta 1`.
+ *
+ * **Die wichtigste Stelle der Version.** Ein Ebenenname bleibt in der Datei; ein
+ * exportiertes PNG nimmt nur mit, was im Bild steht. Diese Zeile steht unter
+ * jeder Karte und in der Fußzeile des Wrappers und ist damit das Einzige, was
+ * einen Export übersteht. Sie sagt „aus diesem Stand", nicht „so gut ist die
+ * Vorhersage" — die Engine-Version daneben sagt das Zweite.
+ */
+const TOOL_LINE = `Figmaps ${PLUGIN_LABEL}`
+
 /** Trägt diese Karte eine Messung statt einer Vorhersage? */
 export function isMeasuredMap(kind: MapKind): boolean {
   return MEASURED_MAPS.has(kind)
@@ -164,8 +176,12 @@ function timestamp(now: Date): string {
  */
 export function metaLine(meta: MapMeta | undefined, kind?: MapKind): string {
   // Gemessene Karten bekommen ihre eigene Zeile und **nichts** aus der
-  // Vorhersage-Vorlage — siehe `MEASURED_MAPS`.
-  if (kind && isMeasuredMap(kind)) return MEASURED_LINE
+  // Vorhersage-Vorlage — siehe `MEASURED_MAPS`. Der ausgelieferte Stand steht
+  // trotzdem dabei, und bei einer Messung ist er sogar wichtiger als sonst: in
+  // 1.2 sind drei Messfehler in der Contrastmap gefunden worden, einer davon
+  // still. Wer einen Wert nachrechnet, muss wissen, welcher Stand ihn gerechnet
+  // hat. Eine Vorhersage-Aussage ist die Zeile damit nicht.
+  if (kind && isMeasuredMap(kind)) return `${MEASURED_LINE} · ${TOOL_LINE}`
 
   const parts = [DISCLAIMER]
   // Jedes Stück einzeln und nur, wenn es da ist. 1.3: die Felder sind optional
@@ -176,6 +192,7 @@ export function metaLine(meta: MapMeta | undefined, kind?: MapKind): string {
   if (meta?.duration) parts.push(`Betrachtungsdauer: ${meta.duration}`)
   if (meta?.fallback) parts.push(meta.fallback)
   parts.push(ENGINE_VERSION)
+  parts.push(TOOL_LINE)
   return parts.join(' · ')
 }
 
@@ -361,22 +378,25 @@ export async function placeMaps(
   // dann wäre die Zeile eine Behauptung über eine Abhängigkeit, die es nicht
   // gibt. (Die CC-BY-Pflicht selbst bleibt davon unberührt: sie greift für den
   // Ortsprior, und der steckt in keiner Contrastmap.)
+  //
+  // Die Fußzeile selbst steht **immer** — sie trägt den ausgelieferten Stand
+  // (`TOOL_LINE`), und der gilt für jede Ausgabe. Die Datengrundlage kommt nur
+  // dazu, wenn ein Wert daraus eingegangen ist.
   const usesPrediction = maps.some((map) => !isMeasuredMap(map.kind))
-  if (meta?.attribution && usesPrediction) {
-    const footer = figma.createFrame()
-    footer.layoutMode = 'HORIZONTAL'
-    footer.primaryAxisSizingMode = 'AUTO'
-    footer.counterAxisSizingMode = 'AUTO'
-    footer.name = 'Datengrundlage'
-    footer.fills = []
-    wrapper.appendChild(footer)
-    const line = figma.createText()
-    line.fontName = bodyFont
-    line.fontSize = Math.round(cfg.titleFontSize * 0.55)
-    line.characters = `Datengrundlage: ${meta.attribution}`
-    line.fills = [{ type: 'SOLID', color: INK.quiet }]
-    footer.appendChild(line)
-  }
+  const footer = figma.createFrame()
+  footer.layoutMode = 'HORIZONTAL'
+  footer.primaryAxisSizingMode = 'AUTO'
+  footer.counterAxisSizingMode = 'AUTO'
+  footer.name = 'Herkunft'
+  footer.fills = []
+  wrapper.appendChild(footer)
+  const line = figma.createText()
+  line.fontName = bodyFont
+  line.fontSize = Math.round(cfg.titleFontSize * 0.55)
+  line.characters =
+    meta?.attribution && usesPrediction ? `${TOOL_LINE} · Datengrundlage: ${meta.attribution}` : TOOL_LINE
+  line.fills = [{ type: 'SOLID', color: INK.quiet }]
+  footer.appendChild(line)
 
   // Place to the right of the source frame, in absolute page coordinates.
   const box = node.absoluteBoundingBox

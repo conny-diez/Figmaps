@@ -1,42 +1,47 @@
-# Figmaps Beta 1.2.0
+# Figmaps 1.0.0 Beta 1
 
-> **Das ist eine Beta.** Der Marker ist eine Aussage über die **Vorhersage**,
-> nicht über die Stabilität des Codes: die Engine ist gegen einen einzigen
-> öffentlichen Datensatz gemessen, drei der sechs Befundregeln sind
-> abgeschaltet, und für die eigenen Screens fehlt ein Validierungsset. Die
-> Contrastmap ist davon ausdrücklich **nicht** betroffen — sie misst nach
-> WCAG 2.1 AA und ist nachrechenbar.
+Figmaps ist ein Figma-Plugin. Es nimmt einen ausgewählten Frame und legt rechts
+daneben Karten als Bilder auf den Canvas:
+
+- **Heatmap** — wohin die Aufmerksamkeit voraussichtlich zuerst wandert.
+- **Focusmap** — derselbe Screen, scharf dort, wo Aufmerksamkeit vorhergesagt
+  wird, und zum ruhigen Rand hin abgedunkelt und unscharf.
+- **Contrastmap** — welche Texte zu wenig Kontrast zu ihrem tatsächlichen
+  Hintergrund haben, gemessen nach WCAG 2.1 AA.
+
+Dazu ein Textrahmen mit **Vorhersage-Befunden** in ganzen Sätzen („Der Blickfang
+liegt unter der Falz") und, bei langen Frames, eine **Above-the-fold**-Karte über
+den ersten Bildschirmausschnitt allein.
+
+Der Unterschied zwischen den ersten beiden Karten und der dritten ist der
+wichtigste Satz dieses Textes: **Heatmap und Focusmap sind Vorhersagen, die
+Contrastmap ist eine Messung.** In der Ausgabe stehen die beiden Arten getrennt,
+mit eigener Beschriftung, und die Fußzeile jeder Karte sagt, welche von beiden
+sie trägt.
+
+> **Das ist eine Beta.** Die Kennung gilt für die **Vorhersage**, nicht für die
+> Stabilität des Codes: die Engine ist gegen einen einzigen öffentlichen
+> Datensatz gemessen, drei der sechs Befundregeln sind abgeschaltet, und für die
+> eigenen Screens fehlt ein Validierungsset. Die **Contrastmap ist davon nicht
+> betroffen** — sie rechnet eine Norm aus und ist nachprüfbar.
 >
-> Sichtbar ist das an jeder Stelle, an der der Stand auftaucht: im Kopf des
-> Panels („Beta 1.2.0"), im Fenstertitel, im Plugin-Namen „Figmaps (Beta)", im
-> Namen jedes Wrapper-Frames auf dem Canvas und an diesem Release, das als
-> Pre-release markiert ist.
+> Sichtbar ist die Fassung an jeder Stelle, an der ein Ergebnis auftaucht: im
+> Kopf des Panels, im Fenstertitel, im Plugin-Namen „Figmaps (Beta)", im Namen
+> des Wrapper-Frames und in der Fußzeile unter jeder Karte — die reist auch mit
+> einer exportierten Map mit.
 
 <!-- download-hinweis:anfang -->
-> **Lade `figmaps-beta-1.2.0.zip`.** Die beiden „Source code"-Archive von GitHub
-> funktionieren nicht — sie enthalten den Quellcode ohne gebautes Plugin. Nach
-> dem Entpacken müssen `manifest.json` und ein Ordner `build/` nebeneinander
-> liegen.
+> **Lade `figmaps-1.0.0-beta.1.zip`.** Die beiden „Source code"-Archive von
+> GitHub funktionieren nicht — sie enthalten den Quellcode ohne gebautes Plugin.
+> Nach dem Entpacken müssen `manifest.json` und ein Ordner `build/`
+> nebeneinander liegen.
 <!-- download-hinweis:ende -->
-
-**Die Verschiebung dieser Version in einem Satz:** Figmaps war ein
-Vorhersagewerkzeug mit einem Kontrast-Zusatz und ist ein **Messwerkzeug mit
-einem Vorhersage-Zusatz** geworden.
-
-Das ist keine Umbenennung, sondern eine Beobachtung an der Ausgabe. Auf einem
-typischen Onboarding-Screen (393 × 852) misst die neue Contrastmap **acht
-Textelemente** und nennt für jedes einen nachrechenbaren Wert; die Vorhersage
-steuert **einen** Befund bei. Auf einem Desktop-Frame sind es 21 gemessene
-Werte, davon 14 unter der Anforderung, gegen im Schnitt 1,7 vorhergesagte
-Befunde. Wer das Plugin öffnet, bekommt ab 1.2 überwiegend Zahlen, die man
-nachrechnen kann — auch dort, wo sie „bestanden" lauten.
 
 ---
 
-## Neu: die Contrastmap
+## Was die Contrastmap misst
 
-Eine dritte Karte, und die einzige, die keine Vorhersage ist. Sie misst nach
-WCAG 2.1 AA:
+Die einzige Karte, die keine Vorhersage ist. Geprüft wird nach WCAG 2.1 AA:
 
 - **1.4.3 Kontrast (Minimum)** — Text gegen seinen tatsächlichen Hintergrund,
   4,5:1 bzw. 3:1 bei großer Schrift.
@@ -56,18 +61,6 @@ Baum zu rekonstruieren hieße, Figmas Renderer nachzubauen.
 Die Schwellen sind **zitiert, nicht kalibriert**. Sie stehen in der Norm; es
 gibt nichts an ihnen einzustellen, und sie veralten nicht.
 
-## Besser: die Vorhersage
-
-- Die Karten sind schärfer. Die Prüfung der Ausgangsvermutung („die Karten sind
-  zu weich") ergab, dass der bisher dafür gehaltene Regler der falsche war —
-  eine höhere Bildgewichtung macht die Karte *weicher*, nicht schärfer.
-  Wirksam ist eine Tonkurve über der fertigen Karte.
-- `competition` misst den Abstand zweier Blickfänge jetzt auf der Diagonale
-  statt an der Breite. „Weit auseinander" hieß vorher auf einem Telefon etwas
-  anderes als auf einem Desktop.
-- `cold-fold` hat eine Schwelle je UI-Typ. Mit einer gemeinsamen Zahl sagte die
-  Regel auf Telefon-Screens häufiger ja als nein.
-
 ---
 
 ## Drei Einordnungen, die in jede Beschreibung gehören
@@ -78,10 +71,10 @@ Datensatz kalibriert und können daneben liegen. Die Contrastmap rechnet eine
 Norm aus.
 
 Der Unterschied liegt nicht darin, dass die Messung nicht falsch sein könnte.
-Sie war es: allein in dieser Version sind drei Messfehler in der Contrastmap
-aufgefallen — die Kantenglättung an Glyphen, die fehlende Textfarbe und eine
-Deckkraft unter 1, die aus dem Layer-Baum nicht in die Farbe einging. Der
-letzte hat es gerade **nicht** gesagt: er meldete stillschweigend zu gute
+Sie war es: in der Entwicklung dieser Fassung sind drei Messfehler in der
+Contrastmap aufgefallen — die Kantenglättung an Glyphen, die fehlende Textfarbe
+und eine Deckkraft unter 1, die aus dem Layer-Baum nicht in die Farbe einging.
+Der letzte hat es gerade **nicht** gesagt: er meldete stillschweigend zu gute
 Werte, und kein Test schlug an.
 
 Nachprüfbar ist deshalb nicht die Implementierung, sondern die **Größe**. Ein
@@ -107,12 +100,6 @@ kalibrieren. Eine Regel, die auf 0 % oder auf 100 % der Screens feuert, wird
 hier nicht ausgeliefert, auch wenn sie plausibel klingt. Das heißt auch: ein
 Screen bekommt selten mehr als ein bis zwei Vorhersage-Befunde. Das ist so
 gewollt.
-
-Offen gesagt hat 1.2 dem Regelwerk **keine neue Regel** hinzugefügt: zwei
-bestehende wurden neu kalibriert, zwei Ideen gemessen und verworfen, eine
-nicht angefangen. Der Zuwachs dieser Version liegt bei der Messung, nicht bei
-der Vorhersage — was die Verschiebung oben noch einmal von der anderen Seite
-beschreibt.
 
 ---
 
