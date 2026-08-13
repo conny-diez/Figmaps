@@ -674,7 +674,7 @@ function App(): preact.JSX.Element {
       {/* §4: Icon-Tile → Plugin-Name → Version → Theme-Schalter → Schließen. */}
       <header class="app__header">
         <span class="app__tile">
-          <Logo size={16} />
+          <Logo size={18} />
         </span>
         <h1 class="app__title">Figmaps</h1>
         {/* The engine version stays with the maps (the line under each map
@@ -1071,9 +1071,12 @@ function App(): preact.JSX.Element {
           <span class="hintmark" aria-hidden="true">
             i
           </span>
-          {/* One type style for all three paragraphs: the graded, dimmer
-              secondary style made the provenance unreadable, and it is not
-              secondary — it is what the disclaimer above it rests on. */}
+          {/* Ein Schriftschnitt für beide Absätze: die abgestufte, leisere
+              Variante machte die Herkunft unlesbar, und sie ist nicht
+              sekundär — sie ist das, worauf der Disclaimer darüber ruht.
+
+              Die Autorenzeile ist entfallen. Die CC-BY-Nennung bleibt: sie ist
+              eine Lizenzpflicht, keine Signatur. */}
           <div>
             <p>
               Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
@@ -1085,7 +1088,6 @@ function App(): preact.JSX.Element {
                 (UEyes-Datensatz, Jiang et al., CHI 2023, CC BY 4.0).
               </p>
             )}
-            <p>Figmaps — entwickelt von Constantin Diessenbacher</p>
           </div>
         </div>
       </footer>

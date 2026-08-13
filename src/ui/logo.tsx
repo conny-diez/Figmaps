@@ -1,81 +1,32 @@
 /**
  * Figmaps-Mark — Inline-SVG, damit das Panel kein Netz und kein zweites Asset im
- * Bundle braucht. Quelle der Wahrheit sind die Dateien in `logos/`
- * (`figmaps-mark-dark|light|mono.svg`, `figmaps-icon-16.svg`); die Geometrie hier
- * ist dieselbe Formel, aus der sie entstanden sind (`DESIGN.md` §5).
+ * Bundle braucht. Gezeichnet wird **die gelieferte Datei**, nicht eine Fassung
+ * davon: dieselben sechzehn Kreise, dieselbe Reihenfolge, dieselben Farben, je
+ * Theme `logos/figmaps-mark-dark.svg` bzw. `figmaps-mark-light.svg`. Die Daten
+ * liegen in `ui/marks.ts`, und `ui/__tests__/marks.test.ts` vergleicht sie Kreis
+ * für Kreis mit den Dateien.
  *
- * **Das Heat-Raster, nicht der Rahmen.** Die Mark ist ein 4 × 4-Punktgitter:
- * Punktgröße ist Intensität, der Fokus sitzt oben links, die Farbe folgt der
- * Daten-Rampe. Sie zeigt damit, was das Plugin tut, statt ein Bilderrahmen zu
- * sein.
+ * **Das Heat-Raster, nicht der Rahmen.** Punktgröße ist Intensität, der Fokus
+ * sitzt oben links, die Farbe folgt der Daten-Rampe. Die Mark zeigt damit, was
+ * das Plugin tut, statt ein Bilderrahmen zu sein.
  *
- * **Farben aus den Tokens, nicht aus der Datei.** Die SVGs in `logos/` tragen
- * feste Werte je Theme; hier stehen `var(--cta)` und die Rampe, sodass der
- * Theme-Wechsel die Mark mitzieht, ohne dass ein zweites Asset geladen wird. Das
- * Logo ist neben dem CTA die einzige Stelle mit Gelb — `DESIGN.md` §1 erlaubt
- * „ein Akzentelement im Logo" ausdrücklich.
+ * **Warum auch im 24-px-Tile das vollständige Raster steht.** `DESIGN.md` §5
+ * sieht für ≤ 24 px eine vereinfachte Variante aus vier Kreisen vor
+ * (`logos/figmaps-icon-16.svg` liegt als Asset dafür bereit). Im Panel-Header
+ * steht trotzdem das volle Raster — ausdrücklich so gewünscht, weil dort die
+ * Marke selbst erkennbar sein soll und nicht ihre Kurzform.
+ *
+ * Die Farben kommen als Tokens (`var(--cta)`, `var(--tone-…)`), deren Werte in
+ * `ui/theme.ts` genau die der Dateien sind. Dadurch zieht der Theme-Wechsel die
+ * Mark mit, ohne dass ein zweites Asset geladen wird.
  */
+import { MARK_DOTS, MARK_VIEWBOX } from './marks'
 
-/** Schrittweite und Startpunkt des Rasters, `DESIGN.md` §5. */
-const STEP = 13.5
-const ORIGIN = 12
-
-/**
- * Ab welcher Kantenlänge das volle Raster gezeichnet wird. Darunter greift die
- * vereinfachte Variante aus §5 — sechzehn Punkte auf 24 px wären Grieß.
- */
-const SMALL_MAX = 24
-
-type Dot = { cx: number; cy: number; r: number; fill: string }
-
-/** Farbe nach Abstand vom Fokus — die vier Stufen der Rampe. */
-function toneFor(distance: number): string {
-  if (distance < 0.9) return 'var(--cta)'
-  if (distance < 1.9) return 'var(--tone-600)'
-  if (distance < 2.8) return 'var(--tone-700)'
-  return 'var(--tone-cold)'
-}
-
-/** Das 4 × 4-Raster: `r = max(1.6, 5.4 − d · 1.35)`, `d = hypot(row−0.6, col−1.2)`. */
-function grid(): Dot[] {
-  const dots: Dot[] = []
-  for (let row = 0; row < 4; row++) {
-    for (let col = 0; col < 4; col++) {
-      const distance = Math.hypot(row - 0.6, col - 1.2)
-      dots.push({
-        cx: ORIGIN + col * STEP,
-        cy: ORIGIN + row * STEP,
-        r: Math.max(1.6, 5.4 - distance * 1.35),
-        fill: toneFor(distance),
-      })
-    }
-  }
-  return dots
-}
-
-/** Kleingröße, §5: vier Kreise, derselbe Verlauf, `viewBox="2 2 52 52"`. */
-const SMALL: Dot[] = [
-  { cx: 18, cy: 18, r: 12, fill: 'var(--cta)' },
-  { cx: 42, cy: 22, r: 7, fill: 'var(--tone-600)' },
-  { cx: 20, cy: 42, r: 6, fill: 'var(--tone-700)' },
-  { cx: 44, cy: 46, r: 3.5, fill: 'var(--tone-cold)' },
-]
-
-export function Logo({ size = 16 }: { size?: number }): preact.JSX.Element {
-  const small = size <= SMALL_MAX
-  const dots = small ? SMALL : grid()
-
+export function Logo({ size = 18 }: { size?: number }): preact.JSX.Element {
   return (
-    <svg
-      class="app__logo"
-      width={size}
-      height={size}
-      viewBox={small ? '2 2 52 52' : '0 0 64 64'}
-      role="img"
-      aria-label="Figmaps"
-    >
-      {dots.map((dot) => (
-        <circle key={`${dot.cx}-${dot.cy}`} cx={dot.cx} cy={dot.cy} r={dot.r} fill={dot.fill} />
+    <svg class="app__logo" width={size} height={size} viewBox={MARK_VIEWBOX} role="img" aria-label="Figmaps">
+      {MARK_DOTS.map((dot) => (
+        <circle key={`${dot.cx}-${dot.cy}`} cx={dot.cx} cy={dot.cy} r={dot.r} fill={`var(--${dot.tone})`} />
       ))}
     </svg>
   )

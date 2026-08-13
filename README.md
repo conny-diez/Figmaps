@@ -1134,6 +1134,21 @@ ist.
 **Schließen im Kopf.** Das × sendet `CLOSE`; der iframe kann sein eigenes
 Plugin-Fenster nicht beenden, `figma.closePlugin()` gibt es nur im Hauptthread.
 
+**Die Mark im Kopf ist die gelieferte Datei.** Das Panel zeichnet sie inline —
+der iframe darf nichts nachladen —, also steht dieselbe Zeichnung an zwei Orten:
+in `logos/figmaps-mark-dark|light.svg` und in `src/ui/marks.ts`. Zwei Orte
+driften, sobald einer angefasst wird, deshalb vergleicht
+`ui/__tests__/marks.test.ts` sie Kreis für Kreis: Reihenfolge, `cx`, `cy`, `r`
+und die aufgelöste Farbe, je Theme. Auch im 24-px-Tile steht das **volle**
+Raster; die vereinfachte Kleingröße aus §5 liegt als `logos/figmaps-icon-16.svg`
+bereit, wird im Panel aber nicht verwendet — im Kopf soll die Marke selbst
+erkennbar sein, nicht ihre Kurzform.
+
+**Die Fußzeile nennt keinen Autor mehr.** Der Absatz „Figmaps — entwickelt von
+…" ist weg. Was bleibt, ist die CC-BY-Nennung des UEyes-Datensatzes: die ist
+Lizenzpflicht, keine Signatur, und `scripts/check-release.mjs` prüft, dass sie
+im Bundle ankommt.
+
 **Schriften.** Plus Jakarta Sans (UI) und JetBrains Mono (Zahlen, Einheiten,
 Section-Labels), je ein Latin-Subset, zusammen 58 KB, als base64 in
 `build/ui.html`. `networkAccess` steht auf `"none"` — nachladen ist nicht
@@ -1236,6 +1251,7 @@ src/
 │  └─ folds.ts             B-2  gestrichelte Fold-Marker
 └─ ui/
    ├─ pipeline.ts          iframe-Pipeline: PNG rein, Map-PNGs raus
+   ├─ marks.ts             die sechzehn Kreise der Mark, gegen `logos/` geprüft
    ├─ logo.tsx             Figmaps-Mark als Inline-SVG (Heat-Raster, DESIGN.md §5)
    └─ styles.css
 
@@ -1259,7 +1275,9 @@ logos/                     Marken-Assets, DESIGN.md §5
 ├─ figmaps-mark-dark.svg   128er-SVG, dunkler Grund — Quelle der Panel-Mark
 ├─ figmaps-mark-light.svg  dieselbe Mark für hellen Grund
 ├─ figmaps-mark-mono.svg   einfarbig über `currentColor`
-└─ figmaps-icon-16.svg     Kleingröße (≤ 24 px): vier Kreise statt sechzehn
+└─ figmaps-icon-16.svg     Kleingröße nach DESIGN.md §5: vier Kreise statt
+                           sechzehn. Im Panel-Header steht bewusst das volle
+                           Raster, siehe `ui/logo.tsx`
 
 DESIGN.md                  das Design-System des Panels: Tokens, Typografie,
                            Geometrie, Komponenten, Regeln
