@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 64 64"><title>Figmaps</title>
+  <circle cx="12" cy="12" r="3.59" fill="#B79A2A"></circle>
+  <circle cx="25.5" cy="12" r="4.55" fill="#FFD60A"></circle>
+  <circle cx="39" cy="12" r="4.05" fill="#B79A2A"></circle>
+  <circle cx="52.5" cy="12" r="2.84" fill="#B79A2A"></circle>
+  <circle cx="12" cy="25.5" r="3.69" fill="#B79A2A"></circle>
+  <circle cx="25.5" cy="25.5" r="4.8" fill="#FFD60A"></circle>
+  <circle cx="39" cy="25.5" r="4.19" fill="#FFD60A"></circle>
+  <circle cx="52.5" cy="25.5" r="2.91" fill="#B79A2A"></circle>
+  <circle cx="12" cy="39" r="2.91" fill="#B79A2A"></circle>
+  <circle cx="25.5" cy="39" r="3.49" fill="#B79A2A"></circle>
+  <circle cx="39" cy="39" r="3.22" fill="#B79A2A"></circle>
+  <circle cx="52.5" cy="39" r="2.32" fill="#6E6234"></circle>
+  <circle cx="12" cy="52.5" r="1.78" fill="#6E6234"></circle>
+  <circle cx="25.5" cy="52.5" r="2.15" fill="#6E6234"></circle>
+  <circle cx="39" cy="52.5" r="1.98" fill="#6E6234"></circle>
+  <circle cx="52.5" cy="52.5" r="1.6" fill="#26262C"></circle>
+</svg>

@@ -26,8 +26,8 @@
 //
 // AUFRUF
 //
-//   node scripts/check-published-release.mjs v1.2.0
-//   RELEASE_TAG=v1.2.0 node scripts/check-published-release.mjs
+//   node scripts/check-published-release.mjs v1.0.0-beta.1
+//   RELEASE_TAG=v1.0.0-beta.1 node scripts/check-published-release.mjs
 //
 // Braucht `gh` mit Leserechten (im Workflow `GH_TOKEN`), weil das Repo privat
 // ist und ein anonymer Abruf des Assets 404 liefert — was kein Defekt wäre,
@@ -61,11 +61,27 @@ function api(path, extra = []) {
 }
 
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version
+// Zip und Ordner heißen nach der Version; die Vorabkennung steckt seit
+// 1.0.0-beta.1 in der Version selbst, also steht sie ohne Zutun im Dateinamen.
+// Beides ist aus `package.json` abgeleitet und nicht abgeschrieben.
 const expectedAsset = `figmaps-${version}.zip`
 const expectedDir = `figmaps-${version}`
 
+/**
+ * Die lesbare Fassung — dieselbe, die das Panel zeigt und die im Release-Titel
+ * steht. Aus dem Skript, nicht aus einer Kopie der Regel
+ * (`src/__tests__/version.test.ts` hält die beiden Fassungen gegeneinander).
+ */
+const label = execFileSync('node', ['scripts/version-label.mjs'], { encoding: 'utf8' }).trim()
+
+/** Vorabversion? Dann muss das Release als Pre-release markiert sein. */
+const isPrerelease = version.includes('-')
+
 console.log(`Prüfe das veröffentlichte Release zum Tag ${tag}.`)
-console.log(`Erwartet: ein Objekt, nicht als Entwurf, mit ${expectedAsset}.`)
+console.log(
+  `Erwartet: ein Objekt, nicht als Entwurf, Titel „Figmaps ${label}"` +
+    `${isPrerelease ? ', als Pre-release markiert' : ''}, mit ${expectedAsset}.`,
+)
 console.log('')
 
 // --- 1. Wie viele Objekte tragen diesen Tag? -------------------------------
@@ -109,6 +125,40 @@ if (!published) {
   )
 } else {
   if (published.draft) problems.push(`Das Objekt zum Tag ${tag} ist ein Entwurf.`)
+
+  // --- 2b. Steht die Beta dort, wo sie stehen muss? -----------------------
+  //
+  // Der Beta-Marker ist eine Aussage über die Vorhersage (siehe
+  // `src/version.ts`), und er steht an jeder Stelle, an der der Stand auftaucht:
+  // Plugin-Name, Fenstertitel, Panel-Kopf, Wrapper-Frame. Am Release sind es
+  // zwei Stellen, und beide sind hier prüfbar — der Titel, weil er in der
+  // Release-Liste die einzige Zeile ist, die jeder sieht, und das
+  // `prerelease`-Flag, weil GitHub daraus das Abzeichen macht und den Tag nicht
+  // als „Latest release" führt.
+  //
+  // Ohne diese Prüfung wäre „überall sichtbar" eine Absicht: der Workflow setzt
+  // beides nur, wenn er das Objekt selbst anlegt — bei einem von Hand
+  // angelegten Release bleibt, was ein Mensch gesetzt hat.
+  if ((published.name ?? '') !== `Figmaps ${label}`) {
+    problems.push(
+      `Der Titel des Release lautet „${published.name ?? ''}", erwartet wird „Figmaps ${label}". ` +
+        'Der Titel ist in der Release-Liste die einzige Zeile, die jeder sieht.',
+    )
+  }
+  if (isPrerelease && !published.prerelease) {
+    problems.push(
+      `${version} ist eine Vorabversion, das Release ist aber nicht als Pre-release markiert. ` +
+        'GitHub führt es damit als „Latest release" — und damit landet genau der Stand als Empfehlung ' +
+        'bei Kollegen, der noch keine ist.',
+    )
+  }
+  if (!isPrerelease && published.prerelease) {
+    problems.push(
+      `${version} ist keine Vorabversion, das Release ist aber als Pre-release markiert. ` +
+        'Dann führt GitHub gar nichts als „Latest release", und der Link auf die Liste ist die ' +
+        'einzige Adresse, die noch trägt.',
+    )
+  }
 
   const asset = published.assets.find((a) => a.name === expectedAsset)
   if (!asset) {

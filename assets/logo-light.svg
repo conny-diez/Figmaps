@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-<title>Figmaps</title>
-<defs><clipPath id="inner"><rect x="28.5" y="26.5" width="71" height="57" rx="7"/></clipPath></defs>
-<g transform="translate(0,7)">
-<g clip-path="url(#inner)"><rect x="28.5" y="26.5" width="71" height="57" rx="7" fill="#FFF0A0"/><rect x="28.5" y="26.5" width="71" height="19" fill="#FFDD00"/><rect x="28.5" y="45.5" width="71" height="19" fill="#FFB300"/><rect x="28.5" y="64.5" width="71" height="19" fill="#FF8A00"/></g>
-<rect x="16" y="14" width="96" height="82" rx="15" fill="none" stroke="#333333" stroke-width="9"/><rect x="59.5" y="96" width="9" height="18" rx="4.5" fill="#333333"/>
-</g>
-</svg>

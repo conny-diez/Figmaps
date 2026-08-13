@@ -1,6 +1,6 @@
 {
   "name": "figmaps",
-  "version": "1.2.0",
+  "version": "1.0.0-beta.1",
   "private": true,
   "type": "module",
   "description": "Figma plugin that predicts visual attention (heatmap, clickmap, focusmap, above-the-fold) for a selected frame, with an offline evaluation harness.",

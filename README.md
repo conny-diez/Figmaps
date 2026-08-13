@@ -1,8 +1,42 @@
-<img src="assets/logo.svg" width="72" height="72" alt="Figmaps">
+<!-- Beide gelieferten Marks, unverändert: GitHub schaltet nach dem Farbschema
+     des Lesers. `figmaps-mark-dark.svg` ist für dunklen Grund gezeichnet,
+     `figmaps-mark-light.svg` für hellen — siehe DESIGN.md §5 und `logos/`. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logos/figmaps-mark-dark.svg">
+  <img src="logos/figmaps-mark-light.svg" width="72" height="72" alt="Figmaps">
+</picture>
 
 # Figmaps — Figma Plugin
 
-**Version 1.1** — „Messbar und handlungsleitend"
+**1.0.0 Beta 1** (`1.0.0-beta.1`) — „Messwerkzeug mit einem Vorhersage-Zusatz"
+
+Der Beta-Teil gilt für die **Vorhersage**, nicht für die Stabilität des Codes,
+und er steht an jeder Stelle, an der ein Ergebnis auftaucht: Plugin-Name
+„Figmaps (Beta)", Fenstertitel, Kopf des Panels, Name des Wrapper-Frames, die
+**Fußzeile unter jeder Karte** — die reist mit einer exportierten Map mit —,
+dazu Titel und Pre-release-Marke des Release. Die **Contrastmap** ist davon
+ausdrücklich nicht betroffen: sie misst nach WCAG 2.1 AA und ist nachrechenbar.
+
+### Zwei Zählungen mit denselben Ziffern
+
+**Diese Unterscheidung steht hier und nur hier; alles andere verweist hierauf.**
+
+| Zählung | Beispiel | wo sie vorkommt | was sie bezeichnet |
+|---|---|---|---|
+| **Release** | `1.0.0-beta.1`, angezeigt „1.0.0 Beta 1" | `package.json`, Git-Tag, Zip-Name, Panel, Ausgabe-Fußzeile, GitHub-Release | ein **ausgeliefertes Plugin**. Semver. Beginnt bei 1.0.0-beta.1 — es gibt kein Release davor |
+| **Entwicklungsiteration** | „1.1", „1.2", „1.2 A", „1.3" | README, PRD, Eval-Reports, Commit-Messages, `docs/` | ein **Arbeitsabschnitt** am Repo: eine Epic-Gruppe, eine Messreihe, ein Umbau. Nie etwas, das jemand installieren konnte |
+
+Die Ziffern überschneiden sich, und das ist der Grund für diese Tabelle: „in 1.2
+haben wir die Alpha-Kurve gemessen" spricht über eine **Iteration**. Ein Release
+mit der Nummer 1.2 hat es nie gegeben, und wer danach sucht, findet nichts.
+
+Die Regel, damit es lesbar bleibt: eine Release-Nummer steht **immer** in der
+Semver-Form oder mit dem Wort Release davor; eine Iteration bekommt das Wort
+„Iteration" oder steht in einem Zusammenhang, der über Messungen und Commits
+spricht. Der Text, der einen Vorgänger voraussetzt, liegt in
+[`docs/entwicklungsiterationen-1.1-1.2.md`](docs/entwicklungsiterationen-1.1-1.2.md)
+— nicht im Release-Text, weil ihn niemand kennt, der das Plugin zum ersten Mal
+installiert.
 
 Erzeugt für einen ausgewählten Frame Visualisierungen und legt sie als Bild
 rechts neben dem Original auf dem Canvas ab:
@@ -63,7 +97,7 @@ bestehende neu kalibriert und zwei Ideen widerlegt.
 | **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. Die Zahlen des Gates sind **kein Qualitätsbeleg** — siehe unten. |
 | **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
 | **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
-| **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.2" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort; die Zahl im Kopf folgt dem Versionssprung automatisch. |
+| **Beta-Kennung, überall** | Der Kopf zeigt „1.0.0 Beta 1", Fenstertitel und Plugin-Name tragen sie mit, der Wrapper-Frame heißt `[Figmaps 1.0.0 Beta 1] …`, die Fußzeile unter jeder Karte nennt sie, und das Release ist als Pre-release markiert. Eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
 
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
 `hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt in
@@ -119,7 +153,7 @@ und wissen nicht mehr, welcher der verbindliche ist.
 | Weg | für wen | Stand |
 |---|---|---|
 | **Privates Publishing in der Organisation** | **alle Nutzer** — Designerinnen, Reviewer, jeder ohne Repo-Zugriff | **der verbindliche Weg**, sobald er steht. Noch offen, siehe unten |
-| **Release-Zip am Tag** | Entwicklung, Archiv, Notlage | steht (`v1.2.0`), bleibt — aber **nicht** der Weg, den man Kollegen nennt |
+| **Release-Zip am Tag** | Entwicklung, Archiv, Notlage | `v1.0.0-beta.1`, bleibt — aber **nicht** der Weg, den man Kollegen nennt |
 | **Dev-Import aus dem Worktree** | nur Entwicklung, nur lokal | steht (`npm run watch`) |
 
 **Warum der GitHub-Weg als Verteilweg nicht taugt, und zwar unabhängig davon,
@@ -141,7 +175,7 @@ und der Release-Prüfer **als Verteilweg**.
 einzige Ort, an dem ein geprüfter, reproduzierbarer Stand pro Version liegt —
 gebaut aus einem Commit, mit `check-release.mjs` gegen die Ortsprior-Nutzdaten
 geprüft, entpackt nachgemessen. Das ist wertvoll, wenn eine Frage lautet „was
-genau war in 1.2.0 drin", und es ist der Rückfallweg, wenn Publishing einmal
+genau war in 1.0.0-beta.1 drin", und es ist der Rückfallweg, wenn Publishing einmal
 nicht geht. `release-verify.yml` bewacht weiterhin, dass dieses Archiv nicht
 still leer ist — dieselbe Prüfung, anderer Zweck.
 
@@ -160,7 +194,7 @@ das, was im Repo liegt.
 | Feld | verlangt | im Repo | fehlt |
 |---|---|---|---|
 | Name | — | `Figmaps` | — |
-| **Icon** | empfohlen **128 × 128 px** | nur `assets/logo.svg` | **der Export.** Kein PNG in dieser Größe ist versioniert |
+| **Icon** | empfohlen **128 × 128 px** | nur `logos/figmaps-mark-dark.svg` (128 × 128 als SVG) | **der Export.** Kein PNG in dieser Größe ist versioniert |
 | **Thumbnail / Cover** | empfohlen **1920 × 1080 px** | nichts in der Nähe (größtes Bild: 1648 × 710, eine Messgrafik) | **ganz** |
 | **Tagline** | ein Satz | nirgends | **ganz** — und es ist nicht die Repo-Beschreibung, siehe unten |
 | **Beschreibung** | Fließtext | nirgends als veröffentlichbarer Text | **ganz.** `RELEASE.md` sind Release-Notizen, die README hat über 4.000 Zeilen |
@@ -193,17 +227,58 @@ sonst tragen wir die alte Reihenfolge in den Store.
 ### Ein Release bauen
 
 ```bash
-git tag v1.2.0 && git push origin v1.2.0
+git tag v1.0.0-beta.1 && git push origin v1.0.0-beta.1
 ```
 
 `.github/workflows/release.yml` baut daraufhin, prüft und hängt
-`figmaps-1.2.0.zip` an ein **Release im Entwurfsstatus** — der Text
-(`RELEASE.md`) wird vor der Veröffentlichung gelesen. Ein Zip, das schon
-jemand geladen hat, lässt sich nicht zurückziehen.
+`figmaps-1.0.0-beta.1.zip` an ein **Release im Entwurfsstatus**, betitelt
+„Figmaps 1.0.0 Beta 1" und als **Pre-release** markiert — der Text (`RELEASE.md`)
+wird vor der Veröffentlichung gelesen. Ein Zip, das schon jemand geladen hat,
+lässt sich nicht zurückziehen.
+
+**Die Vorabkennung steckt in der Version, nicht in einem zusätzlichen Namen.**
+Weil `package.json` auf `1.0.0-beta.1` steht, heißen Tag, Zip und Ordner im Zip
+von selbst so; der Titel „Figmaps 1.0.0 Beta 1" kommt aus
+`scripts/version-label.mjs`, aus dem auch das Panel seine Beschriftung nimmt
+(`src/__tests__/version.test.ts` hält beide Fassungen gegeneinander).
+
+**Kommt der Versionsabgleich mit dem Bindestrich klar?** Ja, nachgemessen: der
+Schritt vergleicht `${GITHUB_REF_NAME#v}` mit `package.json`, und `#v` schneidet
+nur das führende `v` ab — `v1.0.0-beta.1` wird zu `1.0.0-beta.1` und ist gleich.
+Der Tag-Auslöser `v*` trifft die Form ebenfalls.
+
+**Und die Pre-release-Marke setzt der Workflow selbst**, abgeleitet aus der
+Version: enthält sie einen Bindestrich, ist `prerelease: true` Pflicht. Legt er
+den Entwurf an, steht sie von Anfang an; findet er ein bestehendes Objekt, zieht
+er sie nach. Das ist die **eine** Eigenschaft, die er einem von Hand angelegten
+Release überschreibt — ohne sie führt GitHub den Tag als „Latest release", und
+dann landet genau der Stand als Empfehlung bei Kollegen, der noch keine ist.
+
+**Was am Tag *nicht* geprüft wird, und wo es notiert ist.** `release.yml` fährt
+**kein** Eval-Gate. Für dieses Release trägt das nicht: der Tag zeigt auf den
+Merge-Commit, und der ist am PR und beim Push auf `main` gemessen. Es beißt bei
+einem Tag auf einem Commit, der nie über `main` gelaufen ist — Hotfix, älterer
+Stand. Als offener Punkt 5 unter „Offene Entscheidungen" festgehalten, mit der
+Begründung und dem, was ausdrücklich **nicht** gebaut wird (kein nächtlicher
+Lauf).
+
+**Kein Link auf `releases/latest`.** GitHub führt Pre-releases nie als „Latest";
+solange nur eine Vorabversion existiert, ist diese Adresse **tot**. Verlinkt wird
+deshalb die Release-**Liste** (`/releases`) oder der Tag
+(`/releases/tag/v1.0.0-beta.1`) — beides trägt auch bei Pre-releases. Im Repo
+gibt es heute keine einzige `releases/latest`-Adresse; nachgesehen über alle
+`*.md`, `*.yml`, `*.mjs`, `*.ts` (Treffer nur `ubuntu-latest` in den Workflows).
+Diese Zeile steht hier, damit die nächste nicht dazukommt.
 
 Im Zip liegt `manifest.json` neben `build/`, sodass „Import plugin from
-manifest…" direkt greift, dazu `NOTICE.md` und eine dreizeilige
-`LIESMICH.txt`.
+manifest…" direkt greift, dazu `NOTICE.md` und die `LIESMICH.txt`, die mit dem
+Beta-Hinweis beginnt.
+
+**Was der Workflow an einem bestehenden Objekt nicht anfasst:** Titel und
+Entwurfs-/Pre-release-Status. Er setzt beides nur, wenn er den Entwurf selbst
+anlegt — bei einem von Hand angelegten Release bleibt, was ein Mensch gesetzt
+hat. Deshalb prüft `scripts/check-published-release.mjs` nach der
+Veröffentlichung, dass „Beta" im Titel steht und die Pre-release-Marke sitzt.
 
 **Warum zwischen Bau und Zip eine eigene Prüfung steht
 (`scripts/check-release.mjs`).** Der Ortsprior ist das einzige Stück dieses
@@ -230,6 +305,12 @@ zwei — und das Panel zeigte etwas anderes an, als das Release heißt.
 Lockfile ist eine andere und steht unter den offenen Punkten.
 
 #### Der Entwurf ist die Stelle, an der v1.2.0 schiefgegangen ist
+
+> `v1.2.0` war ein **Entwicklungs-Tag** aus der Zeit vor der Release-Zählung —
+> siehe „Zwei Zählungen mit denselben Ziffern" oben. Mit der Umstellung auf
+> `1.0.0-beta.1` wird er samt Release entfernt, damit genau ein Release
+> existiert; der Vorfall unten bleibt beschrieben, weil die Prüfungen, die daraus
+> entstanden sind, weiterlaufen.
 
 **Es gab zwei Release-Objekte zum Tag `v1.2.0`.** Den Entwurf des Workflows, an
 dem `figmaps-1.2.0.zip` hing, und ein von Hand angelegtes, veröffentlichtes
@@ -264,7 +345,7 @@ Tag gebunden, es gibt also nichts, womit er kollidieren könnte — ein erneuter
 Lauf auf demselben Tag doppelt still.
 
 ```bash
-npm run check-published-release -- v1.2.0
+npm run check-published-release -- v1.0.0-beta.1
 ```
 
 Der Prüfer (`scripts/check-published-release.mjs`) stellt fünf Fragen, und jede
@@ -333,7 +414,7 @@ die damals angefasst wurden, noch ein Vorkommen:
 
 1. **`package-lock.json`** — 211 Adressen der internen Registry. Siehe Punkt 3;
    seit 1.3 behoben.
-2. **`assets/logo.svg`, `assets/logo-light.svg`, `src/ui/logo.tsx`** — die
+2. **`logos/figmaps-mark-*.svg`, `src/ui/logo.tsx`** — die
    Markenfarbe, und über `logo.tsx` auch in `build/ui.html`, also im Release-Zip
    und in jedem veröffentlichten Plugin.
 
@@ -399,7 +480,7 @@ Text als abstrakte Glyphenbalken, Kacheln als Farbflächen, Beschriftungen
 gattungstypisch erfunden. **Markenfarbe in keinem einzigen** — ausgezählt über
 alle Pixel; das Gelb der Testframes ist `#FFC800` und nicht die Markenfarbe.
 
-**Aber:** `assets/logo.svg`, `assets/logo-light.svg` und `src/ui/logo.tsx`
+**Aber:** `logos/figmaps-mark-dark.svg`, `logos/figmaps-mark-light.svg` und `src/ui/logo.tsx`
 tragen die Markenfarbe, und über `logo.tsx` landet sie in `build/ui.html` — also im
 Release-Zip und in jedem veröffentlichten Plugin. Ob das Logo die Markenfarbe
 tragen darf, wenn das Repo öffentlich ist und das Plugin außerhalb der
@@ -706,8 +787,8 @@ ist genauso brauchbar wie „ja" und beendet die offene Stelle in der Vorlage.
 ### 6. Frisches öffentliches Repo statt History-Rewrite — Skizze
 
 **Warum kein Rewrite.** 76 von 77 Commits sind betroffen. `git filter-repo`
-erzeugt für jeden einen neuen SHA; damit zeigt der Tag `v1.2.0` ins Leere, das
-veröffentlichte Release verliert seinen Bezug, jeder Link auf einen Commit in
+erzeugt für jeden einen neuen SHA; damit zeigt jeder Versions-Tag ins Leere, ein
+veröffentlichtes Release verliert seinen Bezug, jeder Link auf einen Commit in
 einem PR oder Ticket bricht, und die vorhandenen Klone werden inkompatibel. Der
 Aufwand steht in keinem Verhältnis zu 27 Commits alter Zwischenstände.
 
@@ -719,7 +800,7 @@ Aufwand steht in keinem Verhältnis zu 27 Commits alter Zwischenstände.
 |---|---|
 | **wandert** | `src/`, `eval/` (ohne `fixtures/`), `scripts/`, `assets/fonts/`, `assets/messungen/`, `manifest.json`, `package.json`, das bereinigte `package-lock.json`, `.github/workflows/`, `README.md`, `NOTICE.md`, `RELEASE.md`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.js` |
 | **bleibt** | die 77 Commits samt Herkunft; die 40 UEyes-Screenshots (Punkt 5); dieser Abschnitt und Punkt 1–5, die von Interna sprechen; die private Autorenadresse |
-| **entscheidungsabhängig** | `assets/logo.svg`, `assets/logo-light.svg`, `src/ui/logo.tsx` — solange die Markenfarbe drin ist, wandert das Logo nicht mit |
+| **entscheidungsabhängig** | `logos/` und `src/ui/logo.tsx` — solange die Markenfarbe drin ist, wandert das Logo nicht mit |
 
 **Ein Initial-Commit, keine gefilterte History.** Ein „Initial public release,
 extrahiert aus interner Entwicklung" ist ehrlich und billig. Eine kuratierte
@@ -729,7 +810,7 @@ gesetzt (`git -c user.email=…`), nicht aus der lokalen Konfiguration übernomm
 
 #### Tag und Release
 
-Im öffentlichen Repo neu: Tag `v1.2.0` auf dem Initial-Commit, Release dazu, Zip
+Im öffentlichen Repo neu: Tag `v1.0.0-beta.1` auf dem Initial-Commit, Release dazu, Zip
 aus einem Build dieses Stands, Text aus `RELEASE.md`. `scripts/check-published-release.mjs`
 prüft das dort genauso — es fragt nach dem Objekt zum Tag, nicht nach einer
 History.
@@ -926,7 +1007,7 @@ Dateien vergleicht — rot bei jeder Abweichung, mit der Liste. Dasselbe Muster 
 
 1. Entscheidungen aus Punkt 1, 4, 5 und zur Markenfarbe. **Ohne sie nichts anlegen.**
 2. Öffentliches Repo anlegen, Initial-Commit aus dem bereinigten Stand.
-3. Tag `v1.2.0`, Release, Zip — dann `check-published-release.mjs`.
+3. Tag `v1.0.0-beta.1`, Release, Zip — dann `check-published-release.mjs`.
 4. **Das private Gate aufsetzen — und `eval-gate.yml` im öffentlichen Repo erst
    entfernen, wenn es läuft UND einmal beweisbar rot geworden ist.** Nicht
    vorher. Ein Gate, von dem niemand gesehen hat, dass es rot werden kann, ist
@@ -970,7 +1051,8 @@ die Imp1k-Bedingungen (Anfrage oben) und die RICO-Frage über den heutigen Zusta
 1. Frame, Component, Instance, Section oder Group auswählen (Mehrfachauswahl = Batch)
 2. Maps an-/abwählen, Overlay-Deckkraft und ggf. Viewport-Höhe einstellen
 3. **Maps erstellen** — Ergebnis landet in einem neuen Wrapper-Frame
-   `[Figmaps] {Frame-Name} — {Betrachtungsdauer} — {Zeitstempel}` rechts daneben
+   `[Figmaps Beta {Version}] {Frame-Name} — {Betrachtungsdauer} — {Zeitstempel}`
+   rechts daneben
 4. Befunde unter dem Ergebnis lesen; **Im Canvas zeigen** springt auf die
    betroffene Ebene und wählt sie aus
 
@@ -1013,7 +1095,7 @@ automatisch herunter.
 
 ### Panel: Design, Theming, Bedienelemente
 
-**Der Kopf trägt einen Beta-Marker.** Neben dem Produktnamen steht „Beta v1.2".
+**Der Kopf trägt die Fassung.** Neben dem Produktnamen steht „1.0.0 Beta 1".
 Der Marker ist eine Aussage über die **Vorhersage**, nicht über die Stabilität
 des Codes: die Engine ist gegen einen einzigen öffentlichen Datensatz gemessen,
 drei der sechs Befundregeln sind abgeschaltet, und für die eigenen Screens fehlt
@@ -1025,71 +1107,165 @@ und `vitest.config.ts` setzen sie beim Bündeln als Konstante ein
 (`src/version.ts`). Vorher stand sie als Literal im Code mit der Bitte, sie mit
 `package.json` synchron zu halten — eine Konstante, deren Richtigkeit von einem
 Kommentar abhängt, ist genau so lange richtig, bis jemand die andere Stelle
-anfasst. Die Engine-Version (`hybrid-v1`) ist davon getrennt und steht weiterhin
-an den Maps, nicht im Kopf: sie sagt, welche Vorhersage eine Karte erzeugt hat.
+anfasst.
 
-**Zwei Themes, eigener Schalter.** Im Header sitzt eine Pille mit Mond und
-Sonne. Bewusst **nicht** `figma.showUI({ themeColors: true })`: die Farben des
-Panels — und damit die Lesbarkeit des Disclaimers unter den Maps — sollen nicht
-davon abhängen, was der Host als Nächstes tut. **Dark ist immer der Startwert**,
-auch beim ersten Öffnen und wenn Figma im Light-Mode läuft; die Wahl wird in
-`figma.clientStorage` gemerkt (`Settings.theme`, `ui/theme.ts`).
+**Und der Marker steht nicht nur im Kopf.** Dieselbe Konstante trägt den
+Fenstertitel, den Namen jedes Wrapper-Frames (`[Figmaps 1.0.0 Beta 1] …`), die
+Fußzeile unter jeder Karte und über
+`manifest.json` den Namen im Figma-Menü („Figmaps (Beta)"); am Release sind es
+Titel und Pre-release-Marke, und `scripts/check-published-release.mjs` prüft
+beides nach. Der Grund ist, dass ein Ergebnis weiter wandert als das Panel
+reicht: der Wrapper-Frame landet in einer Datei, die jemand anderes öffnet.
+
+**Zwei Formen derselben Zahl.** `1.0.0-beta.1` ist Semver: so heißt der Tag, so
+heißt das Zip, so vergleicht der Workflow. Angezeigt wird „1.0.0 Beta 1" — ein
+Bindestrich mitten in einer Versionsnummer liest sich als Tippfehler oder wird
+überlesen. Umgeformt wird an genau einer Stelle (`humanVersion` in
+`src/version.ts`), und weil eine YAML-Datei kein TypeScript importieren kann,
+gibt es dieselbe Funktion als `scripts/version-label.mjs` — mit einem Test, der
+beide gegeneinander hält, statt zu hoffen.
+
+Vorher zeigte der Kopf die verkürzte Form `v1.2` mit der Begründung, die
+Patch-Stelle sage nichts. Für eine Vorabversion sagt sie das Wichtigste: wer ein
+Verhalten meldet, muss den Stand benennen können.
+
+Die Engine-Version (`hybrid-v1`) ist davon getrennt und steht weiterhin an den
+Maps: sie sagt, welche Vorhersage eine Karte erzeugt hat — eine andere Aussage
+als die, aus welchem Plugin-Stand sie kommt.
+
+**Das Panel folgt `DESIGN.md`.** Die Datei liegt im Repo und ist die Quelle für
+Tokens, Typografie, Geometrie und Komponenten; `src/ui/theme.ts` trägt die beiden
+Paletten, `src/ui/styles.css` die Regeln, und beide sind gegen `DESIGN.md`
+kommentiert. Die vier Sätze, die dabei am meisten am Aussehen entscheiden:
+
+1. **Gelb ist ausschließlich die primäre Aktion.** Ein gelber Knopf pro Panel,
+   sonst nirgends — kein gelber Segment-Thumb, kein gelber Toggle, kein gelber
+   Reglerwert, keine gelbe Hinweis-Kachel. Während eines Laufs ist gar keiner
+   gelb: „Abbrechen" ist nicht die primäre Aktion.
+2. **Auswahl ist Helligkeit, nicht Farbe.** Aktives Segment, aktive Karte,
+   aktive Theme-Seite: hellere Fläche plus hellere Kontur.
+3. **Werte laufen in Mono und neutral.** Maße, Prozente, Zähler und die
+   Section-Labels tragen ihre Lesbarkeit über den Schnitt, nicht über Farbe.
+4. **Statusfarbe nur punktuell.** 6-px-Punkt für eine Kategorie, Kontur für
+   Destruktives — keine farbigen Flächen und keine farbige Fließschrift.
+
+**Zwei Themes, eigener Schalter.** Im Header sitzt eine Pille mit Mond (dark) und
+Punkt (light). Bewusst **nicht** `figma.showUI({ themeColors: true })`: die Farben
+des Panels — und damit die Lesbarkeit des Disclaimers unter den Maps — sollen
+nicht davon abhängen, was der Host als Nächstes tut. **Dark ist immer der
+Startwert**, auch beim ersten Öffnen und wenn Figma im Light-Mode läuft; die Wahl
+wird in `figma.clientStorage` gemerkt (`Settings.theme`, `ui/theme.ts`).
 
 **Der Kontrast ist eine Zusage, keine Absicht.** Beide Paletten stehen in
 TypeScript, nicht in der CSS-Datei, weil jeder Wert die Hälfte eines
 Kontrastpaares ist und `ui/__tests__/theme.test.ts` **jedes tatsächlich
-vorkommende Paar** gegen 4,5:1 prüft und darunter fehlschlägt. Der Anlass ist
-konkret: die Fußzeile war schon einmal mit 3,93:1 und 2,41:1 ausgeliefert,
-wurde behoben — und die nächste Design-Übergabe brachte exakt dieselben Werte
-zurück. Gemessen, beide Themes:
+vorkommende Paar** prüft: Schrift gegen 4,5:1 (WCAG 1.4.3), Form gegen 3:1
+(1.4.11). Der Anlass ist konkret: die Fußzeile war schon einmal mit 3,93:1 und
+2,41:1 ausgeliefert, wurde behoben — und die nächste Design-Übergabe brachte
+exakt dieselben Werte zurück. Gemessen, beide Themes:
 
 | Paar | dark | light |
 |---|---:|---:|
-| `text` auf `bg` | 16,46:1 | 17,17:1 |
-| `text-body` auf `surface` | 8,94:1 | 10,31:1 |
-| `text-dim` auf `bg` | 8,25:1 | 7,37:1 |
-| `text-quiet` auf `bg-footer` (die drei Fußtext-Absätze) | 5,80:1 | 5,69:1 |
-| `text-quiet` auf `surface` | 5,38:1 | 5,46:1 |
-| `accent-text` auf `bg` (Reglerwert) | 11,90:1 | 5,94:1 |
-| `ink` auf `accent` (Knopfbeschriftung) | 11,90:1 | 11,19:1 |
-| `danger` auf `bg` | 7,63:1 | 6,54:1 |
+| `text-hi` auf `panel-bg` (Titel, Kartentitel) | 16,87:1 | 17,89:1 |
+| `text-hi` auf `bg-selected` (aktives Segment) | 13,47:1 | 17,89:1 |
+| `text-mid` auf `panel-bg` (Fließtext, Section-Label, Fußzeile) | 5,27:1 | 5,28:1 |
+| `text-mid` auf `bg-surface` (Kartenbeschreibung, Maße) | 5,02:1 | 4,92:1 |
+| `text-mid` auf `bg-track` (inaktives Segment) | 5,02:1 | 4,71:1 |
+| `cta-on` auf `cta` (Beschriftung der primären Aktion) | 13,01:1 | 13,01:1 |
+| `danger-text` auf `panel-bg` (Fehlermeldung) | 6,99:1 | 5,51:1 |
+| `text-low` auf `bg-raised` (Toggle-Knopf „aus", Form: 3:1) | 3,05:1 | 3,38:1 |
+| `bar-fill` auf `panel-bg` (gefüllte Balken, Form: 3:1) | 3,13:1 | 3,43:1 |
 
-Zwei Entscheidungen dahinter:
+Drei Entscheidungen dahinter:
 
-- **Zwei Abstufungen für leise Schrift, nicht drei.** Die Übergabe hatte
-  `dim`/`dim2`/`dim3`, alle drei unter der Grenze. Hebt man alle drei über
-  4,5:1, rücken sie so eng zusammen, dass die dritte Stufe nur noch eine
-  Gelegenheit ist, die falsche zu wählen: `text-dim` für Sekundärtext,
-  `text-quiet` für die leiseste Schrift, die noch Schrift ist.
-- **Das Gelb ist im Light-Theme keine Textfarbe.** `#F5C518` auf Weiß sind
-  1,63:1. Es bleibt Flächenfarbe; Text, der als Akzent lesen soll, nimmt
-  `accent-text` (`#7A6100`). Ein Test hält das fest. Aus demselben Grund heißt
-  die Farbe *auf* dem gelben Knopf `ink` und nicht „Hintergrundfarbe" — mit
-  `--bg` wäre die Beschriftung im Light-Theme weiß auf Gelb gewesen.
+- **`text/low` ist keine Schriftfarbe.** `DESIGN.md` weist ihm Section-Labels,
+  Meta-Werte und die Hinweiszeile zu; der angegebene `#4E4E56` liegt auf
+  `bg/base` bei **2,40:1** — bis auf die zweite Stelle derselbe Wert, den dieses
+  Repo zweimal entfernt hat. Gelesen wird deshalb `text-mid`; `text-low` bleibt
+  für Chevron, Punkte, Konturen und den Greifer. Die Hierarchie trägt der
+  Mono-Schnitt, und das ist keine Ausrede, sondern der Satz aus `DESIGN.md` §2
+  selbst.
+- **`text/low` ist auch als Form gehoben.** `#4E4E56` erreicht auf `bg/raised`
+  2,17:1, unter den 3:1 von WCAG 1.4.11. Der Token steht auf `#64646D` (dark)
+  bzw. `#8B8B92` (light) — dieselbe Rolle, der nächstliegende Wert über der
+  Grenze. Ebenso `bar-fill`: `#5A5A64` waren 2,90:1, jetzt `#5F5F69`.
+- **Das Gelb ist überhaupt keine Textfarbe mehr.** `#FFD60A` auf Weiß sind
+  1,41:1. Da es nur noch die Fläche der primären Aktion ist, gibt es keinen
+  `accent-text`-Token mehr, den man versehentlich für Schrift nehmen könnte —
+  und der Test hält fest, dass in der ganzen CSS-Datei genau zwei Regeln
+  `var(--cta)` lesen: der primäre Knopf und der heißeste Punkt der
+  Heatmap-Vorschau.
 
-**Balken-Slider.** Statt Schiene und Knopf 24 Balken, deren Höhe mit dem Wert
-wächst. Ein natives `input[type=range]` kann das nicht darstellen, also ist es
-ein `role="slider"` — und damit liegt alles, was das native Element geschenkt
-hätte, bei uns und ist Pflicht, nicht Kür: `aria-valuenow/min/max` **plus**
-`aria-valuetext` (die nackte Zahl liest sich als „80", wo das Panel „80 %"
-zeigt), Pfeiltasten, Home/End, Shift für den groben Schritt, ein sichtbarer
-Fokusring in beiden Themes, und `setPointerCapture` — ohne das springt der Wert,
-sobald der Zeiger die Leiste verlässt.
+**Der Ort einer Farbe ist geprüft, nicht nur ihr Wert.** `theme.test.ts` liest
+`src/ui/styles.css` und lässt drei Dinge nicht durch: ein Farbliteral außerhalb
+des `:root`-Fallbacks, einen Fallback-Wert, der vom Dark-Theme abweicht, und
+`var(--cta)` an einer anderen Stelle als den beiden erlaubten. Ein korrekter
+Token an der falschen Stelle ist trotzdem falsch, und Regel 1 ist eine Aussage
+über Stellen.
 
-**Map-Schema.** Neben jeder Map-Zeile steht ein 56 × 88 px großes Wireframe:
-vier feste Balken, darüber die für die Map typische Fläche, eine gestrichelte
-Schnittlinie und die Falz-Schraffur. Es ist ein **abstrakter Screen, kein
-Abbild der Auswahl** — kein Export, keine Engine, kein Caching, reines CSS.
-Deshalb heißt es im UI nirgends „Vorschau"; falls es je eine Beschriftung
-braucht, „Schema". Es reagiert aber auf die Einstellungen, sonst wäre es
-Dekoration statt Erklärung: Overlay-Deckkraft steuert die Schicht,
-Viewport-Höhe die Schnittlinie und die Schraffur, eine abgeschaltete Map dimmt
-das Ganze.
+**Stufen-Regler.** Statt Schiene und Knopf 20 Balken, deren Höhe mit dem Wert
+wächst, gefüllt in `bar-fill` und nicht im Akzent. Ein natives
+`input[type=range]` kann das nicht darstellen, also ist es ein `role="slider"` —
+und damit liegt alles, was das native Element geschenkt hätte, bei uns und ist
+Pflicht, nicht Kür: `aria-valuenow/min/max` **plus** `aria-valuetext` (die nackte
+Zahl liest sich als „80", wo das Panel „80 %" zeigt), Pfeiltasten, Home/End,
+Shift für den groben Schritt, ein sichtbarer Fokusring in beiden Themes, und
+`setPointerCapture` — ohne das springt der Wert, sobald der Zeiger die Leiste
+verlässt.
 
-**Schriften.** Manrope und JetBrains Mono, je ein Latin-Subset, zusammen 56 KB,
-als base64 in `build/ui.html`. `networkAccess` steht auf `"none"` — nachladen
-ist nicht möglich, alles muss ins Bundle. Die 12 woff2-Dateien aus der
-Design-Übergabe (~140 KB, alle Unicode-Bereiche) wurden **nicht** übernommen.
+**Fußzeile in zwei Zonen.** Oben die Aktionszeile: primärer Knopf,
+„Zurücksetzen", rechts der Statuszähler in Mono. Darunter die Hinweiszeile mit
+`i`-Kreis. Damit sind die Knöpfe aus dem scrollenden Rumpf heraus und immer
+sichtbar — und „Erneut versuchen" ist entfallen, weil es dasselbe tat wie der
+CTA. Der Zähler sagt, was gilt: vor dem Lauf die Zahl der gewählten Maps,
+während des Laufs `Frame/Frames`, danach die Zahl der **entstandenen** Karten.
+„Zurücksetzen" setzt die Analyse-Einstellungen auf die Vorgaben zurück und lässt
+das Theme stehen — es ist keine Einstellung der Analyse.
+
+**Map-Vorschau.** Links in jeder Map-Karte ein 38-px-Feld: die für die Map
+typische Fläche, in der gedämpften Daten-Rampe aus `DESIGN.md` §1. Es ist ein
+**abstraktes Bild der Map-Art, kein Abbild der Auswahl** — kein Export, keine
+Engine, kein Caching, reines CSS. Es liest die Overlay-Deckkraft, und eine
+abgeschaltete Map dimmt das Feld.
+
+Zwei Dinge des alten 56 × 88-Schemas sind dabei weggefallen: die vier
+Wireframe-Balken (auf 38 px Grieß) und die Falz-Schraffur aus der Viewport-Höhe.
+Letztere ist die interessantere Streichung — bei einem 2.400 px hohen Frame lagen
+zwei Drittel des Feldes unter der Falz und vom Bild der Map blieb ein
+Streifenmuster. Sie zu deckeln hätte einen Anteil behauptet, der nicht stimmt;
+die Aussage steht jetzt im Hinweis unter dem Viewport-Regler, wo sie nachprüfbar
+ist.
+
+**Schließen im Kopf.** Das × sendet `CLOSE`; der iframe kann sein eigenes
+Plugin-Fenster nicht beenden, `figma.closePlugin()` gibt es nur im Hauptthread.
+
+**Die Mark im Kopf ist die gelieferte Datei.** Das Panel zeichnet sie inline —
+der iframe darf nichts nachladen —, also steht dieselbe Zeichnung an zwei Orten:
+in `logos/figmaps-mark-dark|light.svg` und in `src/ui/marks.ts`. Zwei Orte
+driften, sobald einer angefasst wird, deshalb vergleicht
+`ui/__tests__/marks.test.ts` sie Kreis für Kreis: Reihenfolge, `cx`, `cy`, `r`
+und die aufgelöste Farbe, je Theme. Auch im 24-px-Tile steht das **volle**
+Raster; die vereinfachte Kleingröße aus §5 liegt als `logos/figmaps-icon-16.svg`
+bereit, wird im Panel aber nicht verwendet — im Kopf soll die Marke selbst
+erkennbar sein, nicht ihre Kurzform.
+
+**Die Fußzeile nennt keinen Autor mehr.** Der Absatz „Figmaps — entwickelt von
+…" ist weg. Was bleibt, ist die CC-BY-Nennung des UEyes-Datensatzes: die ist
+Lizenzpflicht, keine Signatur, und `scripts/check-release.mjs` prüft, dass sie
+im Bundle ankommt.
+
+**Schriften.** Plus Jakarta Sans (UI) und JetBrains Mono (Zahlen, Einheiten,
+Section-Labels), je ein Latin-Subset, zusammen 58 KB, als base64 in
+`build/ui.html`. `networkAccess` steht auf `"none"` — nachladen ist nicht
+möglich, alles muss ins Bundle. Manrope, die UI-Schrift bis 1.3, ist damit
+entfallen.
+
+Beim Wechsel fiel auf, dass **jede Schrift zweimal im Bundle lag**: der Build
+ersetzt die Platzhalter mit `replaceAll` über die ganze CSS-Datei, und der
+Kommentar am Kopf nannte sie beim Namen. `build/ui.html` war dadurch 76 KB zu
+groß. Die Prüfung in `scripts/check-release.mjs` stand auf „mindestens zwei
+Schriften" und war deshalb grün — eine Untergrenze kann melden, dass etwas fehlt,
+nicht, dass etwas doppelt da ist. Sie steht jetzt auf genau zwei.
 
 ### Lange Frames (Epic B)
 
@@ -1180,7 +1356,8 @@ src/
 │  └─ folds.ts             B-2  gestrichelte Fold-Marker
 └─ ui/
    ├─ pipeline.ts          iframe-Pipeline: PNG rein, Map-PNGs raus
-   ├─ logo.tsx             Figmaps-Wortmarke als Inline-SVG
+   ├─ marks.ts             die sechzehn Kreise der Mark, gegen `logos/` geprüft
+   ├─ logo.tsx             Figmaps-Mark als Inline-SVG (Heat-Raster, DESIGN.md §5)
    └─ styles.css
 
 eval/                      Epic A — läuft offline in Node
@@ -1199,9 +1376,19 @@ eval/                      Epic A — läuft offline in Node
 │                               mit Klick-Kandidaten unmessbar sind
 └─ fixtures/               nicht im Repo — siehe fixtures/README.md
 
-assets/
-└─ logo.svg                Produkt-Logo. Quelle für die Panel-Mark; der
-                           128er-Export fürs Publishing fehlt noch
+docs/                      Texte, die einen Vorgänger voraussetzen — aus dem
+└─ entwicklungsiterationen-1.1-1.2.md   Release-Text ausgelagert, nicht gelöscht
+
+logos/                     Marken-Assets, DESIGN.md §5
+├─ figmaps-mark-dark.svg   128er-SVG, dunkler Grund — Quelle der Panel-Mark
+├─ figmaps-mark-light.svg  dieselbe Mark für hellen Grund
+├─ figmaps-mark-mono.svg   einfarbig über `currentColor`
+└─ figmaps-icon-16.svg     Kleingröße nach DESIGN.md §5: vier Kreise statt
+                           sechzehn. Im Panel-Header steht bewusst das volle
+                           Raster, siehe `ui/logo.tsx`
+
+DESIGN.md                  das Design-System des Panels: Tokens, Typografie,
+                           Geometrie, Komponenten, Regeln
 ```
 
 ### Ablauf eines Laufs
@@ -4796,8 +4983,14 @@ Nachweis, dass sie etwas finden KANN.** Ein Muster, das vorhanden sein muss, mit
 durch dieselbe Abfrage — findet sie das nicht, ist das Ergebnis kein Ergebnis.
 
 Das ist dieselbe Regel wie „das Gate muss rot werden können", angewendet auf
-Abfragen statt auf Prüfungen. Sie steht hier, weil sie in diesem Projekt
-**sechsmal** gebraucht wurde:
+Abfragen statt auf Prüfungen. Sie steht hier, weil dieses Projekt sie immer
+wieder gebraucht hat — die Fälle:
+
+> **Ohne laufende Summe, mit Absicht.** Hier stand „sechsmal". Die Zahl ist
+> selbst eine Behauptung ohne Quelle, in einem Abschnitt über Behauptungen ohne
+> Quelle, und sie stimmt je nach Schnitt nicht: zählt man das Eval-Gate als einen
+> Fall oder als drei? Die Liste trägt sich ohne Summe, und ein neuer Eintrag
+> braucht dann nur eine Zeile statt zwei.
 
 | # | Wo | Der Ausfall |
 |---|---|---|
@@ -4807,8 +5000,10 @@ Abfragen statt auf Prüfungen. Sie steht hier, weil sie in diesem Projekt
 | 4 | Kontrastmessung, Kantenglättung | jeder Wert falsch, alle Tests grün — die Fixtures zeichneten hartkantige Balken |
 | 5 | Release v1.2.0 | Workflow grün, am Tag lag kein installierbares Zip — die Prüfung konnte die Frage zu ihrem Zeitpunkt nicht stellen |
 | 6 | Die Suche für diesen Abschnitt | „null Treffer" für **jedes** Muster, auch für `Figmaps` — zsh trennt eine unquotierte Variable nicht an Zeilenumbrüchen, `git grep` bekam 77 SHAs als ein Argument, der Fehler lief nach `/dev/null` |
+| 7 | `gate-coverage.mjs`, die Testzahl | „504 Tests" als Literal, während es 518 waren — **zu hoch**, in genau dem Skript, das die Netze ausweist, und niemandem fällt es auf, weil die Zahl nichts entscheidet |
+| 8 | `gate-coverage.mjs`, die Durchsetzungswege | **drei** Wege standen als Tatsache — nach dem Merge, vor jedem Release, nächtlich. Nachgesehen existierte **einer**: `release.yml` fährt kein Gate, ein `schedule:`-Workflow gibt es nicht. Die Datei, die Abwesenheit sichtbar machen soll, behauptete Anwesenheit |
 
-Nummer 6 ist der billigste Fall und der lehrreichste: das Ergebnis war eine
+Der Fall mit der unquotierten Variable ist der billigste und der lehrreichste: das Ergebnis war eine
 vollständige Entwarnung zu einer Frage, an der eine Veröffentlichungsentscheidung
 hängt. Nichts daran sah falsch aus. Gefunden wurde es ausschließlich, weil die
 Abfrage vorher gegen `Figmaps` und `UEyes` laufen musste und dort ebenfalls null
@@ -4825,6 +5020,12 @@ lieferte.
 - Bei einer Prüfung im CI: einen Lauf mitliefern, der scheitern **muss**. Das
   Eval-Gate, das Contrastmap-Gate und die Lockfile-Prüfung tun das; jede neue
   Prüfung tut es auch.
+- Auch der **Beipackzettel** einer Prüfung ist eine Prüfung. Fälle 7 und 8 saßen
+  nicht in einem Gate, sondern in der Zusammenfassung, die die Gates ausweist —
+  und dort fällt nichts auf, weil nichts davon eine Entscheidung trägt. Deshalb
+  gilt dort dieselbe Regel: jede Zahl abgeleitet oder weggelassen, jeder Weg aus
+  den Workflow-Dateien gelesen statt genannt. `scripts/__tests__/gate-coverage.test.ts`
+  setzt es durch.
 
 ---
 
@@ -4910,7 +5111,7 @@ App durchzugehen:
 | 2 | Frame auswählen | Name + Dimensionen erscheinen, Button aktiv |
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |
-| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps] … — {Dauer} — …` rechts daneben, Viewport springt darauf, `2 Maps erstellt` |
+| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps 1.0.0 Beta 1] … — {Dauer} — …` rechts daneben, Viewport springt darauf, `2 Maps erstellt`; unter den Karten die Fußzeile „Figmaps 1.0.0 Beta 1“ |
 | 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt; **nichts** ins Bild gemalt außer Overlay und Fold-Marken |
 | 7 | Beschriftung neben den Maps | Unter jedem Titel eine Zeile „Algorithmische Vorhersage, keine Messdaten · Blickverhalten: … · Betrachtungsdauer: … · hybrid-v1"; CC-BY-Zeile genau **einmal** unten am Wrapper; nirgends „Ortsprior" |
 | 8 | Focusmap gegen die Heatmap halten | Kein harter Rand: ein in der Heatmap deutlich warmer Bereich ist auch in der Focusmap sichtbar, nur schwächer; völlig dunkel ist nur, was in der Heatmap kalt ist |
@@ -4945,9 +5146,10 @@ Zusätzlich für 1.1 (M4, M5):
 
 ## Offene Entscheidungen (PRD §11)
 
-1. ~~**Plugin-Name**~~ — entschieden: `Figmaps`. Das Logo liegt als
-   `assets/logo.svg` (die `manifest.json` hat kein Icon-Feld). **Offen bleibt der
-   Export:** Figma will 128 × 128 px, und kein PNG dieser Größe ist versioniert.
+1. ~~**Plugin-Name**~~ — entschieden: `Figmaps`. Das Logo liegt in `logos/`
+   (die `manifest.json` hat kein Icon-Feld). **Offen bleibt der
+   Export:** Figma will 128 × 128 px als PNG, und kein PNG ist versioniert — die
+   SVGs stehen auf 128 × 128 und wären die Quelle.
    Ebenso fehlen Cover (1920 × 1080), Tagline und Beschreibung — siehe
    „Was für das private Publishing noch fehlt".
 2. **`positionPrior` für RTL** — implementiert als Schalter
@@ -4958,6 +5160,21 @@ Zusätzlich für 1.1 (M4, M5):
    Bilder ein. Die Overlay-Variante würde nachträgliche Deckkraft-Anpassung in
    Figma erlauben, verdoppelt aber die eingefügte Bildmenge; Entscheidung offen.
 4. **Referenz-Screens** — noch nicht festgelegt, siehe `test-fixtures/README.md`.
+5. **Tag-Gate in `release.yml` — vor dem nächsten Release, nicht vor diesem.**
+   `release.yml` fährt heute kein Eval-Gate. Für `v1.0.0-beta.1` beißt das nicht:
+   das Gate lief am PR und läuft beim Push auf `main`, und der Tag zeigt auf den
+   Merge-Commit — der Inhalt **ist** gemessen, nur nicht durch den Weg, der dafür
+   behauptet wurde.
+
+   Wo die Lücke beißt: ein Tag auf einem Commit, der **nicht** über `main`
+   gelaufen ist — ein Hotfix, ein älterer Stand. Dann wird ungemessen
+   veröffentlicht, und niemand sieht es, weil der Release-Workflow grün ist.
+   Deshalb gehört das Gate an den Tag, bevor das nächste Release gebaut wird.
+
+   **Nächtlich ausdrücklich nicht.** Ein Zeitplan-Lauf sagt weniger als das
+   Tag-Gate — er bewacht keinen Auslieferungspunkt — und er ist eine weitere
+   Stelle, die still verfallen kann. Genau die Sorte Netz, die dieses Repo
+   mehrfach grün und wirkungslos gefunden hat.
 
 ---
 

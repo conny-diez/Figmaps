@@ -1,156 +1,241 @@
 /**
- * The panel's two palettes, and the contrast contract they have to satisfy.
+ * Die beiden Paletten des Panels — die Farb-Tokens aus `DESIGN.md` §1 — und die
+ * Kontrastzusage, die sie einhalten müssen.
  *
- * **Why not `figma.showUI({ themeColors: true })`.** The panel ships its own
- * skin and its own switch. Figma's theme variables would tie the plugin's
- * colours to whatever the host does next, and the one thing that must not
- * depend on the host is whether the disclaimer under the maps is readable.
- * Dark is the default at first start and stays the default when Figma runs in
- * light mode; the choice is the user's and is persisted (`Settings.theme`).
+ * **Warum nicht `figma.showUI({ themeColors: true })`.** Das Panel bringt seine
+ * eigene Haut und seinen eigenen Schalter mit. Figmas Theme-Variablen würden die
+ * Farben des Plugins an das binden, was der Host als Nächstes tut — und das
+ * Einzige, was nicht vom Host abhängen darf, ist die Lesbarkeit des Disclaimers
+ * unter den Maps. Dark ist der Startwert und bleibt es, auch wenn Figma hell
+ * läuft; die Wahl gehört dem Nutzer und wird gemerkt (`Settings.theme`).
  *
- * No DOM access here: `messages.ts` imports this for `Settings.theme`, and that
- * module is loaded by the main thread too, where there is no `document`. The
- * palette is applied in `ui.tsx`.
+ * Kein DOM-Zugriff hier: `messages.ts` importiert dieses Modul für
+ * `Settings.theme`, und `messages.ts` lädt auch der Hauptthread, in dem es kein
+ * `document` gibt. Aufgetragen wird die Palette in `ui.tsx`.
  *
- * **Why the palette lives in TypeScript.** Every colour here is one half of a
- * contrast pair, and `__tests__/theme.test.ts` checks every pair that actually
- * occurs against the 4.5:1 floor for normal text. A palette in a CSS file
- * cannot be checked that way; one that is not checked drifts back. The design
- * hand-off it came from carried exactly the values we had removed the day
- * before — `dim` 3,93:1, `dim3` 2,41:1 — which is how this file came to exist.
+ * **Warum die Palette in TypeScript steht.** Jeder Wert hier ist die Hälfte
+ * eines Kontrastpaares, und `__tests__/theme.test.ts` prüft jedes Paar, das
+ * tatsächlich vorkommt, gegen 4,5:1. Eine Palette in einer CSS-Datei lässt sich
+ * so nicht prüfen; eine ungeprüfte driftet zurück. Genau das ist zweimal
+ * passiert — die Fußzeile war mit 3,93:1 und 2,41:1 ausgeliefert, wurde behoben,
+ * und die nächste Design-Übergabe brachte dieselben Werte wieder mit.
  *
- * **Two muted levels, not three.** The hand-off had `dim`/`dim2`/`dim3`, and
- * all three were under the floor in both themes. Lifting them all over 4.5:1
- * compresses them into each other, so the third step buys nothing but a way to
- * pick the wrong one: `dim` for secondary text, `quiet` for the quietest text
- * that is still text.
+ * ---
+ *
+ * **Die Abweichung von `DESIGN.md`, und warum sie nötig ist.**
+ *
+ * Sie betrifft genau einen Token, `text/low`, und sie hat zwei Hälften.
+ *
+ * 1. **Es ist keine Schriftfarbe.** `DESIGN.md` weist `text/low` Section-Labels,
+ *    Meta-Werte, Chevrons und die Hinweiszeile der Fußzeile zu. Der angegebene
+ *    Wert `#4E4E56` liegt auf `bg/base` bei **2,40:1** — auf zwei Stellen
+ *    derselbe Wert, den dieses Repo schon zweimal entfernt hat (siehe oben).
+ *    Alles, was gelesen werden muss, nimmt deshalb `text-mid` (5,27:1 dark /
+ *    5,28:1 light); `text-low` bleibt für das, was **Form ist statt Schrift**:
+ *    Chevron, Statuspunkte, Kontur des `i`-Kreises, Greifer in der Ecke,
+ *    ausgeschalteter Toggle-Knopf.
+ *
+ *    Die Hierarchie geht dabei nicht verloren, und zwar mit dem Argument aus
+ *    `DESIGN.md` selbst: Section-Labels und Werte unterscheiden sich durch den
+ *    **Mono-Schnitt, Versalien und 0,18 em Laufweite** von der Fließschrift,
+ *    nicht durch ihre Farbe („Werte werden durch den Mono-Schnitt lesbar, nicht
+ *    durch Farbe", §2). Eine dritte lesbare Textstufe wurde absichtlich **nicht**
+ *    eingeführt: drei Abstufungen über der Grenze rücken so eng zusammen, dass
+ *    die dritte nur eine Gelegenheit ist, die falsche zu wählen.
+ *
+ * 2. **Auch als Form ist der Wert zu leise.** WCAG 1.4.11 verlangt für
+ *    Bedienelemente und bedeutungstragende Grafik 3:1. `#4E4E56` erreicht auf
+ *    `bg/raised` — dort sitzt der ausgeschaltete Toggle-Knopf — 2,17:1. Der
+ *    Token ist deshalb auf `#64646D` (dark) bzw. `#8B8B92` (light) gehoben, den
+ *    nächstliegenden Wert, der jede seiner Flächen über 3:1 hält.
+ *    `NON_TEXT_PAIRS` unten misst das nach.
+ *
+ * `text-disabled` bleibt wie angegeben — WCAG 1.4.3 nimmt inaktive
+ * Bedienelemente ausdrücklich aus, und ein deaktivierter Knopf, der wie ein
+ * aktiver liest, ist der teurere Fehler.
  */
 
 export type ThemeName = 'dark' | 'light'
 
 /**
- * Token names are the CSS custom properties without the `--` prefix; they are
- * written onto the root element at runtime (`applyTheme`).
+ * Token-Namen sind die CSS-Custom-Properties ohne `--`; sie werden zur Laufzeit
+ * auf das Wurzelelement geschrieben (`ui.tsx`). Die Namen folgen `DESIGN.md` §1,
+ * `/` wird zu `-`: `bg/surface` → `bg-surface`.
  */
 export type Palette = {
-  /** Surfaces. */
-  bg: string
-  'bg-page': string
-  'bg-footer': string
-  surface: string
-  'surface-menu': string
-  'surface-row': string
-  'surface-hover': string
-  /** Lines. */
-  shell: string
-  divider: string
+  /** Flächen. */
+  'bg-base': string
+  'bg-surface': string
+  'bg-raised': string
+  'bg-selected': string
+  /** Track von Segmented Control und Tabs — im Light-Theme eigener Wert. */
+  'bg-track': string
+  /**
+   * Das Panel selbst. Im Light-Theme ist es Papier auf `bg/base`: Weiß, 1 px
+   * Kontur, ein Hauch Schatten (`DESIGN.md` §1). Im Dark-Theme fällt es mit
+   * `bg/base` zusammen, und Kontur und Schatten verschwinden.
+   */
+  'panel-bg': string
+  'panel-border': string
+  'panel-shadow': string
+  /** Linien. */
   border: string
   'border-strong': string
-  'border-open': string
-  'border-icon': string
-  /** Text, from loudest to quietest. */
-  text: string
-  'text-body': string
-  'text-dim': string
-  'text-quiet': string
-  /** Accent. `accent` is a *surface* colour; `accent-text` is the text one. */
-  accent: string
-  'accent-text': string
-  /** Text on top of `accent`. */
-  ink: string
+  'border-soft': string
+  'border-active': string
+  /** Schrift, von laut nach leise. */
+  'text-hi': string
+  'text-mid': string
+  /** **Keine Schriftfarbe** — siehe Modulkommentar. Chevrons, Punkte, Konturen. */
+  'text-low': string
+  'text-disabled': string
+  /** Die primäre Aktion. Fläche, nie Schrift — die einzige Stelle mit Gelb. */
+  cta: string
+  /** Schrift auf `cta`. */
+  'cta-on': string
+  /** Kategoriepunkt, 6 px. Nie Schrift, nie Fläche. */
+  success: string
+  /** Destruktive Kontur — als Fläche nie verwendet. */
   danger: string
-  /** Slider bars that are not filled yet. */
-  track: string
-  'rank-fill': string
-  /** Map schema (the abstract wireframe next to each map row). */
-  'schema-bg': string
-  wire1: string
-  wire2: string
-  wire3: string
-  'cut-line': string
-  /** Fold hatching — two tones, so it reads as a texture and not as bars. */
+  /** Dieselbe Kontur mit den 28 % Deckkraft aus `DESIGN.md` §4. */
+  'danger-outline': string
+  /**
+   * Destruktive **Schrift**. Im Dark-Theme identisch mit `danger`; im
+   * Light-Theme ist `#D64545` als Text 4,38:1 und damit unter der Grenze, also
+   * hat die Schrift dort einen eigenen, dunkleren Wert. Dieselbe Trennung, die
+   * das Gelb erzwingt: eine Kontur darf heller sein als eine Beschriftung.
+   */
+  'danger-text': string
+  /**
+   * Daten-Rampe (`DESIGN.md` §1) — die gedämpften Stufen der Visualisierung.
+   * Volles Gelb erscheint darin nur im heißesten Punkt; die Werte sind die
+   * oklab-Mischungen aus `cta`, gerundet wie in `logos/figmaps-mark-*.svg`.
+   */
+  'tone-600': string
+  'tone-700': string
+  'tone-800': string
+  /** Kalte Seite der Rampe. */
+  'tone-cold': string
+  /** Gefüllte Balken des Steppers. Neutral — Regel 6: kein Gelb in Daten. */
+  'bar-fill': string
+  /** Eingeschalteter Toggle: Tinte, nicht Gelb (Regel 7). */
+  'toggle-on': string
+  'toggle-knob-on': string
+  /** Schatten des Dropdown-Menüs. */
+  'menu-shadow': string
+  /**
+   * Fokusring. `DESIGN.md` sagt dazu nichts — ein Panel, das nur mit der Maus
+   * bedienbar ist, wäre aber eine Regression: die Regler sind `role="slider"`,
+   * und dort ist der sichtbare Fokus Pflicht. Neutral, damit er nicht als
+   * zweites Gelb im Panel liest.
+   */
+  'focus-ring': string
+  /**
+   * Falz-Schraffur der Vorschau, zwei Töne, damit sie als Textur liest und nicht
+   * als Balken.
+   */
   'fold-hatch': string
   'fold-hatch-2': string
 }
 
 const DARK: Palette = {
-  bg: '#0d0d10',
-  'bg-page': '#08080a',
-  'bg-footer': '#0a0a0d',
-  surface: '#141419',
-  'surface-menu': '#17171d',
-  'surface-row': '#121217',
-  'surface-hover': '#212129',
+  'bg-base': '#0A0A0C',
+  'bg-surface': '#111114',
+  'bg-raised': '#17171B',
+  'bg-selected': '#22222A',
+  'bg-track': '#111114',
 
-  shell: '#1f1f25',
-  divider: '#1b1b21',
-  border: '#22222a',
-  'border-strong': '#2b2b34',
-  'border-open': '#3d3d49',
-  'border-icon': '#2e2e38',
+  'panel-bg': '#0A0A0C',
+  // Im Dark-Theme trägt das Panel keine Kontur und keinen Schatten: es liegt
+  // nicht auf einer Fläche, es *ist* die Fläche.
+  'panel-border': '#0A0A0C',
+  'panel-shadow': 'none',
 
-  text: '#ECECEF',
-  'text-body': '#B4B4C0',
-  'text-dim': '#A8A8B4',
-  'text-quiet': '#8A8A96',
+  border: '#1F1F25',
+  'border-strong': '#26262C',
+  'border-soft': '#17171C',
+  'border-active': '#33333C',
 
-  accent: '#F5C518',
-  // On a near-black surface the yellow itself is a legitimate text colour
-  // (11,7:1). On the light theme it is not — see below.
-  'accent-text': '#F5C518',
-  ink: '#0d0d10',
-  danger: '#FF7A6E',
+  'text-hi': '#EDEDEB',
+  'text-mid': '#83838C',
+  // `DESIGN.md`: #4E4E56. Gehoben, damit jede Form-Fläche 3:1 hält — siehe
+  // Modulkommentar.
+  'text-low': '#64646D',
+  'text-disabled': '#48484F',
 
-  track: '#2b2b34',
-  'rank-fill': 'rgba(245, 197, 24, 0.12)',
+  cta: '#FFD60A',
+  'cta-on': '#141418',
 
-  'schema-bg': '#1b1b21',
-  wire1: '#33333d',
-  wire2: '#2b2b34',
-  wire3: '#26262f',
-  'cut-line': 'rgba(245, 197, 24, 0.55)',
+  success: '#4FBF8B',
+  danger: '#F27272',
+  'danger-outline': 'rgba(242, 114, 114, 0.28)',
+  'danger-text': '#F27272',
+
+  'tone-600': '#B79A2A',
+  'tone-700': '#6E6234',
+  'tone-800': '#36301A',
+  'tone-cold': '#26262C',
+
+  // `DESIGN.md`: #5A5A64 — 2,90:1 gegen das Panel, knapp unter 1.4.11.
+  'bar-fill': '#5F5F69',
+  'toggle-on': '#3A3A44',
+  'toggle-knob-on': '#EDEDEB',
+
+  'menu-shadow': '0 12px 28px -10px rgba(0, 0, 0, 0.8)',
+  'focus-ring': '#83838C',
   'fold-hatch': 'rgba(0, 0, 0, 0.55)',
   'fold-hatch-2': 'rgba(0, 0, 0, 0.22)',
 }
 
 const LIGHT: Palette = {
-  bg: '#FFFFFF',
-  'bg-page': '#E9E9EE',
-  'bg-footer': '#FAFAFB',
-  surface: '#F5F5F8',
-  'surface-menu': '#FFFFFF',
-  'surface-row': '#F2F2F6',
-  'surface-hover': '#EFEFF3',
+  'bg-base': '#FBFBF9',
+  'bg-surface': '#F7F7F4',
+  'bg-raised': '#FFFFFF',
+  // Weiß statt Grau, damit der Sprung zur Auswahl sichtbar bleibt — die Kontur
+  // macht den Unterschied, nicht die Fläche (`DESIGN.md` §1).
+  'bg-selected': '#FFFFFF',
+  'bg-track': '#F2F2EF',
 
-  shell: '#E2E2E7',
-  divider: '#E9E9EE',
-  border: '#E4E4EA',
-  'border-strong': '#D8D8E0',
-  'border-open': '#B9B9C4',
-  'border-icon': '#D4D4DC',
+  'panel-bg': '#FFFFFF',
+  'panel-border': '#E2E2DC',
+  'panel-shadow': '0 1px 2px rgba(20, 20, 24, 0.05)',
 
-  text: '#1B1B1F',
-  'text-body': '#3A3A45',
-  'text-dim': '#55555F',
-  'text-quiet': '#63636D',
+  border: '#E7E7E1',
+  'border-strong': '#E0E0DA',
+  'border-soft': '#EDEDE8',
+  'border-active': '#C9C9C1',
 
-  accent: '#F5C518',
-  // #F5C518 as text on white is 1,63:1. The yellow stays a *surface* colour in
-  // the light theme; text that has to read as accent uses this instead.
-  'accent-text': '#7A6100',
-  ink: '#1B140A',
-  danger: '#B3261E',
+  'text-hi': '#17171A',
+  'text-mid': '#6B6B73',
+  // `DESIGN.md`: #9A9AA0 — 2,61:1 auf `bg/surface`, für eine Form zu leise.
+  'text-low': '#8B8B92',
+  'text-disabled': '#B4B4AC',
 
-  track: '#DCDCE4',
-  'rank-fill': 'rgba(245, 197, 24, 0.28)',
+  cta: '#FFD60A',
+  'cta-on': '#141418',
 
-  'schema-bg': '#F0F0F4',
-  wire1: '#C6C6D2',
-  wire2: '#DDDDE4',
-  wire3: '#E6E6EC',
-  'cut-line': 'rgba(150, 116, 0, 0.7)',
-  'fold-hatch': 'rgba(0, 0, 0, 0.28)',
-  'fold-hatch-2': 'rgba(0, 0, 0, 0.10)',
+  success: '#2F9E6E',
+  danger: '#D64545',
+  'danger-outline': 'rgba(214, 69, 69, 0.28)',
+  // #D64545 als Text sind 4,38:1 — die Kontur behält den Wert, die Schrift wird
+  // dunkler.
+  'danger-text': '#C4302F',
+
+  // Auf hellem Grund läuft die Rampe nicht ins Papier, sondern in die Tinte;
+  // die Werte sind die des hellen Marks (`logos/figmaps-mark-light.svg`).
+  'tone-600': '#9C8730',
+  'tone-700': '#6E6234',
+  'tone-800': '#453E2A',
+  'tone-cold': 'rgba(26, 26, 30, 0.22)',
+
+  'bar-fill': '#8A8A90',
+  'toggle-on': '#17171A',
+  'toggle-knob-on': '#FFFFFF',
+
+  'menu-shadow': '0 12px 28px -14px rgba(20, 20, 24, 0.28)',
+  'focus-ring': '#6B6B73',
+  'fold-hatch': 'rgba(26, 26, 30, 0.28)',
+  'fold-hatch-2': 'rgba(26, 26, 30, 0.10)',
 }
 
 export const THEMES: Record<ThemeName, Palette> = { dark: DARK, light: LIGHT }
@@ -158,37 +243,53 @@ export const THEMES: Record<ThemeName, Palette> = { dark: DARK, light: LIGHT }
 export const DEFAULT_THEME: ThemeName = 'dark'
 
 /**
- * Every foreground/background pair that actually occurs in the panel.
+ * Jedes Vordergrund/Hintergrund-Paar, das im Panel tatsächlich vorkommt.
  *
- * Hand-maintained on purpose: the checkable claim is „this text sits on that
- * surface", and only the stylesheet knows it. A pair that is added to the CSS
- * without being added here is not checked — so the list is part of reviewing a
- * colour change, and `where` says which rule to look at.
+ * Von Hand gepflegt, mit Absicht: die überprüfbare Behauptung ist „diese
+ * Schrift sitzt auf jener Fläche", und das weiß nur das Stylesheet. Ein Paar,
+ * das in der CSS-Datei entsteht, ohne hier zu stehen, wird nicht geprüft — die
+ * Liste ist damit Teil des Reviews einer Farbänderung, und `where` sagt, welche
+ * Regel gemeint ist.
  */
 export const CONTRAST_PAIRS: ReadonlyArray<{ fg: keyof Palette; bg: keyof Palette; where: string }> = [
-  { fg: 'text', bg: 'bg', where: 'Titel, Auswahlname' },
-  { fg: 'text', bg: 'surface', where: 'Auswahlkarte, aktive Map-Zeile' },
-  { fg: 'text', bg: 'surface-menu', where: 'Dropdown-Eintrag' },
-  { fg: 'text', bg: 'surface-hover', where: 'Dropdown-Eintrag unter dem Zeiger' },
-  { fg: 'text-body', bg: 'bg', where: 'Befundtext' },
-  { fg: 'text-body', bg: 'surface', where: 'Befundtext auf Karte' },
-  { fg: 'text-body', bg: 'surface-row', where: 'Ranking-Name' },
-  { fg: 'text-dim', bg: 'bg', where: 'Abschnittslabels, Reglername' },
-  { fg: 'text-dim', bg: 'surface', where: 'inaktive Map-Zeile' },
-  { fg: 'text-dim', bg: 'bg-footer', where: 'Fußtext-Icon' },
-  { fg: 'text-quiet', bg: 'bg', where: 'Hinweise unter den Reglern' },
-  { fg: 'text-quiet', bg: 'surface', where: 'Maßangabe der Auswahl, Map-Beschreibung' },
-  { fg: 'text-quiet', bg: 'bg-footer', where: 'die drei Fußtext-Absätze' },
-  { fg: 'text-quiet', bg: 'surface-menu', where: 'Dropdown-Nebentext' },
-  { fg: 'text-quiet', bg: 'surface-row', where: 'Ranking-Rang' },
-  { fg: 'accent-text', bg: 'bg', where: 'Reglerwert' },
-  { fg: 'accent-text', bg: 'surface', where: 'gewählter Dropdown-Eintrag' },
-  { fg: 'ink', bg: 'accent', where: 'Beschriftung auf dem gelben Knopf und dem Segment-Thumb' },
-  { fg: 'danger', bg: 'bg', where: 'Fehlermeldung' },
-  { fg: 'danger', bg: 'surface', where: 'Fehlermeldung auf Karte' },
+  { fg: 'text-hi', bg: 'panel-bg', where: 'Plugin-Titel, Card-Titel, Reglername' },
+  { fg: 'text-hi', bg: 'bg-surface', where: 'Textarea, Select-Wert, Property-Zeile' },
+  { fg: 'text-hi', bg: 'bg-raised', where: 'sekundärer Knopf, Icon-Tile, aktive Karte' },
+  // `text-mid` steht hier **nicht**: auf `bg/selected` sind es im Dark-Theme
+  // 4,20:1. Auf der gewählten Fläche hebt die leise Stufe deshalb mit (aktives
+  // Segment), und der Balken hinter einer Ranking-Zeile nimmt die leisere
+  // Fläche `bg/raised` — siehe `styles.css`.
+  { fg: 'text-hi', bg: 'bg-selected', where: 'aktives Segment, aktiver Tab, Theme-Schalter' },
+  { fg: 'text-hi', bg: 'bg-track', where: 'aktives Segment im Light-Theme (Track darunter)' },
+  { fg: 'text-mid', bg: 'panel-bg', where: 'Fließtext, Section-Label, Hinweiszeile' },
+  { fg: 'text-mid', bg: 'bg-surface', where: 'Kartenbeschreibung, Werte, Meta' },
+  { fg: 'text-mid', bg: 'bg-raised', where: 'inaktive Karte, Dropdown-Eintrag' },
+  { fg: 'text-mid', bg: 'bg-track', where: 'inaktives Segment' },
+  { fg: 'cta-on', bg: 'cta', where: 'Beschriftung der primären Aktion' },
+  { fg: 'danger-text', bg: 'panel-bg', where: 'destruktive Aktion, Fehlermeldung' },
+  { fg: 'danger-text', bg: 'bg-surface', where: 'Fehlermeldung auf einer Fläche' },
 ]
 
-/** WCAG 2.1 relative luminance of an `#rrggbb` colour. */
+/**
+ * Paare, die keine Schrift tragen, sondern Form: Punkte, Konturen, Balken. WCAG
+ * 1.4.11 verlangt dafür 3:1, nicht 4,5:1 — und `text-low` steht hier, weil es
+ * genau diese Rolle hat (siehe Modulkommentar).
+ */
+export const NON_TEXT_PAIRS: ReadonlyArray<{ fg: keyof Palette; bg: keyof Palette; where: string }> = [
+  { fg: 'text-low', bg: 'panel-bg', where: 'Greifer, Kontur des i-Kreises' },
+  { fg: 'text-low', bg: 'bg-surface', where: 'Chevron im Select' },
+  { fg: 'text-low', bg: 'bg-raised', where: 'Knopf des ausgeschalteten Toggles' },
+  { fg: 'success', bg: 'bg-surface', where: 'Kategoriepunkt im Select' },
+  { fg: 'danger', bg: 'panel-bg', where: 'Kontur der destruktiven Aktion' },
+  { fg: 'bar-fill', bg: 'panel-bg', where: 'gefüllte Balken des Steppers' },
+  // Der eingeschaltete Toggle ist absichtlich **nicht** mit Track gegen Karte
+  // gemessen: den Zustand zeigt die Lage des Knopfes, und der Knopf ist das,
+  // was gegen den Track lesbar sein muss. Ein Track, der selbst 3:1 gegen die
+  // Karte hätte, wäre bei „aus" eine Fläche, die wie „an" aussieht.
+  { fg: 'toggle-knob-on', bg: 'toggle-on', where: 'Knopf des eingeschalteten Toggles' },
+]
+
+/** WCAG 2.1 relative Luminanz einer `#rrggbb`-Farbe. */
 export function relativeLuminance(hex: string): number {
   const value = parseInt(hex.slice(1), 16)
   const channel = (raw: number): number => {
@@ -202,17 +303,20 @@ export function relativeLuminance(hex: string): number {
   )
 }
 
-/** WCAG 2.1 contrast ratio, `1`…`21`. */
+/** WCAG 2.1 Kontrastverhältnis, `1`…`21`. */
 export function contrastRatio(a: string, b: string): number {
   const la = relativeLuminance(a)
   const lb = relativeLuminance(b)
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
 }
 
-/** WCAG AA for normal text. Small type is the norm in a 320 px panel. */
+/** WCAG AA für normale Schrift. Kleine Grade sind in einem 320-px-Panel die Norm. */
 export const MIN_CONTRAST = 4.5
 
-/** The palette to paint with — falls back to dark for an unknown name. */
+/** WCAG 1.4.11 — Bedienelemente und Bedeutungsträger, die keine Schrift sind. */
+export const MIN_CONTRAST_NON_TEXT = 3
+
+/** Die Palette, mit der gemalt wird — fällt bei unbekanntem Namen auf Dark. */
 export function paletteFor(name: ThemeName): Palette {
   return THEMES[name] ?? THEMES[DEFAULT_THEME]
 }

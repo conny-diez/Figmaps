@@ -24,6 +24,7 @@ import {
   type SegmentInfo,
   type UiToMain,
 } from './messages'
+import { PLUGIN_LABEL } from './version'
 
 /** Safety net so a crashed iframe cannot wedge the batch forever. */
 const PLACE_RESULT_TIMEOUT_MS = 180_000
@@ -62,7 +63,9 @@ figma.showUI(__html__, {
   // Letting Figma inject its theme variables would tie the readability of the
   // disclaimer to the host's next redesign.
   themeColors: false,
-  title: 'Figmaps',
+  // Der Fenstertitel trägt den Beta-Marker mit, aus derselben Quelle wie der
+  // Kopf des Panels und der Name des Wrapper-Frames (`src/version.ts`).
+  title: `Figmaps ${PLUGIN_LABEL}`,
 })
 
 // `showUI` is synchronous, `clientStorage` is not — the panel therefore opens at
@@ -316,6 +319,14 @@ figma.ui.onmessage = (message: UiToMain): void => {
           const size = normalisePanelSize(message.size)
           figma.ui.resize(size.width, size.height)
           rememberPanelSize(size)
+          break
+        }
+
+        // Das × im Kopf des Panels. Ein laufender Batch wird dabei nicht
+        // stillschweigend weitergerechnet: `closePlugin` beendet beide Realms,
+        // und der Nutzer hat das Fenster geschlossen, nicht den Lauf gestartet.
+        case 'CLOSE': {
+          figma.closePlugin()
           break
         }
 
