@@ -85,13 +85,29 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           dir="figmaps-$version"
+          # Der DATEINAME trägt die Beta, der Ordner im Zip nicht: die Datei
+          # liegt in einem Download-Verzeichnis und wird dort in einem halben
+          # Jahr wiedergefunden, der Ordner ist die Nachbarschaft der
+          # `manifest.json` und heißt wie der Tag. So heißt das Asset auch am
+          # veröffentlichten v1.2.0 — dort war es von Hand umbenannt worden.
+          zipname="figmaps-beta-$version.zip"
           mkdir -p "$dir/build"
           cp manifest.json "$dir/manifest.json"
           cp build/main.js build/ui.html "$dir/build/"
           cp NOTICE.md "$dir/NOTICE.md"
           cat > "$dir/LIESMICH.txt" <<'TXT'
-          Figmaps in Figma installieren
-          =============================
+          Figmaps — Beta
+          ==============
+
+          Diese Fassung ist eine BETA. Der Marker gilt für die VORHERSAGE, nicht
+          für die Stabilität des Codes: die Engine ist gegen einen einzigen
+          öffentlichen Datensatz gemessen, drei der sechs Befundregeln sind
+          abgeschaltet. Im Figma-Menü heißt das Plugin deshalb „Figmaps (Beta)",
+          der Kopf des Panels nennt die genaue Version, und jeder erzeugte
+          Wrapper-Frame trägt sie im Namen.
+
+          In Figma installieren
+          =====================
 
           1. Diesen Ordner entpacken und an einen dauerhaften Ort legen —
              Figma merkt sich den Pfad, ein Ordner im Download-Verzeichnis
@@ -99,7 +115,7 @@ jobs:
           2. In Figma: Menü → Plugins → Development → Import plugin from
              manifest…  und die Datei manifest.json in diesem Ordner wählen.
           3. Einen Frame auswählen und das Plugin über Plugins → Development →
-             Figmaps starten.
+             „Figmaps (Beta)" starten.
 
           Die Heatmap und die Focusmap sind VORHERSAGEN, keine Messungen. Die
           Contrastmap ist eine Messung nach WCAG 2.1 AA und nachrechenbar.
@@ -107,8 +123,8 @@ jobs:
           Datengrundlage der Vorhersage: UEyes (Jiang et al. 2023), CC BY 4.0 —
           Einzelheiten in NOTICE.md.
           TXT
-          zip -r "$dir.zip" "$dir" > /dev/null
-          echo "zip=$dir.zip" >> "$GITHUB_OUTPUT"
+          zip -r "$zipname" "$dir" > /dev/null
+          echo "zip=$zipname" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Das Zip auspacken und prüfen
@@ -191,8 +207,13 @@ jobs:
           # `-f key=@datei` wäre das von gh's Typ-Umwandlung abhängig; so ist es
           # eindeutig. (`jq` liest hier eine Datei, keine gh-Ausgabe.)
           if [ "$count" -eq 0 ]; then
-            jq -n --rawfile body RELEASE.md --arg tag "$tag" --arg name "Figmaps ${tag#v}" \
-              '{tag_name: $tag, name: $name, draft: true, prerelease: false, body: $body}' > /tmp/release.json
+            # Titel und Pre-release-Marke tragen die Beta mit: der Titel, weil er
+            # in der Release-Liste die einzige Zeile ist, die jeder sieht; das
+            # Flag, weil GitHub daraus das „Pre-release"-Abzeichen macht und den
+            # Tag nicht als „Latest release" führt. Solange die Vorhersage Beta
+            # ist, wäre `prerelease: false` eine Behauptung über sie.
+            jq -n --rawfile body RELEASE.md --arg tag "$tag" --arg name "Figmaps Beta ${tag#v}" \
+              '{tag_name: $tag, name: $name, draft: true, prerelease: true, body: $body}' > /tmp/release.json
             id="$(gh api --method POST "$releases" --input /tmp/release.json --jq '.id')"
             echo "Entwurf neu angelegt (id=$id)."
           else

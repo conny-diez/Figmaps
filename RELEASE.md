@@ -1,7 +1,19 @@
-# Figmaps 1.2 — Beta
+# Figmaps Beta 1.2.0
+
+> **Das ist eine Beta.** Der Marker ist eine Aussage über die **Vorhersage**,
+> nicht über die Stabilität des Codes: die Engine ist gegen einen einzigen
+> öffentlichen Datensatz gemessen, drei der sechs Befundregeln sind
+> abgeschaltet, und für die eigenen Screens fehlt ein Validierungsset. Die
+> Contrastmap ist davon ausdrücklich **nicht** betroffen — sie misst nach
+> WCAG 2.1 AA und ist nachrechenbar.
+>
+> Sichtbar ist das an jeder Stelle, an der der Stand auftaucht: im Kopf des
+> Panels („Beta 1.2.0"), im Fenstertitel, im Plugin-Namen „Figmaps (Beta)", im
+> Namen jedes Wrapper-Frames auf dem Canvas und an diesem Release, das als
+> Pre-release markiert ist.
 
 <!-- download-hinweis:anfang -->
-> **Lade `figmaps-1.2.0.zip`.** Die beiden „Source code"-Archive von GitHub
+> **Lade `figmaps-beta-1.2.0.zip`.** Die beiden „Source code"-Archive von GitHub
 > funktionieren nicht — sie enthalten den Quellcode ohne gebautes Plugin. Nach
 > dem Entpacken müssen `manifest.json` und ein Ordner `build/` nebeneinander
 > liegen.
@@ -129,8 +141,9 @@ beschreibt.
 ## Installation
 
 Das angehängte Zip entpacken, dann in Figma: **Plugins → Development → Import
-plugin from manifest…** und die `manifest.json` im entpackten Ordner wählen.
-Die Kurzanleitung liegt als `LIESMICH.txt` daneben.
+plugin from manifest…** und die `manifest.json` im entpackten Ordner wählen. Im
+Menü erscheint das Plugin als **„Figmaps (Beta)"**. Die Kurzanleitung liegt als
+`LIESMICH.txt` daneben.
 
 ## Datengrundlage
 

@@ -61,11 +61,14 @@ function api(path, extra = []) {
 }
 
 const version = JSON.parse(readFileSync('package.json', 'utf8')).version
-const expectedAsset = `figmaps-${version}.zip`
+// Der Dateiname trägt die Beta, der Ordner im Zip nicht — siehe die Begründung
+// im Pack-Schritt von `.github/workflows/release.yml`. Beides ist aus
+// `package.json` abgeleitet und nicht abgeschrieben.
+const expectedAsset = `figmaps-beta-${version}.zip`
 const expectedDir = `figmaps-${version}`
 
 console.log(`Prüfe das veröffentlichte Release zum Tag ${tag}.`)
-console.log(`Erwartet: ein Objekt, nicht als Entwurf, mit ${expectedAsset}.`)
+console.log(`Erwartet: ein Objekt, nicht als Entwurf, als Pre-release markiert, „Beta" im Titel, mit ${expectedAsset}.`)
 console.log('')
 
 // --- 1. Wie viele Objekte tragen diesen Tag? -------------------------------
@@ -109,6 +112,32 @@ if (!published) {
   )
 } else {
   if (published.draft) problems.push(`Das Objekt zum Tag ${tag} ist ein Entwurf.`)
+
+  // --- 2b. Steht die Beta dort, wo sie stehen muss? -----------------------
+  //
+  // Der Beta-Marker ist eine Aussage über die Vorhersage (siehe
+  // `src/version.ts`), und er steht an jeder Stelle, an der der Stand auftaucht:
+  // Plugin-Name, Fenstertitel, Panel-Kopf, Wrapper-Frame. Am Release sind es
+  // zwei Stellen, und beide sind hier prüfbar — der Titel, weil er in der
+  // Release-Liste die einzige Zeile ist, die jeder sieht, und das
+  // `prerelease`-Flag, weil GitHub daraus das Abzeichen macht und den Tag nicht
+  // als „Latest release" führt.
+  //
+  // Ohne diese Prüfung wäre „überall sichtbar" eine Absicht: der Workflow setzt
+  // beides nur, wenn er das Objekt selbst anlegt — bei einem von Hand
+  // angelegten Release bleibt, was ein Mensch gesetzt hat.
+  if (!/beta/i.test(published.name ?? '')) {
+    problems.push(
+      `Der Titel des Release lautet „${published.name ?? ''}" und nennt die Beta nicht. ` +
+        'Erwartet wird die Form „Figmaps Beta <Version>".',
+    )
+  }
+  if (!published.prerelease) {
+    problems.push(
+      'Das Release ist nicht als Pre-release markiert. GitHub führt es damit als „Latest release" — ' +
+        'eine Aussage über die Vorhersage, die diese Fassung nicht deckt.',
+    )
+  }
 
   const asset = published.assets.find((a) => a.name === expectedAsset)
   if (!asset) {

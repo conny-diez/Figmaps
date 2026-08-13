@@ -20,6 +20,7 @@ import { MAP_LABELS, type FindingPayload, type MapMeta, type RenderedMap, type S
   type MapKind,
 } from '../messages'
 import type { AnalysableNode } from './selection'
+import { PLUGIN_LABEL } from '../version'
 
 /** Preferred title fonts, tried in order — the first that loads wins. */
 const TITLE_FONTS: readonly FontName[] = [
@@ -268,7 +269,12 @@ export async function placeMaps(
   // Die Dauer nur, wenn eine gerechnet wurde. `meta ? …` war falsch: seit 1.3 ist
   // `duration` optional, und ein vorhandenes `meta` ohne sie hätte
   // „— undefined" in den Ebenennamen geschrieben.
-  wrapper.name = `[Figmaps] ${node.name}${meta?.duration ? ` — ${meta.duration}` : ''} — ${timestamp(new Date())}`
+  //
+  // Der Beta-Marker steht mit im Namen: der Frame wandert weiter als das Panel,
+  // und wer ihn in einer Datei findet, soll sehen, aus welchem Stand die Karten
+  // kommen (`src/version.ts`). Die Engine-Version steht weiterhin an jeder Karte
+  // — sie sagt etwas anderes, nämlich welche Vorhersage gerechnet hat.
+  wrapper.name = `[Figmaps ${PLUGIN_LABEL}] ${node.name}${meta?.duration ? ` — ${meta.duration}` : ''} — ${timestamp(new Date())}`
   wrapper.layoutMode = 'VERTICAL'
   wrapper.primaryAxisSizingMode = 'AUTO'
   wrapper.counterAxisSizingMode = 'AUTO'

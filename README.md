@@ -1,8 +1,21 @@
-<img src="logos/figmaps-mark-dark.svg" width="72" height="72" alt="Figmaps">
+<!-- Beide gelieferten Marks, unverändert: GitHub schaltet nach dem Farbschema
+     des Lesers. `figmaps-mark-dark.svg` ist für dunklen Grund gezeichnet,
+     `figmaps-mark-light.svg` für hellen — siehe DESIGN.md §5 und `logos/`. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="logos/figmaps-mark-dark.svg">
+  <img src="logos/figmaps-mark-light.svg" width="72" height="72" alt="Figmaps">
+</picture>
 
 # Figmaps — Figma Plugin
 
-**Version 1.1** — „Messbar und handlungsleitend"
+**Beta 1.2.0** — „Messwerkzeug mit einem Vorhersage-Zusatz"
+
+Der Beta-Marker gilt für die **Vorhersage**, nicht für die Stabilität des Codes,
+und er steht an jeder Stelle, an der der Stand auftaucht: Plugin-Name „Figmaps
+(Beta)", Fenstertitel, Kopf des Panels („Beta 1.2.0"), Name jedes
+Wrapper-Frames auf dem Canvas, Titel und Pre-release-Marke des Release. Die
+**Contrastmap** ist davon ausdrücklich nicht betroffen — sie misst nach WCAG 2.1
+AA und ist nachrechenbar.
 
 Erzeugt für einen ausgewählten Frame Visualisierungen und legt sie als Bild
 rechts neben dem Original auf dem Canvas ab:
@@ -63,7 +76,7 @@ bestehende neu kalibriert und zwei Ideen widerlegt.
 | **CI grün, Gate scharf** | Sechs von sechs Läufen waren an `npm ci` gescheitert; danach lief das Gate, meldete aber „übersprungen"; und als es lief, bewachte es die **eingefrorene** 1.0-Referenz. Dreimal dieselbe Lücke. Jetzt: 40 Bilder im Repo, echte Messung bei jedem PR, und ein CI-Schritt, der beweist, dass das Gate rot werden **kann**. Die Zahlen des Gates sind **kein Qualitätsbeleg** — siehe unten. |
 | **Nebenwirkungen ausgewiesen** | `competition` verdreifacht seine Feuerrate, ohne dass die Regel angefasst wurde. Nicht nachjustiert: der Umbau in B kalibriert sie neu. |
 | **Erreichbarkeitstests robust** | Drei der zwölf Fälle hingen an der dritten Nachkommastelle eines Engine-Parameters. Repariert und durch einen zweiten Test abgesichert, der sie unter verstellten Parametern wiederholt. |
-| **Beta-Marker im Panel** | Der Kopf zeigt „Beta v1.2" — eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort; die Zahl im Kopf folgt dem Versionssprung automatisch. |
+| **Beta-Marker, überall** | Der Kopf zeigt „Beta 1.2.0", der Fenstertitel und der Plugin-Name tragen ihn mit, jeder Wrapper-Frame heißt `[Figmaps Beta 1.2.0] …`, und das Release ist als Pre-release markiert. Eine Aussage über die Vorhersage, nicht über die Stabilität des Codes. Die Version kommt aus `package.json` und nur von dort. |
 
 **Aktueller Stand:** gemessen gegen UEyes, getrennt für Webpage und Mobile UI.
 `hybrid-v1` — datengeschätzter Ortsprior plus additive Bildanalyse — schlägt in
@@ -197,13 +210,26 @@ git tag v1.2.0 && git push origin v1.2.0
 ```
 
 `.github/workflows/release.yml` baut daraufhin, prüft und hängt
-`figmaps-1.2.0.zip` an ein **Release im Entwurfsstatus** — der Text
-(`RELEASE.md`) wird vor der Veröffentlichung gelesen. Ein Zip, das schon
-jemand geladen hat, lässt sich nicht zurückziehen.
+`figmaps-beta-1.2.0.zip` an ein **Release im Entwurfsstatus**, betitelt
+„Figmaps Beta 1.2.0" und als **Pre-release** markiert — der Text (`RELEASE.md`)
+wird vor der Veröffentlichung gelesen. Ein Zip, das schon jemand geladen hat,
+lässt sich nicht zurückziehen.
+
+**Der Dateiname trägt die Beta, der Ordner im Zip nicht.** Die Datei liegt in
+einem Download-Verzeichnis und wird dort in einem halben Jahr wiedergefunden;
+der Ordner ist die Nachbarschaft der `manifest.json` und heißt wie der Tag. So
+heißt das Asset auch am veröffentlichten v1.2.0 — dort war es von Hand
+umbenannt worden, und der Repo-Stand zog nach.
 
 Im Zip liegt `manifest.json` neben `build/`, sodass „Import plugin from
-manifest…" direkt greift, dazu `NOTICE.md` und eine dreizeilige
-`LIESMICH.txt`.
+manifest…" direkt greift, dazu `NOTICE.md` und die `LIESMICH.txt`, die mit dem
+Beta-Hinweis beginnt.
+
+**Was der Workflow an einem bestehenden Objekt nicht anfasst:** Titel und
+Entwurfs-/Pre-release-Status. Er setzt beides nur, wenn er den Entwurf selbst
+anlegt — bei einem von Hand angelegten Release bleibt, was ein Mensch gesetzt
+hat. Deshalb prüft `scripts/check-published-release.mjs` nach der
+Veröffentlichung, dass „Beta" im Titel steht und die Pre-release-Marke sitzt.
 
 **Warum zwischen Bau und Zip eine eigene Prüfung steht
 (`scripts/check-release.mjs`).** Der Ortsprior ist das einzige Stück dieses
@@ -970,7 +996,8 @@ die Imp1k-Bedingungen (Anfrage oben) und die RICO-Frage über den heutigen Zusta
 1. Frame, Component, Instance, Section oder Group auswählen (Mehrfachauswahl = Batch)
 2. Maps an-/abwählen, Overlay-Deckkraft und ggf. Viewport-Höhe einstellen
 3. **Maps erstellen** — Ergebnis landet in einem neuen Wrapper-Frame
-   `[Figmaps] {Frame-Name} — {Betrachtungsdauer} — {Zeitstempel}` rechts daneben
+   `[Figmaps Beta {Version}] {Frame-Name} — {Betrachtungsdauer} — {Zeitstempel}`
+   rechts daneben
 4. Befunde unter dem Ergebnis lesen; **Im Canvas zeigen** springt auf die
    betroffene Ebene und wählt sie aus
 
@@ -1013,7 +1040,7 @@ automatisch herunter.
 
 ### Panel: Design, Theming, Bedienelemente
 
-**Der Kopf trägt einen Beta-Marker.** Neben dem Produktnamen steht „Beta v1.2".
+**Der Kopf trägt einen Beta-Marker.** Neben dem Produktnamen steht „Beta 1.2.0".
 Der Marker ist eine Aussage über die **Vorhersage**, nicht über die Stabilität
 des Codes: die Engine ist gegen einen einzigen öffentlichen Datensatz gemessen,
 drei der sechs Befundregeln sind abgeschaltet, und für die eigenen Screens fehlt
@@ -1025,8 +1052,23 @@ und `vitest.config.ts` setzen sie beim Bündeln als Konstante ein
 (`src/version.ts`). Vorher stand sie als Literal im Code mit der Bitte, sie mit
 `package.json` synchron zu halten — eine Konstante, deren Richtigkeit von einem
 Kommentar abhängt, ist genau so lange richtig, bis jemand die andere Stelle
-anfasst. Die Engine-Version (`hybrid-v1`) ist davon getrennt und steht weiterhin
-an den Maps, nicht im Kopf: sie sagt, welche Vorhersage eine Karte erzeugt hat.
+anfasst.
+
+**Und der Marker steht nicht nur im Kopf.** Dieselbe Konstante trägt den
+Fenstertitel, den Namen jedes Wrapper-Frames (`[Figmaps Beta 1.2.0] …`) und über
+`manifest.json` den Namen im Figma-Menü („Figmaps (Beta)"); am Release sind es
+Titel und Pre-release-Marke, und `scripts/check-published-release.mjs` prüft
+beides nach. Der Grund ist, dass ein Ergebnis weiter wandert als das Panel
+reicht: der Wrapper-Frame landet in einer Datei, die jemand anderes öffnet.
+
+**Die volle Version, nicht `v1.2`.** Bis 1.3 zeigte der Kopf die verkürzte Form
+mit der Begründung, die Patch-Stelle sage nichts. Für eine Beta sagt sie das
+Wichtigste: wer ein Verhalten meldet, muss den Stand benennen können, und „v1.2"
+trifft auf 1.2.0 und 1.2.3 gleichermaßen zu.
+
+Die Engine-Version (`hybrid-v1`) ist davon getrennt und steht weiterhin an den
+Maps: sie sagt, welche Vorhersage eine Karte erzeugt hat — eine andere Aussage
+als die, aus welchem Plugin-Stand sie kommt.
 
 **Das Panel folgt `DESIGN.md`.** Die Datei liegt im Repo und ist die Quelle für
 Tokens, Typografie, Geometrie und Komponenten; `src/ui/theme.ts` trägt die beiden
@@ -4989,7 +5031,7 @@ App durchzugehen:
 | 2 | Frame auswählen | Name + Dimensionen erscheinen, Button aktiv |
 | 3 | Selection wechseln, Text-Node auswählen | Panel folgt live; Text-Node ⇒ zurück in den Empty State, kein Absturz |
 | 4 | Frame < 200 px auswählen | Warnung „zu klein für eine sinnvolle Analyse", Button disabled |
-| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps] … — {Dauer} — …` rechts daneben, Viewport springt darauf, `2 Maps erstellt` |
+| 5 | **Maps erstellen** auf einem Referenz-Screen | Ladezustand < 300 ms sichtbar; Wrapper `[Figmaps Beta 1.2.0] … — {Dauer} — …` rechts daneben, Viewport springt darauf, `2 Maps erstellt` |
 | 6 | Heatmap begutachten | Headlines und primärer CTA erkennbar heiß, leere Flächen kalt; **nichts** ins Bild gemalt außer Overlay und Fold-Marken |
 | 7 | Beschriftung neben den Maps | Unter jedem Titel eine Zeile „Algorithmische Vorhersage, keine Messdaten · Blickverhalten: … · Betrachtungsdauer: … · hybrid-v1"; CC-BY-Zeile genau **einmal** unten am Wrapper; nirgends „Ortsprior" |
 | 8 | Focusmap gegen die Heatmap halten | Kein harter Rand: ein in der Heatmap deutlich warmer Bereich ist auch in der Focusmap sichtbar, nur schwächer; völlig dunkel ist nur, was in der Heatmap kalt ist |
