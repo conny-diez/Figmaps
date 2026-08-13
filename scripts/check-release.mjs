@@ -76,8 +76,15 @@ if (!shipped.includes('UEyes') || !shipped.includes('CC BY 4.0')) {
 // `networkAccess: none` heißt, dass die Webfonts als Data-URI im UI stecken.
 // Fehlen sie, fällt das Panel still auf eine Systemschrift zurück — derselbe
 // lautlose Ausfall wie beim Prior, nur harmloser.
+//
+// **Genau zwei, nicht „mindestens zwei".** Die Prüfung stand auf `< 2` und war
+// deshalb grün, während jede Schrift zweimal im Bundle lag: `readUiCss()`
+// ersetzt die Platzhalter mit `replaceAll` über die ganze Datei, und der
+// Kommentar am Kopf von `src/ui/styles.css` nannte sie beim Namen. Eine
+// Untergrenze sieht das nicht — sie kann nur melden, dass etwas fehlt, nicht,
+// dass etwas doppelt da ist.
 const fonts = (html.match(/data:font\/woff2;base64,/g) ?? []).length
-if (fonts < 2) problems.push(`build/ui.html trägt ${fonts} eingebettete Schriften, erwartet werden 2`)
+if (fonts !== 2) problems.push(`build/ui.html trägt ${fonts} eingebettete Schriften, erwartet werden genau 2`)
 
 if (problems.length > 0) {
   console.error(`\n✖ Das Build taugt nicht für ein Release:\n  - ${problems.join('\n  - ')}\n`)

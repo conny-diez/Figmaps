@@ -1,18 +1,34 @@
-/* Figmaps panel skin — compact variant.
+/* Figmaps-Panel — Umsetzung von `DESIGN.md`.
  *
- * The panel ships its own fixed dark theme, so the Figma `--figma-color-*`
- * variables are deliberately not used any more.
+ * Drei Dinge, die beim Lesen helfen:
  *
- * `__FONT_MANROPE__` / `__FONT_JETBRAINS_MONO__` are replaced with base64 data
- * URIs by `scripts/build.mjs` — the manifest forbids network access, so the two
- * latin subsets have to travel inside build/ui.html.
+ * 1. **Keine Farbe steht hier im Klartext.** Jeder Farbwert kommt aus einem
+ *    Token, das `ui/theme.ts` zur Laufzeit auf das Wurzelelement schreibt. Die
+ *    Werte in `:root` sind der Fallback für den einen Frame vor dem ersten
+ *    Auftrag — und sie sind exakt das Dark-Theme, was
+ *    `ui/__tests__/theme.test.ts` nachvergleicht statt zu glauben.
+ * 2. **Gelb ist ausschließlich die primäre Aktion** (`DESIGN.md` §6.1). Genau
+ *    zwei Regeln lesen `var(--cta)`: der primäre Knopf und der heißeste Punkt
+ *    der Heatmap-Vorschau — die Ausnahme, die §1 selbst nennt. Auch das prüft
+ *    der Test, denn ein richtiger Token an der falschen Stelle ist trotzdem
+ *    falsch.
+ * 3. **Auswahl ist Helligkeit, nicht Farbe** (§6.2). Aktive Segmente, Tabs und
+ *    Karten wechseln Fläche und Kontur, nie den Farbton.
+ *
+ * Die beiden `FONT_*`-Platzhalter in den `@font-face`-Regeln unten ersetzt
+ * `scripts/build.mjs` durch base64-Data-URIs — das Manifest verbietet
+ * Netzzugriff, die beiden Latin-Subsets müssen in build/ui.html reisen.
+ *
+ * Die Namen stehen hier **absichtlich nicht ausgeschrieben**: der Build ersetzt
+ * sie mit `replaceAll` über die ganze Datei, also auch in diesem Kommentar. Bis
+ * eben lag jede Schrift damit zweimal im Bundle — 60 KB, die niemand liest.
  */
 @font-face {
-  font-family: Manrope;
+  font-family: "Plus Jakarta Sans";
   font-style: normal;
   font-weight: 400 800;
   font-display: block;
-  src: url("__FONT_MANROPE__") format("woff2");
+  src: url("__FONT_PLUS_JAKARTA_SANS__") format("woff2");
 }
 
 @font-face {
@@ -23,51 +39,59 @@
   src: url("__FONT_JETBRAINS_MONO__") format("woff2");
 }
 
-/* The palette is written onto the root element by `ui/theme.ts` — both themes
- * live there in TypeScript, because every value is one half of a contrast pair
- * and `ui/__tests__/theme.test.ts` checks all of them against 4.5:1. The
- * fallbacks below are the dark theme, so the panel is never unstyled for the
- * frame before the first paint. */
 :root {
-  --bg: #0d0d10;
-  --bg-page: #08080a;
-  --bg-footer: #0a0a0d;
+  --bg-base: #0A0A0C;
+  --bg-surface: #111114;
+  --bg-raised: #17171B;
+  --bg-selected: #22222A;
+  --bg-track: #111114;
 
-  --surface: #141419;
-  --surface-menu: #17171d;
-  --surface-row: #121217;
-  --surface-hover: #212129;
+  --panel-bg: #0A0A0C;
+  --panel-border: #0A0A0C;
+  --panel-shadow: none;
 
-  --shell: #1f1f25;
-  --divider: #1b1b21;
-  --border: #22222a;
-  --border-strong: #2b2b34;
-  --border-open: #3d3d49;
-  --border-icon: #2e2e38;
+  --border: #1F1F25;
+  --border-strong: #26262C;
+  --border-soft: #17171C;
+  --border-active: #33333C;
 
-  /* Two muted levels, both over 4.5:1 — see `theme.ts` for why not three. */
-  --text: #ececef;
-  --text-body: #b4b4c0;
-  --text-dim: #a8a8b4;
-  --text-quiet: #8a8a96;
+  --text-hi: #EDEDEB;
+  --text-mid: #83838C;
+  --text-low: #64646D;
+  --text-disabled: #48484F;
 
-  --accent: #f5c518;
-  --accent-text: #f5c518;
-  --ink: #0d0d10;
-  --danger: #ff7a6e;
+  --cta: #FFD60A;
+  --cta-on: #141418;
 
-  --track: #2b2b34;
-  --rank-fill: rgba(245, 197, 24, 0.12);
+  --success: #4FBF8B;
+  --danger: #F27272;
+  --danger-outline: rgba(242, 114, 114, 0.28);
+  --danger-text: #F27272;
 
-  --schema-bg: #1b1b21;
-  --wire1: #33333d;
-  --wire2: #2b2b34;
-  --wire3: #26262f;
-  --cut-line: rgba(245, 197, 24, 0.55);
+  --tone-600: #B79A2A;
+  --tone-700: #6E6234;
+  --tone-800: #36301A;
+  --tone-cold: #26262C;
+
+  --bar-fill: #5F5F69;
+  --toggle-on: #3A3A44;
+  --toggle-knob-on: #EDEDEB;
+
+  --menu-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.8);
+  --focus-ring: #83838C;
   --fold-hatch: rgba(0, 0, 0, 0.55);
   --fold-hatch-2: rgba(0, 0, 0, 0.22);
 
+  /* Schriftfamilien, §2. Zahlen, Einheiten, Tokens und Section-Labels laufen
+     im Mono-Schnitt — dort trägt der Schnitt die Lesbarkeit, nicht die Farbe. */
+  --sans: "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Geometrie, §3: ein Element hat genau einen Radius. */
+  --r-chip: 4px;
+  --r-control: 8px;
+  --r-card: 12px;
+  --r-panel: 14px;
 }
 
 * {
@@ -81,11 +105,11 @@ body {
 }
 
 body {
-  font-family: Manrope, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--sans);
   font-size: 12px;
-  line-height: 1.45;
-  color: var(--text);
-  background: var(--bg-page);
+  line-height: 1.5;
+  color: var(--text-hi);
+  background: var(--bg-base);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -99,75 +123,96 @@ body {
 
 *::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 99px;
-  border: 2px solid var(--bg);
+  border-radius: 999px;
+  border: 2px solid var(--panel-bg);
 }
 
 #root {
   height: 100%;
 }
 
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------- panel */
+
 .app {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
-  color: var(--text);
+  border-radius: var(--r-panel);
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  box-shadow: var(--panel-shadow);
+  color: var(--text-hi);
 }
 
-/* ---------------------------------------------------------------- titlebar */
+/* -------------------------------------------------------------------- header */
 
 .app__header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   flex: 0 0 auto;
-  padding: 9px 11px;
-  border-bottom: 1px solid var(--divider);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+/* Icon-Tile, §4: 24 px, Radius 7, `bg/raised` + `border/strong`. Das Logo darin
+   ist das einzige Akzentelement neben dem CTA — §1 erlaubt es ausdrücklich. */
+.app__tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
 }
 
 .app__logo {
   display: block;
-  flex: none;
-  /* The mark's frame outline is drawn with `currentColor`. */
-  color: var(--text);
 }
 
 .app__title {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
+  color: var(--text-hi);
 }
 
-/* Plugin version, e.g. `v1.1` — set as written, so the lowercase `v` survives. */
-.app__subtitle {
+/* Plugin-Version, z. B. `Beta v1.2` — Mono, damit die Zahl nicht wie Fließtext
+   liest. Farbe ist `text-mid`, nicht `text-low`: sie wird gelesen (siehe
+   `theme.ts`). */
+.app__version {
+  flex: none;
   margin: 0;
   font-family: var(--mono);
   font-size: 9px;
-  color: var(--text-quiet);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-mid);
 }
 
-/* Theme-Umschalter — bewusst eigener Schalter statt `themeColors: true`:
- * ob der Fußtext lesbar ist, darf nicht davon abhängen, was der Host als
- * Nächstes tut. Dark ist immer der Startwert, auch wenn Figma hell läuft. */
+/* Theme-Umschalter, §4. Bewusst eigener Schalter statt `themeColors: true`: ob
+   der Fußtext lesbar ist, darf nicht davon abhängen, was der Host als Nächstes
+   tut. Mond = Dark, Punkt = Light, Startwert Dark. */
 .themepill {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex: none;
   padding: 2px;
   border: 1px solid var(--border);
-  border-radius: 99px;
-  background: var(--surface);
+  border-radius: 999px;
+  background: var(--bg-surface);
   cursor: pointer;
-}
-
-.themepill:focus-visible {
-  outline: 2px solid var(--accent-text);
-  outline-offset: 2px;
 }
 
 .themepill span {
@@ -175,61 +220,82 @@ body {
   place-items: center;
   width: 17px;
   height: 17px;
-  border-radius: 99px;
+  border-radius: 999px;
   font-size: 9px;
   line-height: 1;
-  color: var(--text-quiet);
+  color: var(--text-low);
   transition:
     background 0.18s,
     color 0.18s;
 }
 
+/* Aktive Seite: Fläche und Helligkeit, kein Farbwechsel. Die innere Kontur ist
+   der Sprung im Light-Theme, wo `bg/selected` selbst Weiß ist. */
 .themepill span.is-on {
-  background: var(--accent);
-  color: var(--ink);
+  background: var(--bg-selected);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-hi);
 }
 
-/* ------------------------------------------------------------------ layout */
+.iconbutton {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-low);
+  cursor: pointer;
+}
+
+.iconbutton:hover {
+  background: var(--bg-raised);
+  color: var(--text-hi);
+}
+
+/* -------------------------------------------------------------------- layout */
 
 .app__body {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  /* §3: Sektionsgruppen 16. */
+  gap: 16px;
   flex: 1 1 auto;
-  /* Explicit, so the body is what shrinks and scrolls when the footer grows —
-   * a flex item's automatic minimum size would otherwise push the footer out. */
+  /* Explizit, damit der Rumpf schrumpft und scrollt, wenn die Fußzeile wächst —
+     sonst schiebt die automatische Mindesthöhe eines Flex-Kindes sie hinaus. */
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 11px;
+  padding: 14px;
 }
 
 .section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  /* §3: Label → Control 7. */
+  gap: 7px;
 }
 
 .section--maps {
-  gap: 5px;
+  gap: 8px;
 }
 
-/* The bar sliders read as one strip of bars when they sit close together —
-   the gap has to be larger than the 26 px they are tall is wide. */
+/* Die Balken-Regler lesen als ein Streifen, wenn sie zu nah beieinander
+   stehen — der Abstand muss größer sein als ein Regler hoch ist. */
 .section--sliders {
   gap: 18px;
-  padding-top: 2px;
 }
 
-.section--cta {
-  gap: 9px;
-}
-
-/* First block of the result group — the only rule in the compact layout. */
+/* Erster Block der Ergebnisgruppe. */
 .section--result {
-  padding-top: 9px;
-  margin-top: 1px;
-  border-top: 1px solid var(--divider);
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
 }
 
 .section__head {
@@ -239,124 +305,133 @@ body {
   gap: 8px;
 }
 
+/* Section-Label, §2: Mono 9 px, 0.18 em, Versalien. Nie farbig, nie fett. */
 .section__label {
   margin: 0;
   font-family: var(--mono);
   font-size: 9px;
-  font-weight: 400;
-  letter-spacing: 0.1em;
+  font-weight: 500;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--text-dim);
-}
-
-/* Ein Satz unter der Sektionsüberschrift — trägt bei der Kontrast-Sektion die
-   Abgrenzung zur Vorhersage. Kontrast gegen den Panelgrund: `--text-dim` ist
-   in `ui/theme.ts` gegen 4,5:1 geprüft, wie jeder andere Wert dort. */
-.section__hint {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--text-dim);
+  color: var(--text-mid);
 }
 
 .section__note {
+  font-family: var(--mono);
   font-size: 10px;
-  color: var(--text-quiet);
+  color: var(--text-mid);
 }
 
-/* --------------------------------------------------------------- selection */
+/* Ein Satz unter der Sektionsüberschrift — trägt bei der Kontrast-Sektion die
+   Abgrenzung zur Vorhersage. */
+.section__hint,
+.hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-mid);
+  text-wrap: pretty;
+}
+
+/* ----------------------------------------------------------------- selection */
 
 .selection {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 9px;
-  border-radius: 7px;
-  background: var(--surface);
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: var(--r-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
 }
 
+/* Frame-Glyph, keine Statusfarbe: ein leeres Rechteck in der Konturfarbe. */
 .selection__icon {
   flex: none;
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid var(--accent);
-  border-radius: 2px;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--text-low);
+  border-radius: var(--r-chip);
 }
 
 .selection__name {
   flex: 1;
   min-width: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
+  color: var(--text-hi);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .selection--empty .selection__name {
-  color: var(--text-dim);
+  color: var(--text-mid);
 }
 
 .selection__meta {
   flex: none;
   font-family: var(--mono);
-  font-size: 9px;
-  color: var(--text-quiet);
+  font-size: 10px;
+  color: var(--text-mid);
 }
 
-/* --------------------------------------------------------------- segmented */
+/* ----------------------------------------------------------------- segmented */
 
+/* §4: Track `bg/surface` + `border`, Radius 8, Padding 3, gap 3. Aktiv ist
+   Fläche plus Gewicht — kein Thumb in Akzentfarbe mehr. */
 .segmented {
-  position: relative;
   display: grid;
   grid-template-columns: repeat(var(--seg-count, 2), 1fr);
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--surface);
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--r-control);
+  background: var(--bg-track);
   border: 1px solid var(--border);
 }
 
-.segmented__thumb {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: calc(2px + var(--seg-index, 0) * (100% - 4px) / var(--seg-count, 2));
-  width: calc((100% - 4px) / var(--seg-count, 2));
-  border-radius: 5px;
-  background: var(--accent);
-  transition: left 0.22s ease;
-}
-
 .segmented button {
-  position: relative;
-  z-index: 1;
-  padding: 5px 0;
-  border: none;
+  padding: 6px 3px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: none;
-  border-radius: 5px;
   font: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-mid);
   cursor: pointer;
+  transition:
+    background 0.18s,
+    color 0.18s;
 }
 
 .segmented button[aria-pressed="true"] {
-  color: var(--ink);
+  background: var(--bg-selected);
+  border-color: var(--border);
+  color: var(--text-hi);
+  font-weight: 600;
 }
 
 .segmented button:disabled {
   cursor: not-allowed;
 }
 
+/* Sekundärwert im Segment (die Sekunden) — Mono, gedämpft, nie Akzent. */
 .segmented__sub {
   font-family: var(--mono);
-  font-size: 9.5px;
-  opacity: 0.75;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-mid);
 }
 
-/* ------------------------------------------------------------------ select */
+/* Im aktiven Segment hebt der Wert mit: `text-mid` auf `bg/selected` sind im
+   Dark-Theme 4,20:1 und damit unter der Grenze. Er bleibt Mono — der Schnitt
+   trennt ihn vom Label, nicht die Farbe (§2). */
+.segmented button[aria-pressed="true"] .segmented__sub {
+  color: var(--text-hi);
+}
+
+/* -------------------------------------------------------------------- select */
 
 .select {
   position: relative;
@@ -365,25 +440,26 @@ body {
 .select__trigger {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   width: 100%;
-  padding: 7px 9px;
-  border-radius: 7px;
-  background: var(--surface);
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
-  color: inherit;
+  color: var(--text-hi);
   font: inherit;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
 
 .select__trigger[aria-expanded="true"] {
-  border-color: var(--border-open);
+  border-color: var(--border-active);
 }
 
 .select__trigger:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  color: var(--text-disabled);
 }
 
 .select__value {
@@ -392,13 +468,12 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
   font-weight: 600;
 }
 
 .select__caret {
-  font-size: 8px;
-  color: var(--text-dim);
+  font-size: 9px;
+  color: var(--text-low);
   transition: transform 0.2s;
 }
 
@@ -413,71 +488,71 @@ body {
   left: 0;
   right: 0;
   padding: 4px;
-  border-radius: 7px;
-  background: var(--surface-menu);
+  border-radius: var(--r-control);
+  background: var(--bg-raised);
   border: 1px solid var(--border-strong);
-  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--menu-shadow);
 }
 
 .select__option {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   width: 100%;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: none;
-  border-radius: 5px;
+  border-radius: 6px;
   background: none;
   font: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-mid);
   text-align: left;
   cursor: pointer;
 }
 
-.select__option:hover,
-.select__option:focus-visible {
-  background: var(--surface-hover);
-  outline: none;
+.select__option:hover {
+  background: var(--bg-selected);
+  color: var(--text-hi);
 }
 
 .select__option[aria-selected="true"] {
-  color: var(--accent-text);
+  background: var(--bg-selected);
+  color: var(--text-hi);
+  font-weight: 600;
 }
 
-.select__option::after {
-  content: "";
-  font-size: 9px;
-  color: var(--accent-text);
-}
-
-.select__option[aria-selected="true"]::after {
-  content: "●";
-}
-
-/* ------------------------------------------------------------ map toggles */
+/* ------------------------------------------------------------- map selection */
 
 .maplist {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
 
-.maptoggle {
+/* Selection Card, §4: Radius 12, Padding 10, gap 10. Aktiv trägt die hellere
+   Kontur und die gehobene Fläche, inaktiv die normale Kontur und gedämpfte
+   Schrift — Regel 2. */
+.mapcard {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
-  border-radius: 7px;
-  background: var(--surface);
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--r-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   cursor: pointer;
+  transition:
+    background 0.18s,
+    border-color 0.18s;
 }
 
-.maptoggle input {
+.mapcard.is-on {
+  background: var(--bg-raised);
+  border-color: var(--border-active);
+}
+
+.mapcard input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -486,187 +561,166 @@ body {
   pointer-events: none;
 }
 
-.maptoggle input:focus-visible ~ .maptoggle__track {
-  outline: 2px solid var(--accent);
+.mapcard input:focus-visible ~ .toggle {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
-.maptoggle__track {
-  position: relative;
-  flex: none;
-  width: 26px;
-  height: 15px;
-  border-radius: 99px;
-  background: var(--border-strong);
-  transition: background 0.2s;
-}
-
-.maptoggle.is-on .maptoggle__track {
-  background: var(--accent);
-}
-
-.maptoggle__knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 11px;
-  height: 11px;
-  border-radius: 99px;
-  background: var(--text-dim);
-  transition: transform 0.22s ease, background 0.2s;
-}
-
-.maptoggle.is-on .maptoggle__knob {
-  background: var(--ink);
-  transform: translateX(11px);
-}
-
-.maptoggle__text {
+.mapcard__text {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   flex: 1;
   min-width: 0;
 }
 
-.maptoggle__label {
+.mapcard__label {
   font-size: 12px;
-  font-weight: 700;
-  color: var(--text-dim);
+  font-weight: 600;
+  color: var(--text-mid);
 }
 
-.maptoggle.is-on .maptoggle__label {
-  color: var(--text);
+.mapcard.is-on .mapcard__label {
+  color: var(--text-hi);
 }
 
-.maptoggle__desc {
-  font-size: 10.5px;
-  line-height: 1.4;
-  color: var(--text-quiet);
-  /* Wraps rather than truncates: the schema takes 56 px of a 320 px panel, and
-     „Was scharf bleibt, wenn der Rest ab…" is not a description. */
+.mapcard__desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-mid);
+  /* Umbricht statt zu kürzen: „Was scharf bleibt, wenn der Rest ab…" ist keine
+     Beschreibung. */
   text-wrap: pretty;
 }
 
-/* Map-Schema — ein abstrakter Screen, KEIN Abbild der Auswahl.
+/* Vorschau, §4: 38 px, Radius 6.
  *
- * Deshalb heißt es nirgends „Vorschau": vier feste Balken zeigen, wie die
- * jeweilige Map einen Screen einfärbt, nicht wie *dieser* Screen aussieht. Rein
- * CSS, keine Engine, kein Export. Es reagiert aber auf die Einstellungen —
- * Deckkraft auf die Schicht, Viewport-Höhe auf Schnittlinie und Falz, Map aus
- * auf die Gesamtdeckkraft —, sonst wäre es Dekoration statt Erklärung. */
-.schema {
+ * Es ist ein **abstraktes Bild der Map-Art, kein Abbild der Auswahl** — kein
+ * Export, keine Engine, kein Caching, reines CSS. Deshalb heißt es im UI
+ * nirgends „Vorschau des Frames". Es liest aber die Einstellungen, sonst wäre es
+ * Dekoration statt Erklärung: die Deckkraft steuert die Schicht, die
+ * Viewport-Höhe die Höhe der Falz-Schraffur, eine abgeschaltete Map dimmt alles.
+ */
+.preview {
   position: relative;
   flex: none;
-  width: 56px;
-  height: 88px;
-  border-radius: 5px;
-  border: 1px solid var(--border-icon);
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
   overflow: hidden;
-  background: var(--schema-bg);
+  /* Die gehobene Fläche, nicht `bg/base`: Focusmap und Falz **verdunkeln** einen
+     Screen, und auf Fast-Schwarz ist eine Verdunkelung nicht zu sehen. */
+  background: var(--bg-selected);
   opacity: 0.45;
   transition: opacity 0.2s;
 }
 
-.maptoggle.is-on .schema {
+.mapcard.is-on .preview {
   opacity: 1;
 }
 
-.schema__wire {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 5px;
-}
-
-.schema__wire i {
-  display: block;
-  border-radius: 2px;
-}
-
-.schema__wire i:nth-child(1) {
-  height: 6px;
-  background: var(--wire1);
-}
-
-.schema__wire i:nth-child(2),
-.schema__wire i:nth-child(3) {
-  height: 17px;
-  background: var(--wire2);
-}
-
-.schema__wire i:nth-child(4) {
-  height: 10px;
-  background: var(--wire3);
-}
-
-.schema__layer {
+.preview__layer {
   position: absolute;
   inset: 0;
   opacity: var(--layer-opacity, 0.65);
   transition: opacity 0.12s;
 }
 
-.schema__layer--heat {
+/* Die Daten-Rampe aus §1 — gedämpfte Stufen, volles Gelb nur im heißesten
+   Punkt. Das ist die eine Stelle neben dem CTA, an der `--cta` auftaucht. */
+.preview__layer--heat {
   background: radial-gradient(
-    circle at 52% 30%,
-    rgba(239, 68, 68, 0.95) 0%,
-    rgba(245, 158, 11, 0.9) calc(var(--spread) * 0.35),
-    rgba(34, 197, 94, 0.8) calc(var(--spread) * 0.6),
-    rgba(59, 130, 246, 0.65) var(--spread),
-    rgba(59, 130, 246, 0) calc(var(--spread) * 1.4)
+    circle at 42% 34%,
+    var(--cta) 0%,
+    var(--tone-600) 24%,
+    var(--tone-700) 48%,
+    var(--tone-800) 72%,
+    var(--tone-cold) 100%
   );
 }
 
-.schema__layer--focus {
-  background: radial-gradient(
-    circle at 50% 32%,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(0, 0, 0, 0.35) calc(var(--spread) * 0.7),
-    rgba(0, 0, 0, 0.82) var(--spread)
-  );
-}
-
-.schema__layer--click {
-  background: radial-gradient(
-      circle at 56% 24%,
-      rgba(120, 20, 20, 0.95) 0%,
-      rgba(185, 28, 28, 0.5) 28%,
-      rgba(0, 0, 0, 0) 56%
+/* Focusmap: scharfe Mitte, der Rest fällt ab. Ein Loch in der Verdunkelung plus
+   eine feine Schraffur darunter — die Schraffur ist das, was „unscharf" in einem
+   38-px-Feld überhaupt zeigen kann. */
+.preview__layer--focus {
+  background-image:
+    radial-gradient(
+      circle at 50% 38%,
+      transparent 0 calc(var(--spread) * 0.42),
+      var(--fold-hatch) calc(var(--spread) * 0.9)
     ),
-    radial-gradient(circle at 44% 64%, rgba(120, 20, 20, 0.85) 0%, rgba(185, 28, 28, 0.4) 26%, rgba(0, 0, 0, 0) 54%);
+    repeating-linear-gradient(135deg, var(--fold-hatch-2) 0 3px, transparent 3px 6px);
 }
 
-/* Where the first viewport ends, and what lies under the fold. */
-.schema__cut {
+/* Contrastmap: zwei Textzeilen, eine davon zu leise — das ist, was die Karte
+   findet. Zwei kurze Balken statt zweier Bänder über die ganze Breite, sonst
+   liest es als Streifenmuster und nicht als Schrift. */
+.preview__layer--contrast {
+  background-image:
+    linear-gradient(var(--text-low), var(--text-low)),
+    linear-gradient(var(--tone-700), var(--tone-700));
+  background-repeat: no-repeat;
+  background-size:
+    62% 4px,
+    44% 4px;
+  background-position:
+    20% 34%,
+    20% 60%;
+}
+
+.preview__layer--click {
+  background:
+    radial-gradient(circle at 58% 28%, var(--tone-600) 0%, transparent 52%),
+    radial-gradient(circle at 40% 68%, var(--tone-700) 0%, transparent 48%);
+}
+
+/* -------------------------------------------------------------------- toggle */
+
+/* §4: 32 × 18, Radius 9, Knopf 14. An ist Tinte, nicht Gelb (Regel 7). */
+.toggle {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+
+.mapcard.is-on .toggle {
+  background: var(--toggle-on);
+  border-color: var(--toggle-on);
+}
+
+.toggle__knob {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: var(--cut-h, 100%);
-  border-bottom: 1px dashed var(--cut-line);
-  transition: height 0.18s ease;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--text-low);
+  transition:
+    transform 0.22s ease,
+    background 0.2s;
 }
 
-.schema__fold {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: var(--fold-h, 0%);
-  background: repeating-linear-gradient(135deg, var(--fold-hatch) 0 4px, var(--fold-hatch-2) 4px 8px);
-  transition: height 0.18s ease;
+.mapcard.is-on .toggle__knob {
+  background: var(--toggle-knob-on);
+  transform: translateX(14px);
 }
 
-/* ----------------------------------------------------------------- sliders */
+/* ------------------------------------------------------------------- sliders */
 
 .slider,
 .slider-with-hint {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
 }
 
 .slider__head {
@@ -677,40 +731,39 @@ body {
 }
 
 .slider__name {
-  font-size: 11.5px;
-  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-hi);
 }
 
+/* Wert rechts im Label, Mono, neutral — §2: „nie `cta`". */
 .slider__value {
   font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--accent-text);
+  font-size: 11px;
+  color: var(--text-hi);
 }
 
-/* Balken-Slider statt Track + Knopf.
+/* Stufen-Regler, §4: 20 Balken, gap 2, Radius 2.
  *
- * Ein natives `input[type=range]` kann die Balkenhöhen nicht darstellen, also
- * ist es ein `role="slider"`-Element — und damit liegt die gesamte
+ * Ein natives `input[type=range]` kann die wachsenden Balkenhöhen nicht
+ * darstellen, also ist es ein `role="slider"` — und damit liegt die gesamte
  * Zugänglichkeit bei uns: `aria-valuenow/min/max/valuetext`, Pfeiltasten,
- * Home/End, Shift für große Schritte, ein sichtbarer Fokusring, und
+ * Home/End, Shift für den groben Schritt, ein sichtbarer Fokusring und
  * `setPointerCapture`, ohne das der Wert springt, sobald der Zeiger die Leiste
  * verlässt. */
 .slider__bars {
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  height: 26px;
-  padding: 0;
+  height: 18px;
   border: none;
   background: none;
-  border-radius: 4px;
   cursor: pointer;
   touch-action: none;
 }
 
 .slider__bars:focus-visible {
-  outline: 2px solid var(--accent-text);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -723,105 +776,100 @@ body {
   flex: 1;
   min-width: 0;
   border-radius: 2px;
-  background: var(--track);
-  height: 6px;
+  background: var(--border);
+  height: 5px;
   transition:
     height 0.18s cubic-bezier(0.2, 1.3, 0.4, 1),
     background 0.18s;
 }
 
 .slider__bars i.is-on {
-  background: var(--accent);
-}
-
-.hint {
-  margin: 0;
-  font-size: 10.5px;
-  line-height: 1.4;
-  color: var(--text-quiet);
+  background: var(--bar-fill);
 }
 
 .linkbutton {
-  border: none;
-  background: none;
   padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--border-active);
+  background: none;
   font: inherit;
   font-size: 11px;
-  font-weight: 700;
-  color: var(--accent-text);
-  border-bottom: 1px solid rgba(245, 197, 24, 0.35);
+  font-weight: 600;
+  color: var(--text-hi);
   cursor: pointer;
 }
 
 .linkbutton:hover {
-  border-bottom-color: var(--accent-text);
+  border-bottom-color: var(--text-hi);
 }
 
-/* --------------------------------------------------------------- CTA + run */
+/* ------------------------------------------------------------------- buttons */
 
+/* §4: Radius 8, Padding 9 16, 12 px. */
 .button {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  width: 100%;
-  padding: 9px;
-  border: none;
-  border-radius: 7px;
+  /* 14 statt der 16 aus §4: mit zwei Knöpfen und dem Zähler in einer Zeile
+     bricht „Maps erstellen" bei 320 px sonst in zwei Zeilen. */
+  padding: 9px 14px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: var(--r-control);
   font: inherit;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   cursor: pointer;
-  color: var(--ink);
-  background: var(--accent);
+  color: var(--text-hi);
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
 }
 
+/* Die primäre Aktion — genau eine pro Panel. */
+.button--primary {
+  font-weight: 700;
+  color: var(--cta-on);
+  background: var(--cta);
+  border-color: transparent;
+}
+
+/* Deaktiviert ist nicht „gelb, aber blass": ein Knopf, der nichts tut, ist auch
+   nicht die primäre Aktion. */
 .button:disabled {
   cursor: not-allowed;
-  color: var(--text-quiet);
-  background: var(--surface);
+  color: var(--text-disabled);
+  background: var(--bg-surface);
+  border-color: var(--border);
 }
 
-.button__hint {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  font-weight: 400;
-  opacity: 0.6;
+.button--destructive {
+  color: var(--danger-text);
+  background: none;
+  border-color: var(--danger-outline);
 }
 
-.button--secondary {
-  border: 1px solid var(--border);
-  font-weight: 700;
-  color: var(--text);
-  background: var(--surface);
-}
-
-.button--secondary:disabled {
-  color: var(--text-quiet);
-  background: var(--surface-row);
-}
-
-/* ---------------------------------------------------------------- progress */
+/* ------------------------------------------------------------------ progress */
 
 .status {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11.5px;
-  color: var(--text-dim);
+  font-size: 12px;
+  color: var(--text-mid);
 }
 
 .status__value {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--accent-text);
+  color: var(--text-hi);
 }
 
 .status__detail {
   font-family: var(--mono);
   font-size: 9px;
-  color: var(--text-quiet);
+  color: var(--text-mid);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -829,43 +877,44 @@ body {
 
 .progress {
   height: 3px;
-  border-radius: 99px;
+  border-radius: 999px;
   background: var(--border);
   overflow: hidden;
 }
 
 .progress__bar {
   height: 100%;
-  border-radius: 99px;
-  background: var(--accent);
+  border-radius: 999px;
+  background: var(--bar-fill);
   transition: width 120ms linear;
 }
 
-/* ----------------------------------------------------------------- results */
+/* ------------------------------------------------------------------- results */
 
 .result {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 9px;
-  border-radius: 7px;
-  background: var(--surface);
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--r-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
 }
 
 .result__count {
   font-family: var(--mono);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
-  color: var(--accent-text);
+  color: var(--text-hi);
 }
 
 .result__text {
   flex: 1;
   min-width: 0;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-mid);
 }
 
 .summary {
@@ -874,13 +923,13 @@ body {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 10.5px;
-  line-height: 1.4;
-  color: var(--text-quiet);
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-mid);
 }
 
-/* ---------------------------------------------------------------- findings */
+/* ------------------------------------------------------------------ findings */
 
 .findings {
   list-style: none;
@@ -888,60 +937,57 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .findings__item {
   display: flex;
-  gap: 8px;
-  padding: 8px 9px;
-  border-radius: 7px;
-  background: var(--surface);
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--r-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
 }
 
-.findings__bar {
+/* Statusfarbe nur punktuell, Regel 5: ein 6-px-Punkt, keine farbige Fläche und
+   keine farbige Schrift. Die Stufen unterscheiden sich über Helligkeit. */
+.findings__dot {
   flex: none;
-  width: 2px;
-  border-radius: 99px;
-  background: var(--accent);
+  width: 6px;
+  height: 6px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: var(--text-low);
 }
 
-.findings__item--problem .findings__bar {
+.findings__item--problem .findings__dot {
   background: var(--danger);
 }
 
-.findings__item--info .findings__bar {
-  background: var(--border-strong);
+.findings__item--attention .findings__dot {
+  background: var(--text-hi);
 }
 
 .findings__body {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
 }
 
 .findings__severity {
   font-family: var(--mono);
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--accent-text);
-}
-
-.findings__item--problem .findings__severity {
-  color: var(--danger);
-}
-
-.findings__item--info .findings__severity {
-  color: var(--text-quiet);
+  color: var(--text-mid);
 }
 
 .findings__text {
   font-size: 11px;
-  line-height: 1.45;
-  color: var(--text-body);
+  line-height: 1.5;
+  color: var(--text-mid);
   text-wrap: pretty;
 }
 
@@ -949,7 +995,7 @@ body {
   align-self: flex-start;
 }
 
-/* ----------------------------------------------------------------- ranking */
+/* ------------------------------------------------------------------- ranking */
 
 .ranking {
   list-style: none;
@@ -957,45 +1003,49 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .ranking li {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--surface-row);
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-control);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
   overflow: hidden;
 }
 
+/* Der Balken hinter der Zeile ist Helligkeit, nicht Farbe — und die leisere
+   Stufe `bg/raised` statt `bg/selected`: Rang und Prozentwert stehen in Mono
+   darüber, und auf `bg/selected` wären sie im Dark-Theme 4,20:1. */
 .ranking__fill {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   width: var(--pct, 0%);
-  background: rgba(245, 197, 24, 0.12);
+  background: var(--bg-raised);
 }
 
 .ranking__rank {
   position: relative;
-  width: 12px;
+  width: 14px;
   flex: none;
   font-family: var(--mono);
-  font-size: 9px;
-  color: var(--text-quiet);
+  font-size: 10px;
+  color: var(--text-mid);
 }
 
 .ranking__name {
   position: relative;
   flex: 1;
   min-width: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-hi);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1005,83 +1055,107 @@ body {
   position: relative;
   flex: none;
   font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-quiet);
+  font-size: 10px;
+  color: var(--text-mid);
 }
 
-.ranking li:first-child .ranking__score {
-  color: var(--accent-text);
-}
-
-/* ----------------------------------------------------------------- notices */
+/* ------------------------------------------------------------------- notices */
 
 .notice {
-  padding: 8px 9px;
-  border-radius: 7px;
-  font-size: 10.5px;
-  line-height: 1.45;
+  padding: 10px;
+  border-radius: var(--r-card);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-mid);
   text-wrap: pretty;
 }
 
-.notice--warning {
-  background: rgba(245, 197, 24, 0.07);
-  border: 1px solid rgba(245, 197, 24, 0.2);
-  color: var(--accent-text);
-}
-
+/* Fehler tragen eine Kontur, keine Fläche — Regel 5. */
 .notice--error {
-  background: rgba(239, 68, 68, 0.09);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: var(--danger);
+  background: none;
+  border-color: var(--danger-outline);
+  color: var(--danger-text);
 }
 
-/* ------------------------------------------------------------------ footer */
+/* -------------------------------------------------------------------- footer */
 
+/* §4: zwei Zonen — Aktionszeile, darunter die Hinweiszeile. Hinweise stehen
+   immer am Panelende und sind nie farbig. */
 .app__footer {
   display: flex;
-  align-items: flex-start;
-  gap: 7px;
+  flex-direction: column;
+  gap: 10px;
   flex: 0 0 auto;
-  padding: 9px 11px;
-  border-top: 1px solid var(--divider);
-  background: var(--bg-footer);
+  padding: 12px 14px;
+  /* Der Fußtext darf nicht unter den Greifer laufen. */
+  padding-right: 20px;
+  border-top: 1px solid var(--border-soft);
 }
 
-.disclaimer__icon {
+.footer__actions {
+  display: flex;
+  align-items: center;
+  /* §3: Buttonreihe 6–8. */
+  gap: 8px;
+}
+
+.footer__count {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--text-mid);
+}
+
+.footer__run {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.footer__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.footer__hint p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-mid);
+  text-wrap: pretty;
+}
+
+.footer__hint > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 14-px-`i`-Kreis, §4. Kontur, keine Fläche, keine Farbe. */
+.hintmark {
   display: grid;
   place-items: center;
   flex: none;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   margin-top: 1px;
-  border-radius: 99px;
-  border: 1px solid var(--border-icon);
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font-family: var(--mono);
   font-size: 8px;
-  color: var(--text-dim);
+  color: var(--text-low);
 }
 
-.app__footer > div {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
+/* ------------------------------------------------------------------- resizer */
 
-/* All three footer paragraphs, one style. The graded secondary style this
- * replaces was under the 4.5:1 floor in both themes; the measured values for
- * every pair that occurs are in `ui/__tests__/theme.test.ts`, which fails below
- * the floor rather than leaving it to the eye. */
-.disclaimer__text {
-  margin: 0;
-  font-size: 9.5px;
-  line-height: 1.45;
-  color: var(--text-quiet);
-  text-wrap: pretty;
-}
-
-/* ----------------------------------------------------------------- resizer */
-
-/* Sits over the footer's bottom-right corner. `touch-action: none` is what
- * makes pointer capture deliver a continuous drag instead of a scroll gesture. */
+/* Liegt über der rechten unteren Ecke der Fußzeile. `touch-action: none` ist
+   das, was aus Pointer-Capture einen durchgehenden Zug macht statt einer
+   Scroll-Gebärde. */
 .resizer {
   position: fixed;
   right: 0;
@@ -1091,7 +1165,7 @@ body {
   place-items: center;
   width: 16px;
   height: 16px;
-  color: var(--text-quiet);
+  color: var(--text-low);
   cursor: nwse-resize;
   touch-action: none;
   -webkit-user-select: none;
@@ -1100,15 +1174,5 @@ body {
 
 .resizer:hover,
 .resizer:focus-visible {
-  color: var(--accent-text);
-}
-
-.resizer:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
-}
-
-/* The footer text must not run under the grip. */
-.app__footer {
-  padding-right: 18px;
+  color: var(--text-hi);
 }

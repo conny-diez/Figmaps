@@ -319,6 +319,14 @@ figma.ui.onmessage = (message: UiToMain): void => {
           break
         }
 
+        // Das × im Kopf des Panels. Ein laufender Batch wird dabei nicht
+        // stillschweigend weitergerechnet: `closePlugin` beendet beide Realms,
+        // und der Nutzer hat das Fenster geschlossen, nicht den Lauf gestartet.
+        case 'CLOSE': {
+          figma.closePlugin()
+          break
+        }
+
         case 'SAVE_SETTINGS': {
           try {
             await saveSettings(message.settings)

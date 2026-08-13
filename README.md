@@ -1,4 +1,4 @@
-<img src="assets/logo.svg" width="72" height="72" alt="Figmaps">
+<img src="logos/figmaps-mark-dark.svg" width="72" height="72" alt="Figmaps">
 
 # Figmaps — Figma Plugin
 
@@ -160,7 +160,7 @@ das, was im Repo liegt.
 | Feld | verlangt | im Repo | fehlt |
 |---|---|---|---|
 | Name | — | `Figmaps` | — |
-| **Icon** | empfohlen **128 × 128 px** | nur `assets/logo.svg` | **der Export.** Kein PNG in dieser Größe ist versioniert |
+| **Icon** | empfohlen **128 × 128 px** | nur `logos/figmaps-mark-dark.svg` (128 × 128 als SVG) | **der Export.** Kein PNG in dieser Größe ist versioniert |
 | **Thumbnail / Cover** | empfohlen **1920 × 1080 px** | nichts in der Nähe (größtes Bild: 1648 × 710, eine Messgrafik) | **ganz** |
 | **Tagline** | ein Satz | nirgends | **ganz** — und es ist nicht die Repo-Beschreibung, siehe unten |
 | **Beschreibung** | Fließtext | nirgends als veröffentlichbarer Text | **ganz.** `RELEASE.md` sind Release-Notizen, die README hat über 4.000 Zeilen |
@@ -333,7 +333,7 @@ die damals angefasst wurden, noch ein Vorkommen:
 
 1. **`package-lock.json`** — 211 Adressen der internen Registry. Siehe Punkt 3;
    seit 1.3 behoben.
-2. **`assets/logo.svg`, `assets/logo-light.svg`, `src/ui/logo.tsx`** — die
+2. **`logos/figmaps-mark-*.svg`, `src/ui/logo.tsx`** — die
    Markenfarbe, und über `logo.tsx` auch in `build/ui.html`, also im Release-Zip
    und in jedem veröffentlichten Plugin.
 
@@ -399,7 +399,7 @@ Text als abstrakte Glyphenbalken, Kacheln als Farbflächen, Beschriftungen
 gattungstypisch erfunden. **Markenfarbe in keinem einzigen** — ausgezählt über
 alle Pixel; das Gelb der Testframes ist `#FFC800` und nicht die Markenfarbe.
 
-**Aber:** `assets/logo.svg`, `assets/logo-light.svg` und `src/ui/logo.tsx`
+**Aber:** `logos/figmaps-mark-dark.svg`, `logos/figmaps-mark-light.svg` und `src/ui/logo.tsx`
 tragen die Markenfarbe, und über `logo.tsx` landet sie in `build/ui.html` — also im
 Release-Zip und in jedem veröffentlichten Plugin. Ob das Logo die Markenfarbe
 tragen darf, wenn das Repo öffentlich ist und das Plugin außerhalb der
@@ -719,7 +719,7 @@ Aufwand steht in keinem Verhältnis zu 27 Commits alter Zwischenstände.
 |---|---|
 | **wandert** | `src/`, `eval/` (ohne `fixtures/`), `scripts/`, `assets/fonts/`, `assets/messungen/`, `manifest.json`, `package.json`, das bereinigte `package-lock.json`, `.github/workflows/`, `README.md`, `NOTICE.md`, `RELEASE.md`, `tsconfig.json`, `vitest.config.ts`, `eslint.config.js` |
 | **bleibt** | die 77 Commits samt Herkunft; die 40 UEyes-Screenshots (Punkt 5); dieser Abschnitt und Punkt 1–5, die von Interna sprechen; die private Autorenadresse |
-| **entscheidungsabhängig** | `assets/logo.svg`, `assets/logo-light.svg`, `src/ui/logo.tsx` — solange die Markenfarbe drin ist, wandert das Logo nicht mit |
+| **entscheidungsabhängig** | `logos/` und `src/ui/logo.tsx` — solange die Markenfarbe drin ist, wandert das Logo nicht mit |
 
 **Ein Initial-Commit, keine gefilterte History.** Ein „Initial public release,
 extrahiert aus interner Entwicklung" ist ehrlich und billig. Eine kuratierte
@@ -1028,68 +1028,124 @@ Kommentar abhängt, ist genau so lange richtig, bis jemand die andere Stelle
 anfasst. Die Engine-Version (`hybrid-v1`) ist davon getrennt und steht weiterhin
 an den Maps, nicht im Kopf: sie sagt, welche Vorhersage eine Karte erzeugt hat.
 
-**Zwei Themes, eigener Schalter.** Im Header sitzt eine Pille mit Mond und
-Sonne. Bewusst **nicht** `figma.showUI({ themeColors: true })`: die Farben des
-Panels — und damit die Lesbarkeit des Disclaimers unter den Maps — sollen nicht
-davon abhängen, was der Host als Nächstes tut. **Dark ist immer der Startwert**,
-auch beim ersten Öffnen und wenn Figma im Light-Mode läuft; die Wahl wird in
-`figma.clientStorage` gemerkt (`Settings.theme`, `ui/theme.ts`).
+**Das Panel folgt `DESIGN.md`.** Die Datei liegt im Repo und ist die Quelle für
+Tokens, Typografie, Geometrie und Komponenten; `src/ui/theme.ts` trägt die beiden
+Paletten, `src/ui/styles.css` die Regeln, und beide sind gegen `DESIGN.md`
+kommentiert. Die vier Sätze, die dabei am meisten am Aussehen entscheiden:
+
+1. **Gelb ist ausschließlich die primäre Aktion.** Ein gelber Knopf pro Panel,
+   sonst nirgends — kein gelber Segment-Thumb, kein gelber Toggle, kein gelber
+   Reglerwert, keine gelbe Hinweis-Kachel. Während eines Laufs ist gar keiner
+   gelb: „Abbrechen" ist nicht die primäre Aktion.
+2. **Auswahl ist Helligkeit, nicht Farbe.** Aktives Segment, aktive Karte,
+   aktive Theme-Seite: hellere Fläche plus hellere Kontur.
+3. **Werte laufen in Mono und neutral.** Maße, Prozente, Zähler und die
+   Section-Labels tragen ihre Lesbarkeit über den Schnitt, nicht über Farbe.
+4. **Statusfarbe nur punktuell.** 6-px-Punkt für eine Kategorie, Kontur für
+   Destruktives — keine farbigen Flächen und keine farbige Fließschrift.
+
+**Zwei Themes, eigener Schalter.** Im Header sitzt eine Pille mit Mond (dark) und
+Punkt (light). Bewusst **nicht** `figma.showUI({ themeColors: true })`: die Farben
+des Panels — und damit die Lesbarkeit des Disclaimers unter den Maps — sollen
+nicht davon abhängen, was der Host als Nächstes tut. **Dark ist immer der
+Startwert**, auch beim ersten Öffnen und wenn Figma im Light-Mode läuft; die Wahl
+wird in `figma.clientStorage` gemerkt (`Settings.theme`, `ui/theme.ts`).
 
 **Der Kontrast ist eine Zusage, keine Absicht.** Beide Paletten stehen in
 TypeScript, nicht in der CSS-Datei, weil jeder Wert die Hälfte eines
 Kontrastpaares ist und `ui/__tests__/theme.test.ts` **jedes tatsächlich
-vorkommende Paar** gegen 4,5:1 prüft und darunter fehlschlägt. Der Anlass ist
-konkret: die Fußzeile war schon einmal mit 3,93:1 und 2,41:1 ausgeliefert,
-wurde behoben — und die nächste Design-Übergabe brachte exakt dieselben Werte
-zurück. Gemessen, beide Themes:
+vorkommende Paar** prüft: Schrift gegen 4,5:1 (WCAG 1.4.3), Form gegen 3:1
+(1.4.11). Der Anlass ist konkret: die Fußzeile war schon einmal mit 3,93:1 und
+2,41:1 ausgeliefert, wurde behoben — und die nächste Design-Übergabe brachte
+exakt dieselben Werte zurück. Gemessen, beide Themes:
 
 | Paar | dark | light |
 |---|---:|---:|
-| `text` auf `bg` | 16,46:1 | 17,17:1 |
-| `text-body` auf `surface` | 8,94:1 | 10,31:1 |
-| `text-dim` auf `bg` | 8,25:1 | 7,37:1 |
-| `text-quiet` auf `bg-footer` (die drei Fußtext-Absätze) | 5,80:1 | 5,69:1 |
-| `text-quiet` auf `surface` | 5,38:1 | 5,46:1 |
-| `accent-text` auf `bg` (Reglerwert) | 11,90:1 | 5,94:1 |
-| `ink` auf `accent` (Knopfbeschriftung) | 11,90:1 | 11,19:1 |
-| `danger` auf `bg` | 7,63:1 | 6,54:1 |
+| `text-hi` auf `panel-bg` (Titel, Kartentitel) | 16,87:1 | 17,89:1 |
+| `text-hi` auf `bg-selected` (aktives Segment) | 13,47:1 | 17,89:1 |
+| `text-mid` auf `panel-bg` (Fließtext, Section-Label, Fußzeile) | 5,27:1 | 5,28:1 |
+| `text-mid` auf `bg-surface` (Kartenbeschreibung, Maße) | 5,02:1 | 4,92:1 |
+| `text-mid` auf `bg-track` (inaktives Segment) | 5,02:1 | 4,71:1 |
+| `cta-on` auf `cta` (Beschriftung der primären Aktion) | 13,01:1 | 13,01:1 |
+| `danger-text` auf `panel-bg` (Fehlermeldung) | 6,99:1 | 5,51:1 |
+| `text-low` auf `bg-raised` (Toggle-Knopf „aus", Form: 3:1) | 3,05:1 | 3,38:1 |
+| `bar-fill` auf `panel-bg` (gefüllte Balken, Form: 3:1) | 3,13:1 | 3,43:1 |
 
-Zwei Entscheidungen dahinter:
+Drei Entscheidungen dahinter:
 
-- **Zwei Abstufungen für leise Schrift, nicht drei.** Die Übergabe hatte
-  `dim`/`dim2`/`dim3`, alle drei unter der Grenze. Hebt man alle drei über
-  4,5:1, rücken sie so eng zusammen, dass die dritte Stufe nur noch eine
-  Gelegenheit ist, die falsche zu wählen: `text-dim` für Sekundärtext,
-  `text-quiet` für die leiseste Schrift, die noch Schrift ist.
-- **Das Gelb ist im Light-Theme keine Textfarbe.** `#F5C518` auf Weiß sind
-  1,63:1. Es bleibt Flächenfarbe; Text, der als Akzent lesen soll, nimmt
-  `accent-text` (`#7A6100`). Ein Test hält das fest. Aus demselben Grund heißt
-  die Farbe *auf* dem gelben Knopf `ink` und nicht „Hintergrundfarbe" — mit
-  `--bg` wäre die Beschriftung im Light-Theme weiß auf Gelb gewesen.
+- **`text/low` ist keine Schriftfarbe.** `DESIGN.md` weist ihm Section-Labels,
+  Meta-Werte und die Hinweiszeile zu; der angegebene `#4E4E56` liegt auf
+  `bg/base` bei **2,40:1** — bis auf die zweite Stelle derselbe Wert, den dieses
+  Repo zweimal entfernt hat. Gelesen wird deshalb `text-mid`; `text-low` bleibt
+  für Chevron, Punkte, Konturen und den Greifer. Die Hierarchie trägt der
+  Mono-Schnitt, und das ist keine Ausrede, sondern der Satz aus `DESIGN.md` §2
+  selbst.
+- **`text/low` ist auch als Form gehoben.** `#4E4E56` erreicht auf `bg/raised`
+  2,17:1, unter den 3:1 von WCAG 1.4.11. Der Token steht auf `#64646D` (dark)
+  bzw. `#8B8B92` (light) — dieselbe Rolle, der nächstliegende Wert über der
+  Grenze. Ebenso `bar-fill`: `#5A5A64` waren 2,90:1, jetzt `#5F5F69`.
+- **Das Gelb ist überhaupt keine Textfarbe mehr.** `#FFD60A` auf Weiß sind
+  1,41:1. Da es nur noch die Fläche der primären Aktion ist, gibt es keinen
+  `accent-text`-Token mehr, den man versehentlich für Schrift nehmen könnte —
+  und der Test hält fest, dass in der ganzen CSS-Datei genau zwei Regeln
+  `var(--cta)` lesen: der primäre Knopf und der heißeste Punkt der
+  Heatmap-Vorschau.
 
-**Balken-Slider.** Statt Schiene und Knopf 24 Balken, deren Höhe mit dem Wert
-wächst. Ein natives `input[type=range]` kann das nicht darstellen, also ist es
-ein `role="slider"` — und damit liegt alles, was das native Element geschenkt
-hätte, bei uns und ist Pflicht, nicht Kür: `aria-valuenow/min/max` **plus**
-`aria-valuetext` (die nackte Zahl liest sich als „80", wo das Panel „80 %"
-zeigt), Pfeiltasten, Home/End, Shift für den groben Schritt, ein sichtbarer
-Fokusring in beiden Themes, und `setPointerCapture` — ohne das springt der Wert,
-sobald der Zeiger die Leiste verlässt.
+**Der Ort einer Farbe ist geprüft, nicht nur ihr Wert.** `theme.test.ts` liest
+`src/ui/styles.css` und lässt drei Dinge nicht durch: ein Farbliteral außerhalb
+des `:root`-Fallbacks, einen Fallback-Wert, der vom Dark-Theme abweicht, und
+`var(--cta)` an einer anderen Stelle als den beiden erlaubten. Ein korrekter
+Token an der falschen Stelle ist trotzdem falsch, und Regel 1 ist eine Aussage
+über Stellen.
 
-**Map-Schema.** Neben jeder Map-Zeile steht ein 56 × 88 px großes Wireframe:
-vier feste Balken, darüber die für die Map typische Fläche, eine gestrichelte
-Schnittlinie und die Falz-Schraffur. Es ist ein **abstrakter Screen, kein
-Abbild der Auswahl** — kein Export, keine Engine, kein Caching, reines CSS.
-Deshalb heißt es im UI nirgends „Vorschau"; falls es je eine Beschriftung
-braucht, „Schema". Es reagiert aber auf die Einstellungen, sonst wäre es
-Dekoration statt Erklärung: Overlay-Deckkraft steuert die Schicht,
-Viewport-Höhe die Schnittlinie und die Schraffur, eine abgeschaltete Map dimmt
-das Ganze.
+**Stufen-Regler.** Statt Schiene und Knopf 20 Balken, deren Höhe mit dem Wert
+wächst, gefüllt in `bar-fill` und nicht im Akzent. Ein natives
+`input[type=range]` kann das nicht darstellen, also ist es ein `role="slider"` —
+und damit liegt alles, was das native Element geschenkt hätte, bei uns und ist
+Pflicht, nicht Kür: `aria-valuenow/min/max` **plus** `aria-valuetext` (die nackte
+Zahl liest sich als „80", wo das Panel „80 %" zeigt), Pfeiltasten, Home/End,
+Shift für den groben Schritt, ein sichtbarer Fokusring in beiden Themes, und
+`setPointerCapture` — ohne das springt der Wert, sobald der Zeiger die Leiste
+verlässt.
 
-**Schriften.** Manrope und JetBrains Mono, je ein Latin-Subset, zusammen 56 KB,
-als base64 in `build/ui.html`. `networkAccess` steht auf `"none"` — nachladen
-ist nicht möglich, alles muss ins Bundle. Die 12 woff2-Dateien aus der
-Design-Übergabe (~140 KB, alle Unicode-Bereiche) wurden **nicht** übernommen.
+**Fußzeile in zwei Zonen.** Oben die Aktionszeile: primärer Knopf,
+„Zurücksetzen", rechts der Statuszähler in Mono. Darunter die Hinweiszeile mit
+`i`-Kreis. Damit sind die Knöpfe aus dem scrollenden Rumpf heraus und immer
+sichtbar — und „Erneut versuchen" ist entfallen, weil es dasselbe tat wie der
+CTA. Der Zähler sagt, was gilt: vor dem Lauf die Zahl der gewählten Maps,
+während des Laufs `Frame/Frames`, danach die Zahl der **entstandenen** Karten.
+„Zurücksetzen" setzt die Analyse-Einstellungen auf die Vorgaben zurück und lässt
+das Theme stehen — es ist keine Einstellung der Analyse.
+
+**Map-Vorschau.** Links in jeder Map-Karte ein 38-px-Feld: die für die Map
+typische Fläche, in der gedämpften Daten-Rampe aus `DESIGN.md` §1. Es ist ein
+**abstraktes Bild der Map-Art, kein Abbild der Auswahl** — kein Export, keine
+Engine, kein Caching, reines CSS. Es liest die Overlay-Deckkraft, und eine
+abgeschaltete Map dimmt das Feld.
+
+Zwei Dinge des alten 56 × 88-Schemas sind dabei weggefallen: die vier
+Wireframe-Balken (auf 38 px Grieß) und die Falz-Schraffur aus der Viewport-Höhe.
+Letztere ist die interessantere Streichung — bei einem 2.400 px hohen Frame lagen
+zwei Drittel des Feldes unter der Falz und vom Bild der Map blieb ein
+Streifenmuster. Sie zu deckeln hätte einen Anteil behauptet, der nicht stimmt;
+die Aussage steht jetzt im Hinweis unter dem Viewport-Regler, wo sie nachprüfbar
+ist.
+
+**Schließen im Kopf.** Das × sendet `CLOSE`; der iframe kann sein eigenes
+Plugin-Fenster nicht beenden, `figma.closePlugin()` gibt es nur im Hauptthread.
+
+**Schriften.** Plus Jakarta Sans (UI) und JetBrains Mono (Zahlen, Einheiten,
+Section-Labels), je ein Latin-Subset, zusammen 58 KB, als base64 in
+`build/ui.html`. `networkAccess` steht auf `"none"` — nachladen ist nicht
+möglich, alles muss ins Bundle. Manrope, die UI-Schrift bis 1.3, ist damit
+entfallen.
+
+Beim Wechsel fiel auf, dass **jede Schrift zweimal im Bundle lag**: der Build
+ersetzt die Platzhalter mit `replaceAll` über die ganze CSS-Datei, und der
+Kommentar am Kopf nannte sie beim Namen. `build/ui.html` war dadurch 76 KB zu
+groß. Die Prüfung in `scripts/check-release.mjs` stand auf „mindestens zwei
+Schriften" und war deshalb grün — eine Untergrenze kann melden, dass etwas fehlt,
+nicht, dass etwas doppelt da ist. Sie steht jetzt auf genau zwei.
 
 ### Lange Frames (Epic B)
 
@@ -1180,7 +1236,7 @@ src/
 │  └─ folds.ts             B-2  gestrichelte Fold-Marker
 └─ ui/
    ├─ pipeline.ts          iframe-Pipeline: PNG rein, Map-PNGs raus
-   ├─ logo.tsx             Figmaps-Wortmarke als Inline-SVG
+   ├─ logo.tsx             Figmaps-Mark als Inline-SVG (Heat-Raster, DESIGN.md §5)
    └─ styles.css
 
 eval/                      Epic A — läuft offline in Node
@@ -1199,9 +1255,14 @@ eval/                      Epic A — läuft offline in Node
 │                               mit Klick-Kandidaten unmessbar sind
 └─ fixtures/               nicht im Repo — siehe fixtures/README.md
 
-assets/
-└─ logo.svg                Produkt-Logo. Quelle für die Panel-Mark; der
-                           128er-Export fürs Publishing fehlt noch
+logos/                     Marken-Assets, DESIGN.md §5
+├─ figmaps-mark-dark.svg   128er-SVG, dunkler Grund — Quelle der Panel-Mark
+├─ figmaps-mark-light.svg  dieselbe Mark für hellen Grund
+├─ figmaps-mark-mono.svg   einfarbig über `currentColor`
+└─ figmaps-icon-16.svg     Kleingröße (≤ 24 px): vier Kreise statt sechzehn
+
+DESIGN.md                  das Design-System des Panels: Tokens, Typografie,
+                           Geometrie, Komponenten, Regeln
 ```
 
 ### Ablauf eines Laufs
@@ -4945,9 +5006,10 @@ Zusätzlich für 1.1 (M4, M5):
 
 ## Offene Entscheidungen (PRD §11)
 
-1. ~~**Plugin-Name**~~ — entschieden: `Figmaps`. Das Logo liegt als
-   `assets/logo.svg` (die `manifest.json` hat kein Icon-Feld). **Offen bleibt der
-   Export:** Figma will 128 × 128 px, und kein PNG dieser Größe ist versioniert.
+1. ~~**Plugin-Name**~~ — entschieden: `Figmaps`. Das Logo liegt in `logos/`
+   (die `manifest.json` hat kein Icon-Feld). **Offen bleibt der
+   Export:** Figma will 128 × 128 px als PNG, und kein PNG ist versioniert — die
+   SVGs stehen auf 128 × 128 und wären die Quelle.
    Ebenso fehlen Cover (1920 × 1080), Tagline und Beschreibung — siehe
    „Was für das private Publishing noch fehlt".
 2. **`positionPrior` für RTL** — implementiert als Schalter

@@ -354,6 +354,13 @@ export type UiToMain =
   | { type: 'REVEAL_NODES'; nodeIds: string[] }
   /** Sent continuously while the corner grip is dragged. */
   | { type: 'RESIZE'; size: PanelSize }
+  /**
+   * Das × im Kopf des Panels (`DESIGN.md` §4, Header).
+   *
+   * Schließen muss über den Hauptthread laufen: der iframe kann sein eigenes
+   * Plugin-Fenster nicht beenden, `figma.closePlugin()` existiert nur dort.
+   */
+  | { type: 'CLOSE' }
 
 // ---------------------------------------------------------------------------
 // Main -> UI
