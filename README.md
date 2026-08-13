@@ -254,6 +254,14 @@ er sie nach. Das ist die **eine** Eigenschaft, die er einem von Hand angelegten
 Release überschreibt — ohne sie führt GitHub den Tag als „Latest release", und
 dann landet genau der Stand als Empfehlung bei Kollegen, der noch keine ist.
 
+**Was am Tag *nicht* geprüft wird, und wo es notiert ist.** `release.yml` fährt
+**kein** Eval-Gate. Für dieses Release trägt das nicht: der Tag zeigt auf den
+Merge-Commit, und der ist am PR und beim Push auf `main` gemessen. Es beißt bei
+einem Tag auf einem Commit, der nie über `main` gelaufen ist — Hotfix, älterer
+Stand. Als offener Punkt 5 unter „Offene Entscheidungen" festgehalten, mit der
+Begründung und dem, was ausdrücklich **nicht** gebaut wird (kein nächtlicher
+Lauf).
+
 **Kein Link auf `releases/latest`.** GitHub führt Pre-releases nie als „Latest";
 solange nur eine Vorabversion existiert, ist diese Adresse **tot**. Verlinkt wird
 deshalb die Release-**Liste** (`/releases`) oder der Tag
@@ -4975,8 +4983,14 @@ Nachweis, dass sie etwas finden KANN.** Ein Muster, das vorhanden sein muss, mit
 durch dieselbe Abfrage — findet sie das nicht, ist das Ergebnis kein Ergebnis.
 
 Das ist dieselbe Regel wie „das Gate muss rot werden können", angewendet auf
-Abfragen statt auf Prüfungen. Sie steht hier, weil sie in diesem Projekt
-**sechsmal** gebraucht wurde:
+Abfragen statt auf Prüfungen. Sie steht hier, weil dieses Projekt sie immer
+wieder gebraucht hat — die Fälle:
+
+> **Ohne laufende Summe, mit Absicht.** Hier stand „sechsmal". Die Zahl ist
+> selbst eine Behauptung ohne Quelle, in einem Abschnitt über Behauptungen ohne
+> Quelle, und sie stimmt je nach Schnitt nicht: zählt man das Eval-Gate als einen
+> Fall oder als drei? Die Liste trägt sich ohne Summe, und ein neuer Eintrag
+> braucht dann nur eine Zeile statt zwei.
 
 | # | Wo | Der Ausfall |
 |---|---|---|
@@ -4986,8 +5000,10 @@ Abfragen statt auf Prüfungen. Sie steht hier, weil sie in diesem Projekt
 | 4 | Kontrastmessung, Kantenglättung | jeder Wert falsch, alle Tests grün — die Fixtures zeichneten hartkantige Balken |
 | 5 | Release v1.2.0 | Workflow grün, am Tag lag kein installierbares Zip — die Prüfung konnte die Frage zu ihrem Zeitpunkt nicht stellen |
 | 6 | Die Suche für diesen Abschnitt | „null Treffer" für **jedes** Muster, auch für `Figmaps` — zsh trennt eine unquotierte Variable nicht an Zeilenumbrüchen, `git grep` bekam 77 SHAs als ein Argument, der Fehler lief nach `/dev/null` |
+| 7 | `gate-coverage.mjs`, die Testzahl | „504 Tests" als Literal, während es 518 waren — **zu hoch**, in genau dem Skript, das die Netze ausweist, und niemandem fällt es auf, weil die Zahl nichts entscheidet |
+| 8 | `gate-coverage.mjs`, die Durchsetzungswege | **drei** Wege standen als Tatsache — nach dem Merge, vor jedem Release, nächtlich. Nachgesehen existierte **einer**: `release.yml` fährt kein Gate, ein `schedule:`-Workflow gibt es nicht. Die Datei, die Abwesenheit sichtbar machen soll, behauptete Anwesenheit |
 
-Nummer 6 ist der billigste Fall und der lehrreichste: das Ergebnis war eine
+Der Fall mit der unquotierten Variable ist der billigste und der lehrreichste: das Ergebnis war eine
 vollständige Entwarnung zu einer Frage, an der eine Veröffentlichungsentscheidung
 hängt. Nichts daran sah falsch aus. Gefunden wurde es ausschließlich, weil die
 Abfrage vorher gegen `Figmaps` und `UEyes` laufen musste und dort ebenfalls null
@@ -5004,6 +5020,12 @@ lieferte.
 - Bei einer Prüfung im CI: einen Lauf mitliefern, der scheitern **muss**. Das
   Eval-Gate, das Contrastmap-Gate und die Lockfile-Prüfung tun das; jede neue
   Prüfung tut es auch.
+- Auch der **Beipackzettel** einer Prüfung ist eine Prüfung. Fälle 7 und 8 saßen
+  nicht in einem Gate, sondern in der Zusammenfassung, die die Gates ausweist —
+  und dort fällt nichts auf, weil nichts davon eine Entscheidung trägt. Deshalb
+  gilt dort dieselbe Regel: jede Zahl abgeleitet oder weggelassen, jeder Weg aus
+  den Workflow-Dateien gelesen statt genannt. `scripts/__tests__/gate-coverage.test.ts`
+  setzt es durch.
 
 ---
 
@@ -5138,6 +5160,21 @@ Zusätzlich für 1.1 (M4, M5):
    Bilder ein. Die Overlay-Variante würde nachträgliche Deckkraft-Anpassung in
    Figma erlauben, verdoppelt aber die eingefügte Bildmenge; Entscheidung offen.
 4. **Referenz-Screens** — noch nicht festgelegt, siehe `test-fixtures/README.md`.
+5. **Tag-Gate in `release.yml` — vor dem nächsten Release, nicht vor diesem.**
+   `release.yml` fährt heute kein Eval-Gate. Für `v1.0.0-beta.1` beißt das nicht:
+   das Gate lief am PR und läuft beim Push auf `main`, und der Tag zeigt auf den
+   Merge-Commit — der Inhalt **ist** gemessen, nur nicht durch den Weg, der dafür
+   behauptet wurde.
+
+   Wo die Lücke beißt: ein Tag auf einem Commit, der **nicht** über `main`
+   gelaufen ist — ein Hotfix, ein älterer Stand. Dann wird ungemessen
+   veröffentlicht, und niemand sieht es, weil der Release-Workflow grün ist.
+   Deshalb gehört das Gate an den Tag, bevor das nächste Release gebaut wird.
+
+   **Nächtlich ausdrücklich nicht.** Ein Zeitplan-Lauf sagt weniger als das
+   Tag-Gate — er bewacht keinen Auslieferungspunkt — und er ist eine weitere
+   Stelle, die still verfallen kann. Genau die Sorte Netz, die dieses Repo
+   mehrfach grün und wirkungslos gefunden hat.
 
 ---
 
