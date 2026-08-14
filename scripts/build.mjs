@@ -21,7 +21,7 @@ const dev = watch || process.argv.includes('--dev')
  * URIs. Keys are the placeholders used in `src/ui/styles.css`.
  */
 const UI_FONTS = {
-  __FONT_MANROPE__: 'assets/fonts/manrope-latin.woff2',
+  __FONT_PLUS_JAKARTA_SANS__: 'assets/fonts/plus-jakarta-sans-latin.woff2',
   __FONT_JETBRAINS_MONO__: 'assets/fonts/jetbrains-mono-latin.woff2',
 }
 

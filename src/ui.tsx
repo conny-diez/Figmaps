@@ -18,6 +18,7 @@ import {
   MAP_LABELS,
   PANEL_MAP_KINDS,
   PANEL_SIZE,
+  SELECTABLE_MAP_KINDS,
   type ClickRanking,
   type ContrastFinding,
   type FindingPayload,
@@ -27,7 +28,6 @@ import {
   type Settings,
   type UiToMain,
 } from './messages'
-import { viewportHeightFor } from './engine/segments'
 import { Logo } from './ui/logo'
 import { generateMaps, type FrameData } from './ui/pipeline'
 import { paletteFor } from './ui/theme'
@@ -91,64 +91,52 @@ function splitLabel(label: string): { main: string; sub: string | null } {
 }
 
 /**
- * The little wireframe next to each map row.
+ * Das 38-px-Bild links in jeder Map-Karte (`DESIGN.md` §4, „Selection Card").
  *
- * It is an **abstract screen, not the selected one** — four fixed bars, no
- * export, no engine, no caching, pure CSS. That is also why nothing in the UI
- * calls it a preview: it shows what the map *type* does to a screen, not what
- * this screen looks like.
+ * Es ist ein **abstraktes Bild der Map-Art, kein Abbild der Auswahl** — kein
+ * Export, keine Engine, kein Caching, reines CSS. Deshalb nennt das UI es
+ * nirgends eine Vorschau des Frames: es zeigt, was die Map-*Art* mit einem
+ * Screen macht, nicht wie *dieser* Screen aussieht.
  *
- * It does read the settings, though, because a picture that ignores the
- * controls next to it is decoration rather than explanation: overlay opacity
- * drives the layer, the viewport height drives where the cut line sits and how
- * much lies under the fold, and switching a map off dims the whole thing.
+ * Die Overlay-Deckkraft liest es trotzdem, denn ein Bild, das den Regler neben
+ * sich ignoriert, ist Dekoration statt Erklärung — und eine abgeschaltete Map
+ * dimmt das ganze Feld.
+ *
+ * **Was gegenüber dem 56 × 88-Schema davor wegfällt, und warum.** Die vier
+ * Wireframe-Balken: auf 38 px wären sie Grieß. Und die Falz-Schraffur, die aus
+ * der Viewport-Höhe kam: bei einem 2.400 px hohen Frame lagen zwei Drittel des
+ * Feldes unter der Falz, und vom Bild der Map blieb ein Streifenmuster. Die
+ * Alternative wäre gewesen, die Schraffur zu deckeln — dann hätte sie einen
+ * Anteil behauptet, der nicht stimmt. Die Aussage steht jetzt dort, wo sie
+ * überprüfbar ist: im Hinweis unter dem Viewport-Regler.
  */
-function MapSchema({
+function MapPreview({
   kind,
   settings,
-  frame,
 }: {
   kind: Exclude<MapKind, 'fold'>
   settings: Settings
-  frame?: FrameSummary
 }): preact.JSX.Element {
-  // How many viewports tall the selection is. Without a selection we show the
-  // segmentation threshold, which is the case the note next to it talks about.
-  const viewport =
-    settings.viewportHeight ??
-    (frame ? viewportHeightFor(frame.width) : ENGINE_CONFIG.viewport.desktopHeight)
-  const viewports = frame ? Math.min(3, Math.max(1, frame.height / viewport)) : ENGINE_CONFIG.viewport.segmentThreshold
-  const cut = 100 / viewports
   // The focus threshold is a constant now, so the spread of the sharp area is
   // one too — derived from it rather than restated.
   const spread = 30 + (100 - ENGINE_CONFIG.focus.percentile) * 1.6
 
   return (
     <span
-      class="schema"
+      class="preview"
       aria-hidden="true"
       style={{
         '--layer-opacity': settings.maps[kind] ? (settings.overlayOpacity / 100).toFixed(2) : '0',
-        '--cut-h': `${cut.toFixed(1)}%`,
-        '--fold-h': `${Math.max(0, 100 - cut).toFixed(1)}%`,
         '--spread': `${spread.toFixed(0)}%`,
       }}
     >
-      <span class="schema__wire">
-        <i />
-        <i />
-        <i />
-        <i />
-      </span>
-      <span class={`schema__layer schema__layer--${kind}`} />
-      <span class="schema__cut" />
-      <span class="schema__fold" />
+      <span class={`preview__layer preview__layer--${kind}`} />
     </span>
   )
 }
 
-/** Number of bars in a slider. */
-const SLIDER_BARS = 24
+/** Balken eines Reglers — 20, wie `DESIGN.md` §4 sie angibt. */
+const SLIDER_BARS = 20
 
 /**
  * Bar slider — the design's control, and a `role="slider"` rather than an
@@ -248,6 +236,8 @@ function BarSlider({
           ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
         }}
       >
+        {/* §4: gefüllt `6px + index · 0.6px`, leer 5 px. Die Höhe trägt den
+            Wert mit, damit die Leiste nicht nur zwei Farben ist. */}
         {Array.from({ length: SLIDER_BARS }, (_, index) => {
           const centre = (index + 0.5) / SLIDER_BARS
           const on = centre <= fraction
@@ -255,7 +245,7 @@ function BarSlider({
             <i
               key={index}
               class={on ? 'is-on' : ''}
-              style={{ height: `${(on ? 6 + centre * 19 : 6).toFixed(1)}px` }}
+              style={{ height: `${(on ? 6 + index * 0.6 : 5).toFixed(1)}px` }}
             />
           )
         })}
@@ -608,6 +598,25 @@ function App(): preact.JSX.Element {
     send({ type: 'CANCEL' })
   }, [])
 
+  /**
+   * „Zurücksetzen" — die sekundäre Aktion der Fußzeile (`DESIGN.md` §4).
+   *
+   * Das Theme bleibt dabei stehen: es ist keine Einstellung der Analyse, sondern
+   * die Entscheidung, in welchem Licht der Nutzer arbeitet. Ein Reset, der das
+   * Panel ins Dunkle zurückwirft, während es hell steht, hätte etwas
+   * zurückgesetzt, worüber niemand gesprochen hat.
+   */
+  const reset = useCallback(() => {
+    patchSettings({ ...DEFAULT_SETTINGS, theme: settingsRef.current.theme })
+  }, [patchSettings])
+
+  const isDefaultSettings =
+    settings.overlayOpacity === DEFAULT_SETTINGS.overlayOpacity &&
+    settings.profile === DEFAULT_SETTINGS.profile &&
+    settings.uiType === DEFAULT_SETTINGS.uiType &&
+    settings.viewportHeight === DEFAULT_SETTINGS.viewportHeight &&
+    SELECTABLE_MAP_KINDS.every((kind) => settings.maps[kind] === DEFAULT_SETTINGS.maps[kind])
+
   const reveal = useCallback((nodeIds: string[]) => {
     send({ type: 'REVEAL_NODES', nodeIds })
   }, [])
@@ -642,19 +651,37 @@ function App(): preact.JSX.Element {
     outcome.warnings.map((warning) => (outcomes.length > 1 ? `${outcome.frameName}: ${warning}` : warning)),
   )
 
-  const profileIndex = Math.max(0, AVAILABLE_PROFILES.indexOf(settings.profile))
   const percentDone = Math.round(progress.fraction * 100)
+  /**
+   * Der Statuszähler rechts in der Aktionszeile.
+   *
+   * Jede der drei Formen kommt aus dem, was tatsächlich gilt: während des Laufs
+   * der Frame-Fortschritt, danach die Zahl der **entstandenen** Karten (nicht
+   * der gewünschten), davor die Zahl der gewählten Maps. Er ist knapp gehalten,
+   * weil er neben zwei Knöpfen in eine 320 px breite Zeile muss — und er ist der
+   * Grund, warum der CTA seine eigene Zählung („2×") verloren hat: dieselbe Zahl
+   * zweimal in einer Zeile ist keine zweite Information.
+   */
+  const runCount =
+    phase === 'working'
+      ? `${progress.current}/${progress.total}`
+      : isFinished
+        ? `${createdCount} ${createdCount === 1 ? 'Map' : 'Maps'}`
+        : `${activeMapCount}×`
 
   return (
     <div class="app">
+      {/* §4: Icon-Tile → Plugin-Name → Version → Theme-Schalter → Schließen. */}
       <header class="app__header">
-        <Logo size={27} />
+        <span class="app__tile">
+          <Logo size={18} />
+        </span>
         <h1 class="app__title">Figmaps</h1>
         {/* The engine version stays with the maps (the line under each map
             title); the header names the product the user installed — plus the
             Beta marker, which is a statement about the prediction, not about
             the code (see `version.ts`). */}
-        <p class="app__subtitle">{PLUGIN_LABEL}</p>
+        <p class="app__version">{PLUGIN_LABEL}</p>
         <button
           type="button"
           class="themepill"
@@ -663,12 +690,16 @@ function App(): preact.JSX.Element {
           title="Design wechseln"
           onClick={() => patchSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
         >
+          {/* Mond = Dark, Punkt = Light (§4). */}
           <span class={settings.theme === 'dark' ? 'is-on' : ''} aria-hidden="true">
             ☾
           </span>
           <span class={settings.theme === 'light' ? 'is-on' : ''} aria-hidden="true">
-            ☀
+            ●
           </span>
+        </button>
+        <button type="button" class="iconbutton" aria-label="Plugin schließen" onClick={() => send({ type: 'CLOSE' })}>
+          <span aria-hidden="true">✕</span>
         </button>
       </header>
 
@@ -700,7 +731,7 @@ function App(): preact.JSX.Element {
             </div>
           )}
           {tooSmallFrames.length > 0 && (
-            <div class="notice notice--warning">
+            <div class="notice">
               {tooSmallFrames.length === 1
                 ? `„${tooSmallFrames[0].name}" ist zu klein für eine sinnvolle Analyse (min. ${ENGINE_CONFIG.traversal.minFrameEdge} px pro Kante).`
                 : `${tooSmallFrames.length} Frames sind zu klein für eine sinnvolle Analyse (min. ${ENGINE_CONFIG.traversal.minFrameEdge} px pro Kante).`}
@@ -711,14 +742,10 @@ function App(): preact.JSX.Element {
         {AVAILABLE_PROFILES.length > 1 && (
           <section class="section">
             <p class="section__label">Betrachtungsdauer</p>
-            <div
-              class="segmented"
-              style={{
-                '--seg-count': String(AVAILABLE_PROFILES.length),
-                '--seg-index': String(profileIndex),
-              }}
-            >
-              <span class="segmented__thumb" aria-hidden="true" />
+            {/* Kein gleitender Thumb mehr: aktiv ist eine hellere Fläche mit
+                Kontur (§4, §6.2). Ein Thumb in Akzentfarbe war das zweite Gelb
+                im Panel. */}
+            <div class="segmented" style={{ '--seg-count': String(AVAILABLE_PROFILES.length) }}>
               {AVAILABLE_PROFILES.map((profile) => {
                 const { main, sub } = splitLabel(PROFILE_LABELS[profile])
                 return (
@@ -762,27 +789,27 @@ function App(): preact.JSX.Element {
           <p class="section__label">Maps</p>
           <div class="maplist">
             {PANEL_MAP_KINDS.map((kind) => (
-              <label class={`maptoggle${settings.maps[kind] ? ' is-on' : ''}`} key={kind}>
+              <label class={`mapcard${settings.maps[kind] ? ' is-on' : ''}`} key={kind}>
                 <input
                   type="checkbox"
                   checked={settings.maps[kind]}
                   disabled={phase === 'working'}
                   onChange={(event) => toggleMap(kind, event.currentTarget.checked)}
                 />
-                <MapSchema kind={kind} settings={settings} frame={usableFrames[0]} />
-                <span class="maptoggle__text">
-                  <span class="maptoggle__label">{MAP_LABELS[kind]}</span>
-                  <span class="maptoggle__desc">{MAP_DESCRIPTIONS[kind]}</span>
+                <MapPreview kind={kind} settings={settings} />
+                <span class="mapcard__text">
+                  <span class="mapcard__label">{MAP_LABELS[kind]}</span>
+                  <span class="mapcard__desc">{MAP_DESCRIPTIONS[kind]}</span>
                 </span>
                 {/* Last in the row: the switch belongs at the edge of the card,
-                    not wedged between the schema and the words it labels. */}
-                <span class="maptoggle__track" aria-hidden="true">
-                  <span class="maptoggle__knob" />
+                    not wedged between the preview and the words it labels. */}
+                <span class="toggle" aria-hidden="true">
+                  <span class="toggle__knob" />
                 </span>
               </label>
             ))}
           </div>
-          {!anyMapSelected && <div class="notice notice--warning">Wähle mindestens eine Map aus.</div>}
+          {!anyMapSelected && <div class="notice">Wähle mindestens eine Map aus.</div>}
         </section>
 
         <section class="section section--sliders">
@@ -820,50 +847,26 @@ function App(): preact.JSX.Element {
           </div>
         </section>
 
-        <section class="section section--cta">
-          {phase === 'working' ? (
-            <>
-              <div class="status">
-                <span>
-                  {progress.total > 1 && progress.current > 0
-                    ? `Frame ${progress.current} von ${progress.total}`
-                    : 'Wird berechnet'}
-                </span>
-                <span class="status__value">{percentDone} %</span>
+        {/* Meldungen bleiben im Rumpf, die Knöpfe sind in die Fußzeile gezogen
+            (`DESIGN.md` §4, „Footer"). „Erneut versuchen" ist damit weg: es tat
+            dasselbe wie der CTA, und zwei primäre Aktionen widersprechen Regel 1
+            — der eine Knopf unten startet den Lauf, ob nach einem Fehler oder
+            nicht. */}
+        {(allWarnings.length > 0 || errors.length > 0) && (
+          <section class="section">
+            {allWarnings.map((warning) => (
+              <div class="notice" key={warning}>
+                {warning}
               </div>
-              <div class="progress">
-                <div class="progress__bar" style={{ width: `${percentDone}%` }} />
+            ))}
+
+            {errors.map((error) => (
+              <div class="notice notice--error" key={error}>
+                {error}
               </div>
-              <div class="status__detail">{progress.label}</div>
-              <button type="button" class="button button--secondary" onClick={cancel}>
-                Abbrechen
-              </button>
-            </>
-          ) : (
-            <button type="button" class="button" disabled={!canGenerate} onClick={start}>
-              <span>Maps erstellen</span>
-              {canGenerate && <span class="button__hint">{activeMapCount}×</span>}
-            </button>
-          )}
-
-          {allWarnings.map((warning) => (
-            <div class="notice notice--warning" key={warning}>
-              {warning}
-            </div>
-          ))}
-
-          {errors.map((error) => (
-            <div class="notice notice--error" key={error}>
-              {error}
-            </div>
-          ))}
-
-          {isFinished && errors.length > 0 && (
-            <button type="button" class="button button--secondary" disabled={!canGenerate} onClick={start}>
-              Erneut versuchen
-            </button>
-          )}
-        </section>
+            ))}
+          </section>
+        )}
 
         {isFinished && (
           <>
@@ -896,7 +899,7 @@ function App(): preact.JSX.Element {
                 <ul class="findings">
                   {detail.findings.map((finding) => (
                     <li key={finding.id} class={`findings__item findings__item--${finding.severity}`}>
-                      <span class="findings__bar" aria-hidden="true" />
+                      <span class="findings__dot" aria-hidden="true" />
                       <div class="findings__body">
                         <span class="findings__severity">{SEVERITY_LABELS[finding.severity]}</span>
                         <span class="findings__text">{finding.text}</span>
@@ -935,7 +938,7 @@ function App(): preact.JSX.Element {
                     .filter((entry) => entry.status !== 'bestanden')
                     .map((entry) => (
                       <li key={entry.nodeId} class={`findings__item findings__item--${entry.status === 'durchgefallen' ? 'problem' : 'attention'}`}>
-                        <span class="findings__bar" aria-hidden="true" />
+                        <span class="findings__dot" aria-hidden="true" />
                         <div class="findings__body">
                           <span class="findings__severity">
                             {entry.status === 'durchgefallen' ? 'Durchgefallen' : 'Grenzwertig'}
@@ -975,7 +978,7 @@ function App(): preact.JSX.Element {
                 <ul class="findings">
                   {detail.nonTextFindings.map((entry) => (
                     <li key={entry.nodeId} class="findings__item findings__item--attention">
-                      <span class="findings__bar" aria-hidden="true" />
+                      <span class="findings__dot" aria-hidden="true" />
                       <div class="findings__body">
                         <span class="findings__severity">Prüfen</span>
                         <span class="findings__text">{entry.text}</span>
@@ -1022,25 +1025,70 @@ function App(): preact.JSX.Element {
         )}
       </div>
 
+      {/* §4: zwei Zonen. Oben die Aktionszeile mit genau einer primären Aktion
+          und dem Statuszähler rechts, darunter die Hinweiszeile — Hinweise
+          stehen immer am Panelende und sind nie farbig. */}
       <footer class="app__footer">
-        <span class="disclaimer__icon" aria-hidden="true">
-          i
-        </span>
-        {/* One type style for all three paragraphs: the graded, dimmer
-            secondary style made the provenance unreadable, and it is not
-            secondary — it is what the disclaimer above it rests on. */}
-        <div>
-          <p class="disclaimer__text">
-            Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
-            Nutzerverhalten.
-          </p>
-          {PRIOR_ATTRIBUTION && (
-            <p class="disclaimer__text">
-              Die Vorhersage nutzt echte Blickdaten von 62 Testpersonen, gemessen auf 1.980 UI-Screens
-              (UEyes-Datensatz, Jiang et al., CHI 2023, CC BY 4.0).
-            </p>
+        {phase === 'working' && (
+          <div class="footer__run">
+            <div class="status">
+              <span>
+                {progress.total > 1 && progress.current > 0
+                  ? `Frame ${progress.current} von ${progress.total}`
+                  : 'Wird berechnet'}
+              </span>
+              <span class="status__value">{percentDone} %</span>
+            </div>
+            <div class="progress">
+              <div class="progress__bar" style={{ width: `${percentDone}%` }} />
+            </div>
+            <div class="status__detail">{progress.label}</div>
+          </div>
+        )}
+
+        <div class="footer__actions">
+          {/* Während eines Laufs gibt es keinen gelben Knopf: „Abbrechen" ist
+              nicht die primäre Aktion, und ein deaktivierter CTA daneben wäre
+              eine gelbe Fläche, die nichts tut. */}
+          {phase === 'working' ? (
+            <button type="button" class="button" onClick={cancel}>
+              Abbrechen
+            </button>
+          ) : (
+            <button type="button" class="button button--primary" disabled={!canGenerate} onClick={start}>
+              Maps erstellen
+            </button>
           )}
-          <p class="disclaimer__text">Figmaps — entwickelt von Constantin Diessenbacher</p>
+          <button type="button" class="button" disabled={phase === 'working' || isDefaultSettings} onClick={reset}>
+            Zurücksetzen
+          </button>
+          {/* Statuszähler, Mono: er sagt, was gilt — vor dem Lauf, was gewählt
+              ist, danach, was tatsächlich entstanden ist. */}
+          <span class="footer__count">{runCount}</span>
+        </div>
+
+        <div class="footer__hint">
+          <span class="hintmark" aria-hidden="true">
+            i
+          </span>
+          {/* Ein Schriftschnitt für beide Absätze: die abgestufte, leisere
+              Variante machte die Herkunft unlesbar, und sie ist nicht
+              sekundär — sie ist das, worauf der Disclaimer darüber ruht.
+
+              Die Autorenzeile ist entfallen. Die CC-BY-Nennung bleibt: sie ist
+              eine Lizenzpflicht, keine Signatur. */}
+          <div>
+            <p>
+              Algorithmische Vorhersage, keine Messdaten. Basiert auf Layout und Pixeln, nicht auf beobachtetem
+              Nutzerverhalten.
+            </p>
+            {PRIOR_ATTRIBUTION && (
+              <p>
+                Die Vorhersage nutzt echte Blickdaten von 62 Testpersonen, gemessen auf 1.980 UI-Screens
+                (UEyes-Datensatz, Jiang et al., CHI 2023, CC BY 4.0).
+              </p>
+            )}
+          </div>
         </div>
       </footer>
 

@@ -21,6 +21,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { ENGINE_VERSION } from '../../engine/config'
+import { PLUGIN_LABEL } from '../../version'
 import { RULES } from '../../findings/rules'
 import type { FindingPayload, MapMeta, RenderedMap, SegmentInfo } from '../../messages'
 
@@ -354,7 +355,7 @@ describe('placeMaps', () => {
       // Ausnahme prüfte man Buchstaben statt Bedeutung.
       const freigegeben = new Set([
         'Contrastmap — gemessen',
-        'Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage',
+        `Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage · Figmaps ${PLUGIN_LABEL}`,
       ])
       const zuPruefen = texte.filter((text) => !freigegeben.has(text))
 
@@ -369,14 +370,28 @@ describe('placeMaps', () => {
       const column = mapColumns(wrapper)[0]
       const texts = column.children.filter((child) => child.type === 'TEXT').map((child) => child.characters as string)
       expect(texts[0]).toBe('Contrastmap — gemessen')
-      expect(texts[1]).toBe('Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage')
+      // Der ausgelieferte Stand steht dabei — bei einer Messung ist er wichtiger
+      // als sonst (siehe `metaLine`). Geprüft wird der Wortlaut, nicht die Zahl:
+      // die kommt aus `package.json`.
+      expect(texts[1]).toBe(
+        `Gemessene Kontrastwerte nach WCAG 2.1 AA — nachprüfbar, keine Vorhersage · Figmaps ${PLUGIN_LABEL}`,
+      )
     })
 
     it('lässt die Datengrundlage weg, wenn nur gemessene Karten entstehen', async () => {
       // Die UEyes-Zeile belegt eine Abhängigkeit. Eine Contrastmap benutzt
       // keinen Wert daraus — dann wäre sie eine falsche Behauptung.
+      //
+      // Die Fußzeile selbst bleibt: sie trägt den ausgelieferten Stand, und der
+      // gilt auch für eine Messung. Geprüft wird deshalb ihr Text, nicht ihre
+      // Anwesenheit — der Ebenenname allein sagt darüber nichts.
       const nur = (await placeMaps(sourceNode, contrastOnly, { mapMeta })) as unknown as StubNode
-      expect(findNode(nur, (node) => node.name === 'Datengrundlage')).toBeNull()
+      const zeile = findNode(nur, (node) => node.name === 'Herkunft')
+      expect(zeile).not.toBeNull()
+      const text = zeile!.children[0].characters as string
+      expect(text).toBe(`Figmaps ${PLUGIN_LABEL}`)
+      expect(text).not.toContain('Datengrundlage')
+      expect(text).not.toContain('UEyes')
     })
 
     it('behält die Datengrundlage, sobald eine Vorhersage dabei ist', async () => {
@@ -385,7 +400,11 @@ describe('placeMaps', () => {
         [...contrastOnly, { kind: 'heat', png: new Uint8Array([1]) }],
         { mapMeta },
       )) as unknown as StubNode
-      expect(findNode(gemischt, (node) => node.name === 'Datengrundlage')).not.toBeNull()
+      const zeile = findNode(gemischt, (node) => node.name === 'Herkunft')
+      expect(zeile).not.toBeNull()
+      const text = zeile!.children[0].characters as string
+      expect(text).toContain(`Figmaps ${PLUGIN_LABEL}`)
+      expect(text).toContain('Datengrundlage')
     })
   })
 

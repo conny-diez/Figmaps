@@ -74,7 +74,7 @@ jobs:
         # Struktur so, dass „Import plugin from manifest…" direkt auf die
         # `manifest.json` im entpackten Ordner zeigen kann:
         #
-        #   figmaps-1.2.0/
+        #   figmaps-1.0.0-beta.1/
         #     manifest.json
         #     build/main.js
         #     build/ui.html
@@ -85,13 +85,28 @@ jobs:
         run: |
           version="$(node -p "require('./package.json').version")"
           dir="figmaps-$version"
+          # Zip und Ordner heißen beide nach der Version — und weil die Version
+          # seit 1.0.0-beta.1 Semver mit Vorabkennung ist, steht die Beta damit
+          # von selbst im Dateinamen: `figmaps-1.0.0-beta.1.zip`. Kein
+          # zusätzliches „beta-" im Namen, das eine zweite Quelle wäre.
+          zipname="figmaps-$version.zip"
           mkdir -p "$dir/build"
           cp manifest.json "$dir/manifest.json"
           cp build/main.js build/ui.html "$dir/build/"
           cp NOTICE.md "$dir/NOTICE.md"
           cat > "$dir/LIESMICH.txt" <<'TXT'
-          Figmaps in Figma installieren
-          =============================
+          Figmaps — Beta
+          ==============
+
+          Diese Fassung ist eine BETA. Der Marker gilt für die VORHERSAGE, nicht
+          für die Stabilität des Codes: die Engine ist gegen einen einzigen
+          öffentlichen Datensatz gemessen, drei der sechs Befundregeln sind
+          abgeschaltet. Im Figma-Menü heißt das Plugin deshalb „Figmaps (Beta)",
+          der Kopf des Panels nennt die genaue Version, und jeder erzeugte
+          Wrapper-Frame trägt sie im Namen.
+
+          In Figma installieren
+          =====================
 
           1. Diesen Ordner entpacken und an einen dauerhaften Ort legen —
              Figma merkt sich den Pfad, ein Ordner im Download-Verzeichnis
@@ -99,7 +114,7 @@ jobs:
           2. In Figma: Menü → Plugins → Development → Import plugin from
              manifest…  und die Datei manifest.json in diesem Ordner wählen.
           3. Einen Frame auswählen und das Plugin über Plugins → Development →
-             Figmaps starten.
+             „Figmaps (Beta)" starten.
 
           Die Heatmap und die Focusmap sind VORHERSAGEN, keine Messungen. Die
           Contrastmap ist eine Messung nach WCAG 2.1 AA und nachrechenbar.
@@ -107,8 +122,8 @@ jobs:
           Datengrundlage der Vorhersage: UEyes (Jiang et al. 2023), CC BY 4.0 —
           Einzelheiten in NOTICE.md.
           TXT
-          zip -r "$dir.zip" "$dir" > /dev/null
-          echo "zip=$dir.zip" >> "$GITHUB_OUTPUT"
+          zip -r "$zipname" "$dir" > /dev/null
+          echo "zip=$zipname" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Das Zip auspacken und prüfen
@@ -170,6 +185,20 @@ jobs:
           tag="$GITHUB_REF_NAME"
           releases="repos/$GITHUB_REPOSITORY/releases"
 
+          # Die lesbare Fassung für den Titel kommt aus demselben Skript, das das
+          # Panel benutzt (`scripts/version-label.mjs`); ein `sed` hier wäre die
+          # zweite Fassung derselben Regel. `src/__tests__/version.test.ts` hält
+          # Skript und Panel gegeneinander.
+          label="$(node scripts/version-label.mjs)"
+          # Vorabversion? Dann ist die Pre-release-Marke Pflicht — abgeleitet aus
+          # der Version selbst, nicht aus einer zweiten Angabe.
+          version="$(node -p "require('./package.json').version")"
+          case "$version" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          echo "Titel: Figmaps $label · prerelease=$prerelease"
+
           # Jede Abfrage in EINEM `gh --jq`-Durchgang, nur Skalare heraus.
           #
           # Nachgemessen: die Ausgabe von `gh --jq` ist kein wieder-parsebares
@@ -191,15 +220,23 @@ jobs:
           # `-f key=@datei` wäre das von gh's Typ-Umwandlung abhängig; so ist es
           # eindeutig. (`jq` liest hier eine Datei, keine gh-Ausgabe.)
           if [ "$count" -eq 0 ]; then
-            jq -n --rawfile body RELEASE.md --arg tag "$tag" --arg name "Figmaps ${tag#v}" \
-              '{tag_name: $tag, name: $name, draft: true, prerelease: false, body: $body}' > /tmp/release.json
+            jq -n --rawfile body RELEASE.md --arg tag "$tag" --arg name "Figmaps $label" \
+              --argjson pre "$prerelease" \
+              '{tag_name: $tag, name: $name, draft: true, prerelease: $pre, body: $body}' > /tmp/release.json
             id="$(gh api --method POST "$releases" --input /tmp/release.json --jq '.id')"
             echo "Entwurf neu angelegt (id=$id)."
           else
             id="$(gh api "$releases?per_page=100" --jq "[.[] | select(.tag_name == \"$tag\")] | .[0].id")"
-            # Nur den Text nachziehen — Entwurfsstatus und Name des bestehenden
+            # Den Text nachziehen — Entwurfsstatus und Name des bestehenden
             # Objekts bleiben, wie ein Mensch sie gesetzt hat.
-            jq -n --rawfile body RELEASE.md '{body: $body}' > /tmp/patch.json
+            #
+            # **Die Pre-release-Marke ist die Ausnahme davon**, und zwar bei einer
+            # Vorabversion aus einem Grund, der schwerer wiegt als „ein Mensch hat
+            # das so gesetzt": ohne sie führt GitHub den Tag als „Latest release".
+            # Eine Vorabversion darf das nicht sein, sonst landet genau der Stand
+            # als Empfehlung bei Kollegen, der noch keine ist.
+            jq -n --rawfile body RELEASE.md --argjson pre "$prerelease" \
+              '{body: $body} + (if $pre then {prerelease: true} else {} end)' > /tmp/patch.json
             gh api --method PATCH "$releases/$id" --input /tmp/patch.json --jq '.id' > /dev/null
             echo "Bestehendes Objekt ergänzt (id=$id) — Text aus RELEASE.md aktualisiert."
             old="$(gh api "$releases/$id" --jq "[.assets[] | select(.name == \"$ZIP\") | .id] | .[0] // empty")"

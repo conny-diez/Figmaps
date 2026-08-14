@@ -34,7 +34,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag, dessen Release geprüft wird (z. B. v1.2.0)'
+        description: 'Tag, dessen Release geprüft wird (z. B. v1.0.0-beta.1)'
         required: true
         type: string
 
