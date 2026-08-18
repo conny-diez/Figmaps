@@ -1,0 +1,22 @@
+# Git-Hooks dieses Repos, verwaltet von lefthook. Installiert werden sie über
+# das `prepare`-Skript in package.json (`lefthook install`), das nach jedem
+# `npm install`/`npm ci` läuft — niemand muss einen Hook von Hand einrichten.
+#
+# WOZU. Ab dieser Änderung tragen Commit-Botschaften Conventional-Commits-Form,
+# damit `scripts/changelog.mjs` sie ohne Handarbeit gruppieren kann. Eine
+# Konvention, die nur in einer Anleitung steht, wird vergessen; dieser Hook
+# macht sie zur Bedingung des Commits, nicht zur Bitte danach.
+#
+# WAS ER NICHT TUT. Er prüft die *Form* der Kopfzeile (siehe
+# `commitlint.config.js`), nicht den Inhalt. Merge- und Revert-Commits lässt
+# commitlint per Voreinstellung durch. Wer den Hook in einer Notlage umgehen
+# muss, kann `git commit --no-verify` benutzen — die Prüfung wandert dann in die
+# Review, sie verschwindet nicht.
+commit-msg:
+  commands:
+    conventional:
+      # `{1}` ist die Datei mit der Botschaft, die Git dem commit-msg-Hook
+      # übergibt (`.git/COMMIT_EDITMSG`). `--no-install` hält den Hook offline:
+      # commitlint liegt als devDependency vor, ein Netzzugriff wäre hier ein
+      # Fehler, kein Feature.
+      run: npx --no-install commitlint --edit {1}

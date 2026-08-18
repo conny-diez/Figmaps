@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Figma plugin that predicts visual attention (heatmap, clickmap, focusmap, above-the-fold) for a selected frame, with an offline evaluation harness.",
   "scripts": {
+    "prepare": "lefthook install",
+    "changelog": "node scripts/changelog.mjs",
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "typecheck": "tsc --noEmit",
@@ -39,12 +41,15 @@
     "findings-audit": "node scripts/eval.mjs --findings-audit"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
     "@eslint/js": "^9.39.0",
     "@figma/eslint-plugin-figma-plugins": "^1.0.0",
     "@figma/plugin-typings": "^1.133.0",
     "@types/node": "^24.13.3",
     "esbuild": "^0.28.1",
     "eslint": "^9.39.0",
+    "lefthook": "^2.1.10",
     "preact": "^10.29.8",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.0",

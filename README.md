@@ -193,6 +193,32 @@ npm run lint       # eslint across src, eval, scripts
 `npm run verify` is the same command CI runs. If it is green locally, the PR check
 is green except for the eval gates.
 
+**Commit messages follow [Conventional Commits](https://www.conventionalcommits.org).**
+The first line carries a fixed shape — `type(scope): summary` — from which the
+changelog is derived without hand-work; the narrative stays in the body, which is
+free. A `commit-msg` hook (`lefthook.yml` → `commitlint.config.js`) rejects a
+first line that does not fit. The hook installs itself: `npm install` runs
+`lefthook install` via the `prepare` script, so nobody has to wire it up. In a
+pinch, `git commit --no-verify` skips it and moves the check into review.
+
+The allowed types live in **one** place — `commitlint.config.js` — and both the
+hook and the changelog read them. `feat`, `fix`, `perf`, `refactor` and `revert`
+become changelog sections (breaking changes, marked `type!:` or with a
+`BREAKING CHANGE:` footer, sort to the top); `docs`, `test`, `build`, `ci` and
+`chore` are allowed but change nothing a user notices and stay out of the
+changelog.
+
+```bash
+npm run changelog  # regenerate CHANGELOG.md from the commit history
+```
+
+`CHANGELOG.md` is generated, not hand-edited — the next run overwrites manual
+lines. At release time `release.yml` appends the current version's section
+beneath the curated `RELEASE.md` narrative, so every release carries both: the
+narrative saying *why* the version is as it is, and the mechanical list of *what*
+changed. Commits from before this convention (everything up to `v1.0.0-beta.1`)
+do not fit the shape and produce no entries — their notes stay in `RELEASE.md`.
+
 ---
 
 ## Using the Plugin
@@ -796,6 +822,7 @@ different id has its own storage.
 | [`DESIGN.md`](DESIGN.md) | the panel's design system: tokens, typography, geometry, components |
 | [`NOTICE.md`](NOTICE.md) | CC BY obligations of the UEyes location prior and where the attribution must appear |
 | [`RELEASE.md`](RELEASE.md) | release notes; holds the download notice between two markers as its single source |
+| [`CHANGELOG.md`](CHANGELOG.md) | generated from the commit history by `scripts/changelog.mjs`; the current version's section rides along in each release body |
 | [`eval/fixtures/README.md`](eval/fixtures/README.md) | reference data structure, splits, import, threshold for the baseline comparison |
 | [`test-fixtures/README.md`](test-fixtures/README.md) | reference screens for manual acceptance — not yet chosen |
 

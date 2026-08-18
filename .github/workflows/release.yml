@@ -34,7 +34,12 @@ jobs:
     name: Build, prüfen, packen
     runs-on: ubuntu-latest
     steps:
+      # Vollständige History mit allen Tags: der Changelog (siehe unten) braucht
+      # die Spanne vom Vorgänger-Tag zum aktuellen, und die ist bei einem flachen
+      # Checkout (fetch-depth 1, die Voreinstellung) schlicht nicht da.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -199,6 +204,17 @@ jobs:
           esac
           echo "Titel: Figmaps $label · prerelease=$prerelease"
 
+          # DER RELEASE-BODY IST ZWEITEILIG: die kuratierte Erzählung aus
+          # RELEASE.md und darunter der aus den Commits abgeleitete Changelog
+          # dieser Fassung. Die Erzählung sagt, *warum* die Fassung ist, wie sie
+          # ist; der Changelog listet mechanisch, *was* sich geändert hat. Beide
+          # reisen mit jedem Release mit, statt dass eine Nutzerin den zweiten Teil
+          # woanders suchen muss. `scripts/changelog.mjs` liest dazu die Spanne
+          # vom Vorgänger-Tag zu diesem (deshalb der volle Checkout oben).
+          cat RELEASE.md > /tmp/body.md
+          printf '\n\n---\n\n' >> /tmp/body.md
+          node scripts/changelog.mjs --version "$version" >> /tmp/body.md
+
           # Jede Abfrage in EINEM `gh --jq`-Durchgang, nur Skalare heraus.
           #
           # Nachgemessen: die Ausgabe von `gh --jq` ist kein wieder-parsebares
@@ -215,12 +231,13 @@ jobs:
             exit 1
           fi
 
-          # Nutzlast mit `jq --rawfile`: RELEASE.md ist mehrere Kilobyte Markdown
-          # mit Anführungszeichen, Backticks und Zeilenumbrüchen. Über
+          # Nutzlast mit `jq --rawfile`: der Body (/tmp/body.md, oben aus
+          # RELEASE.md plus Changelog zusammengesetzt) ist mehrere Kilobyte
+          # Markdown mit Anführungszeichen, Backticks und Zeilenumbrüchen. Über
           # `-f key=@datei` wäre das von gh's Typ-Umwandlung abhängig; so ist es
           # eindeutig. (`jq` liest hier eine Datei, keine gh-Ausgabe.)
           if [ "$count" -eq 0 ]; then
-            jq -n --rawfile body RELEASE.md --arg tag "$tag" --arg name "Figmaps $label" \
+            jq -n --rawfile body /tmp/body.md --arg tag "$tag" --arg name "Figmaps $label" \
               --argjson pre "$prerelease" \
               '{tag_name: $tag, name: $name, draft: true, prerelease: $pre, body: $body}' > /tmp/release.json
             id="$(gh api --method POST "$releases" --input /tmp/release.json --jq '.id')"
@@ -235,10 +252,10 @@ jobs:
             # das so gesetzt": ohne sie führt GitHub den Tag als „Latest release".
             # Eine Vorabversion darf das nicht sein, sonst landet genau der Stand
             # als Empfehlung bei Kollegen, der noch keine ist.
-            jq -n --rawfile body RELEASE.md --argjson pre "$prerelease" \
+            jq -n --rawfile body /tmp/body.md --argjson pre "$prerelease" \
               '{body: $body} + (if $pre then {prerelease: true} else {} end)' > /tmp/patch.json
             gh api --method PATCH "$releases/$id" --input /tmp/patch.json --jq '.id' > /dev/null
-            echo "Bestehendes Objekt ergänzt (id=$id) — Text aus RELEASE.md aktualisiert."
+            echo "Bestehendes Objekt ergänzt (id=$id) — Text aus RELEASE.md plus Changelog aktualisiert."
             old="$(gh api "$releases/$id" --jq "[.assets[] | select(.name == \"$ZIP\") | .id] | .[0] // empty")"
             if [ -n "$old" ]; then
               gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"
